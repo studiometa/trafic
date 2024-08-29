@@ -1,7 +1,6 @@
 name: ddev-server
 global_files:
-  - global/commands/stop-idle-projects
-  - global/commands/start-requested-projects
+  - global/commands/host/watcher
   - global/traefik/static_config.ddev-server.yaml
   - global/traefik/config/ddev-server-error-page.yaml
 post_install_actions:
