@@ -36,3 +36,9 @@ flowchart TD
   ddev-watcher-stop --> |project is not visited and off| do-nothing
   ddev-watcher-stop --> |project is not visited and on| stop-project
 ```
+
+## To-do
+
+- [ ] Determine if the middleware should be configured with docker compose instead of DDEV
+- [ ] See if the ddev-watcher command could not depend on traefik logs being in JSON formats
+- [ ] See if the ddev-watcher command can be deployed as a DDEV or docker compose project to not depend on a manual CRON configuration
