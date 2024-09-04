@@ -31,8 +31,8 @@ Two CRON jobs with the `ddev watcher start` and `ddev watcher stop` must be conf
 flowchart TD
   ddev-watcher --> |start| ddev-watcher-start
   ddev-watcher --> |stop| ddev-watcher-stop
+  ddev-watcher-start --> |project is visited and off| start-project
   ddev-watcher-start --> |project is visited and on| do-nothing
   ddev-watcher-stop --> |project is not visited and off| do-nothing
-  ddev-watcher-start --> |project is visited and off| start-project
   ddev-watcher-stop --> |project is not visited and on| stop-project
 ```
