@@ -1,6 +1,5 @@
 name: ddev-server
 global_files:
-  - global/commands/host/watcher
   - global/traefik/static_config.ddev-server.yaml
   - global/traefik/config/ddev-server-error-page.yaml
 post_install_actions:

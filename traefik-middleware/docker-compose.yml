@@ -1,0 +1,35 @@
+services:
+  # Manage basic auth to access projects
+  # Also logs access of each hosts
+  ddev-server-traefik-middleware:
+    build: .
+    container_name: ddev-server-traefik-middleware
+    environment:
+      - REDIS_HOST=ddev-server-redis
+    networks:
+      - ddev-server-network
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./app:/app
+      - ./cli:/cli
+    restart: always
+    working_dir: /app
+
+  # Redis service to store state of projects
+  ddev-server-redis:
+    image: redis:7.4.2
+    container_name: ddev-server-redis
+    networks:
+      - ddev-server-network
+    ports:
+      - "6379:6379"
+    volumes:
+      - ddev-server-redis-data:/data
+
+volumes:
+  ddev-server-redis-data: {}
+
+networks:
+  ddev-server-network:
+    driver: bridge

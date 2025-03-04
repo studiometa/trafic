@@ -1,0 +1,17 @@
+{
+    "require": {
+        "predis/predis": "^2.3",
+        "php": "~8.3.0",
+        "spatie/ssh": "^1.13"
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "cp -n auth.config.php.example auth.config.php || echo file exists"
+        ]
+    },
+    "autoload": {
+        "psr-4": {
+            "Studiometa\\DdevServer": "./src"
+        }
+    }
+}

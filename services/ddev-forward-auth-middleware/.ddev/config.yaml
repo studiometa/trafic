@@ -1,6 +1,0 @@
-name: ddev-forward-auth-middleware
-type: php
-docroot: web
-php_version: "8.2"
-webserver_type: nginx-fpm
-omit_containers: [db, ddev-ssh-agent]
