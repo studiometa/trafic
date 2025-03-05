@@ -1,6 +1,0 @@
-name: ddev-server
-global_files:
-  - global/traefik/static_config.ddev-server.yaml
-  - global/traefik/config/ddev-server-error-page.yaml
-post_install_actions:
-  - echo "Update DDEV global config for ports and interface binding"

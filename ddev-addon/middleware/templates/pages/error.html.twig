@@ -1,0 +1,32 @@
+{% extends 'layouts/base.html.twig' %}
+
+{% block body %}
+	<main>
+		<p>Dû à une inactivité prolongée,<br>cet environnement a été désactivé.</p>
+		<div id="status"></div>
+	</main>
+
+	<script type="module">
+		const state = document.querySelector('#status');
+
+		async function test() {
+			const { status } = await fetch(location).catch(() => {});
+
+			switch (status) {
+				case 200:
+					location.reload();
+					break;
+				case 502:
+					setTimeout(test, 500);
+					state.textContent = 'Le serveur redémarre...';
+					break;
+				default:
+					state.textContent = 'Encore un petit instant...';
+					setTimeout(test, 500);
+					break;
+			}
+		}
+
+		test();
+	</script>
+{% endblock %}
