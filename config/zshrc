@@ -1,0 +1,147 @@
+# Stash your environment variables in ~/.localrc. This means they'll stay out
+# of your main dotfiles repository (which may be public, like this one), but
+# you'll have access to them in your scripts.
+if [[ -a ~/.localrc ]]
+then
+  source ~/.localrc
+fi
+
+##########
+## PATH ##
+##########
+
+# Composer
+export PATH="$PATH:./vendor/bin:$HOME/.composer/vendor/bin"
+
+# Node
+export PATH="./node_modules/.bin:$PATH"
+
+#####################
+##  CONFIGURATION  ##
+#####################
+
+# History
+# @see https://martinheinz.dev/blog/110
+export HISTFILE="$HOME/.zsh_history"
+export HISTSIZE=10000000
+export SAVEHIST=10000000
+export HISTORY_IGNORE="(ls|cd|pwd|exit|cd)*"
+export HIST_STAMPS="yyyy-mm-dd"
+
+setopt EXTENDED_HISTORY      # Write the history file in the ':start:elapsed;command' format.
+setopt INC_APPEND_HISTORY    # Write to the history file immediately, not when the shell exits.
+setopt SHARE_HISTORY         # Share history between all sessions.
+setopt HIST_IGNORE_DUPS      # Do not record an event that was just recorded again.
+setopt HIST_IGNORE_ALL_DUPS  # Delete an old recorded event if a new event is a duplicate.
+setopt HIST_IGNORE_SPACE     # Do not record an event starting with a space.
+setopt HIST_SAVE_NO_DUPS     # Do not write a duplicate event to the history file.
+setopt HIST_VERIFY           # Do not execute immediately upon history expansion.
+setopt APPEND_HISTORY        # append to history file (Default)
+setopt HIST_NO_STORE         # Don't store history commands
+setopt HIST_REDUCE_BLANKS    # Remove superfluous blanks from each command line being added to the history.
+
+export FZF_DEFAULT_COMMAND='ag --hidden -g ""'
+
+# System
+export EDITOR="vim"
+export LANG="en_US.UTF-8"
+
+autoload -U zmv
+
+# @see https://stackoverflow.com/questions/444951/zsh-stop-backward-kill-word-on-directory-delimiter
+WORDCHARS='*?_[]~=&;!#$%^(){}<>'
+
+###############
+##  ALIASES  ##
+###############
+
+# NVM
+alias nvm=fnm
+
+# rsync
+alias rsp="rsync -ah --info=progress2"
+
+# Docker
+alias dps='docker ps --format "table {{ .ID }}\t{{.Names}}\t{{ .Image }}" | (read -r; printf "%s\n" "$REPLY"; sort -k 2 )'
+alias dpps='docker ps --format "table {{ .ID }}\t{{.Names}}\t{{ .Ports }}" | (read -r; printf "%s\n" "$REPLY"; sort -k 2 )'
+
+# System
+alias ll="ls -l"
+alias lla="ls -la"
+
+# NPM
+alias n="npm"
+alias nr="npm run"
+alias ni="npm install"
+alias nu="npm uninstall"
+alias nv="npm version"
+
+# Git
+alias glog="git glog"
+alias gu="git undo"
+alias grst="git reset HEAD"
+alias gs="git switch"
+alias gstats="git quickstats"
+alias gt="git tag -l | sort -V"
+alias gtag="git for-each-ref --sort=taggerdate --format '%(refname) %(taggerdate)' refs/tags"
+
+# Git flow
+alias ff='git flow feature'
+alias ffs='git flow feature start'
+alias fff='git flow feature finish'
+alias ffp='git flow feature publish'
+alias fr='git flow release'
+alias frs='git flow release start'
+alias frf='git flow release finish'
+alias frp='git flow release publish'
+alias fh='git flow hotfix'
+alias fhs='git flow hotfix start'
+alias fhf='git flow hotfix finish'
+alias fhp='git flow hotfix publish'
+alias fb='git flow bugfix'
+alias fbs='git flow bugfix start'
+alias fbf='git flow bugfix finish'
+alias fbp='git flow bugfix publish'
+
+# @see https://superuser.com/a/230090
+if [[ $1 == eval ]]
+then
+    "$@"
+set --
+fi
+
+##########
+## ZNAP ##
+##########
+
+[[ -f ~/.znap/zsh-snap/znap.zsh ]] ||
+    git clone --depth 1 -- https://github.com/marlonrichert/zsh-snap.git ~/.znap/zsh-snap
+
+source "$HOME/.znap/zsh-snap/znap.zsh"
+
+znap source ohmyzsh/ohmyzsh lib/{git,theme-and-appearance,prompt_info_functions,nvm,key-bindings,history,clipboard}
+znap source zsh-users/zsh-completions
+znap source dominik-schwabe/zsh-fnm
+znap source ohmyzsh/ohmyzsh themes/bureau.zsh-theme
+znap source zdharma-continuum/fast-syntax-highlighting
+znap source ohmyzsh/ohmyzsh plugins/git/git.plugin
+znap source ohmyzsh/ohmyzsh plugins/ssh/ssh.plugin
+znap source ohmyzsh/ohmyzsh lib/{nvm,key-bindings,history,clipboard}
+znap source lukechilds/zsh-better-npm-completion
+znap source joshskidmore/zsh-fzf-history-search
+
+##################
+##  COMPLETION  ##
+##################
+
+## ZSH Completion
+# matches case insensitive for lowercase
+zstyle ':completion:*' matcher-list '' 'm:{a-zA-Z}={A-Za-z}' 'r:|[/._-]=* r:|=*' 'l:|=* r:|=*'
+
+# pasting with tabs doesn't perform completion
+zstyle ':completion:*' insert-tab pending
+## END ZSH Completion
+
+# fnm
+export PATH="/home/studiometa/.local/share/fnm:$PATH"
+eval "`fnm env`"

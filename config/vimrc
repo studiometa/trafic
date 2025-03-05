@@ -1,0 +1,15 @@
+" No compatibility
+set nocompatible
+set encoding=utf-8
+
+" Syntax highlighting
+
+" Detect filetype
+filetype plugin indent on
+" Enable syntax highighting
+syntax enable
+" 256 colours, please
+set t_Co=256
+
+" Display line numbers
+set number

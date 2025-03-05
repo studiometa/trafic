@@ -1,0 +1,25 @@
+[column]
+  ui = auto
+[branch]
+  sort = -committerdate
+[tag]
+  sort = version:refname
+[diff]
+  algorithm = histogram
+  colorMoved = plain
+  mnemonicPrefix = true
+  renames = true
+[push]
+  default = simple
+  autoSetupRemote = true
+  followTags = true
+[pull]
+  rebase = merges
+[merge]
+  ff = only
+[rebase]
+  stat = true
+[fetch]
+  prune = true
+  pruneTags = true
+  all = true
