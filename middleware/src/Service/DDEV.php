@@ -51,16 +51,8 @@ class DDEV {
 		return $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
 	}
 
-	public function startAsync(string $project): Process {
-		return $this->client->executeAsync("ddev start $project");
-	}
-
 	public function stop(string $project): string {
 		$process = $this->client->execute("ddev stop $project");
 		return $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
-	}
-
-	public function stopAsync(string $project): Process {
-		return $this->client->executeAsync("ddev stop $project");
 	}
 }
