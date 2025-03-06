@@ -8,7 +8,9 @@ class DDEV {
 	private Ssh $client;
 
 	public function __construct() {
-		$this->client = new Ssh('studiometa', '51.254.39.148');
+		$this->client = (new Ssh('studiometa', '51.254.39.148'))->usePrivateKey(
+			dirname(__DIR__, 2) . '/ssh_key'
+		);
 	}
 
 	public function projects(): array {

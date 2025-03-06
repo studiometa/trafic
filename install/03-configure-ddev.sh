@@ -9,10 +9,11 @@ sudo su - ddev -c "
 		--mailpit-http-port=2052 \
 		--mailpit-https-port=2053 \
 		--router-bind-all-interfaces
-"
+" || sudo mkdir -p /home/ddev/.config/ddev
 
 # Add the custom Traefik configurations
-sudo cp $DDEV_SERVER_ROOT/traefik/static_config.ddev-server.yaml /home/ddev/.config/ddev/traefik/
+sudo mkdir -p /home/ddev/.config/ddev/traefik/config/
+sudo cp $DDEV_SERVER_ROOT/config/traefik/static_config.ddev-server.yaml /home/ddev/.config/ddev/traefik/
 sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/static_config.ddev-server.yaml
-sudo cp $DDEV_SERVER_ROOT/traefik/default_config.yaml /home/ddev/.config/ddev/traefik/config/
+sudo cp $DDEV_SERVER_ROOT/config/traefik/default_config.yaml /home/ddev/.config/ddev/traefik/config/
 sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/config/default_config.yaml
