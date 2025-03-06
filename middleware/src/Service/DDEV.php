@@ -28,11 +28,11 @@ class DDEV {
 
 	public function start(string $project): string {
 		$process = $this->client->execute("ddev start $project");
-		return $process->getOutput();
+		return $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
 	}
 
 	public function stop(string $project): string {
 		$process = $this->client->execute("ddev stop $project");
-		return $process->getOutput();
+		return $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
 	}
 }
