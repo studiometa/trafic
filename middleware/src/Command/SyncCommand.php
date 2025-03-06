@@ -37,12 +37,12 @@ class SyncCommand extends Command
                 $output->writeln("Adding $host...");
                 $this->redis->set(
                     $host,
-                    json_encode([
+                    [
                         'host' => $host,
                         'name' => $project['name'],
                         'status' => $project['status'],
                         'last_accessed_at' => time(),
-                    ])
+                    ]
                 );
             }
         }
