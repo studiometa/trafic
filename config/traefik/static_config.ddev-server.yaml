@@ -1,0 +1,20 @@
+entryPoints:
+  http-443:
+    http:
+      middlewares:
+        - ddev-forward-auth-middleware@file
+
+  http-80:
+    http:
+      middlewares:
+        - ddev-forward-auth-middleware@file
+
+  http-2052:
+    http:
+      middlewares:
+        - ddev-forward-auth-middleware@file
+
+  http-2053:
+    http:
+      middlewares:
+        - ddev-forward-auth-middleware@file

@@ -1,7 +1,9 @@
 set -e
 
 cd "$(dirname "$0")"
+
 export DDEV_SERVER_ROOT=$(pwd)
+export DDEV_PROJECT_TLD=studiometa.dev
 
 sudo apt update -y
 sudo apt upgrade -y

@@ -14,6 +14,5 @@ sudo sh -c 'echo ""'
 sudo apt update
 sudo apt install -y ddev
 
-# One-time initialization of mkcert
+# Install mkcert
 sudo apt install -y mkcert
-mkcert -install
