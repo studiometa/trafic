@@ -50,7 +50,7 @@ class SyncCommand extends Command
         // Delete non existing projects from Redis
         foreach($this->redis->keys('*') as $key) {
             if (!in_array($key, $hosts)) {
-                echo "Deleting $key..." . PHP_EOL;
+                $output->writeln("Deleting $key...");
                 $this->redis->del($key);
             }
         }
