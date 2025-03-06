@@ -27,22 +27,22 @@ class DDEV {
 		return $output['raw'] ?? [];
 	}
 
-	public function maybeStartAsync(string $project): void {
+	public function maybeStart(string $project): string {
 		$process = $this->client->execute("ddev status $project --json-output");
 
 		if (!$process->isSuccessful()) {
-			return;
+			return $process->getErrorOutput();
 		}
 
 		$output = json_decode($process->getOutput(), true);
 		$status = $output['raw']['status'] ?? null;
 
 		if (!$status) {
-			return;
+			return $process->getOutput();
 		}
 
 		if ($status !== 'running' && $status !== 'starting') {
-			$this->startAsync($project);
+			return $this->start($project);
 		}
 	}
 
