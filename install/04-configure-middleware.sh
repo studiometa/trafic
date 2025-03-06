@@ -1,7 +1,12 @@
 # Generate SSH key to allow middleware to SSH into the server
 sudo ssh-keygen -t ed25519 -a 32 -f $DDEV_SERVER_ROOT/middleware/ssh_key -N ''
 
+# Allow access to the server
 sudo mkdir -p /home/ddev/.ssh
 echo "# ddev-server
 $(cat $DDEV_SERVER_ROOT/middleware/ssh_key.pub)
 " | sudo tee -a /home/ddev/.ssh/authorized_keys2
+
+# Condigure server external IP
+EXTERNAL_IP=$(curl --silent https://ipv4.icanhazip.com/)
+echo "SSH_HOST=$EXTERNAL_IP" | sudo tee $DDEV_SERVER_ROOT/middleware/.env.local

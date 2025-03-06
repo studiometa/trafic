@@ -1,4 +1,3 @@
 cd $DDEV_SERVER_ROOT/middleware
-EXTERNAL_IP=$(curl --silent https://ipv4.icanhazip.com/)
-docker compose up -d --always-recreate-deps --build --env SSH_HOST=$EXTERNAL_IP
+docker compose up -d --always-recreate-deps --build
 cd $DDEV_SERVER_ROOT
