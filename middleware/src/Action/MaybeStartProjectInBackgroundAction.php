@@ -16,7 +16,7 @@ class MaybeStartProjectInBackgroundAction {
           $project = json_decode($this->redis->get($host), true);
           $project_name = $project['name'];
           $project['last_accessed_at'] = time();
-          if ($project['status'] === 'stopped') {
+          if ($project['status'] !== 'running') {
             echo "Starting $project_name..." . PHP_EOL;
             echo $this->ddev->start($project_name);
           }
