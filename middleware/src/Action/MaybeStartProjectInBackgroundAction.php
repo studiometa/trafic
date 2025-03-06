@@ -11,18 +11,17 @@ class MaybeStartProjectInBackgroundAction {
 		private DDEV $ddev,
 	) {}
 
-	public function execute(?string $host) {
-		if ($host && $this->redis->exists($host)) {
-          $project = json_decode($this->redis->get($host), true);
-          $project_name = $project['name'];
-          $project['last_accessed_at'] = time();
-          if ($project['status'] !== 'running') {
-            echo "Starting $project_name..." . PHP_EOL;
-            echo $this->ddev->start($project_name);
-          }
+	public function execute(?string $host): void {
+		if (!$host || !$this->redis->exists($host)) {
+			return;
+		}
 
-          $this->redis->set($host, json_encode($project));
-          echo "updating $host..." . PHP_EOL;
-        }
+		$project = $this->redis->get($host);
+		$project['last_accessed_at'] = time();
+		$this->redis->set($host, $project);
+
+		if ($project['status'] !== 'running') {
+			echo $this->ddev->start($project['name']);
+		}
 	}
 }
