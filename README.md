@@ -2,6 +2,21 @@
 
 A DDEV add-on to configure a server for preview environments with auth and scale to zero features.
 
+## Installation
+
+On a fresh installation of Ubuntu 24.x with the `ubuntu` user having sudo access: 
+
+1. Clone the repository
+2. Run the `install.sh` script
+
+The install script will : 
+
+- Install Docker, DDEV and required dependencies
+- Create a `ddev` user with access to ddev and docker 
+- Configure DDEV with a given custom project TLD 
+- Add custom Traefik configurations to DDEV
+- Start the Traefik middleware for auth and scale-to-zero features
+
 ## Architecture
 
 This project is made of the following:
