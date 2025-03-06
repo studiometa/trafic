@@ -5,11 +5,9 @@ namespace App\Service;
 use Predis\Client;
 
 class Redis {
-	private Client $client;
-
-	public function __construct() {
-		$this->client = new Client(['host' => getenv('REDIS_HOST')]);
-	}
+	public function __construct(
+		private Client $client = new Client(['host' => 'ddev-server-redis']),
+	) {}
 
 	public function get(string $key): mixed {
 		$value = $this->client->get($key);
