@@ -11,8 +11,8 @@ class DDEV {
 	public function __construct(ParameterBagInterface $params) {
 		$this->client = Ssh::create(
 			$params->get('app.ssh_user'),
-			$params->get('app.ssh_host'),
-		)->usePrivateKey($params->get('app.ssh_key_path'));
+			$params->get('app.ssh_host')
+		)->usePrivateKey($params->get('app.ssh_key_path'))->disableStrictHostKeyChecking();
 	}
 
 	public function projects(): array {
