@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Request;
 
 class ErrorController extends AbstractController
 {
-    #[Route('/__error__', name: 'error')]
+    #[Route('/', name: 'error')]
     public function index(Request $request, Redis $redis): Response
     {
         $host   = $request->getHost();
