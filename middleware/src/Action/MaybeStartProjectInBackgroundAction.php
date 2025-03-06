@@ -19,9 +19,6 @@ class MaybeStartProjectInBackgroundAction {
 		$project = $this->redis->get($host);
 		$project['last_accessed_at'] = time();
 		$this->redis->set($host, $project);
-
-		if ($project['status'] !== 'running') {
-			echo $this->ddev->start($project['name']);
-		}
+		$this->ddev->maybeStartAsync($project['name']);
 	}
 }

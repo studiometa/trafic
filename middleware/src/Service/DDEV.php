@@ -4,6 +4,7 @@ namespace App\Service;
 
 use Spatie\Ssh\Ssh;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use Symfony\Component\Process\Process;
 
 class DDEV {
 	private Ssh $client;
@@ -26,13 +27,40 @@ class DDEV {
 		return $output['raw'] ?? [];
 	}
 
+	public function maybeStartAsync(string $project): void {
+		$process = $this->client->execute("ddev status $project --json-output");
+
+		if (!$process->isSuccessful()) {
+			return;
+		}
+
+		$output = json_decode($process->getOutput(), true);
+		$status = $output['raw']['status'] ?? null;
+
+		if (!$status) {
+			return;
+		}
+
+		if ($status !== 'running' && $status !== 'starting') {
+			$this->startAsync($project);
+		}
+	}
+
 	public function start(string $project): string {
 		$process = $this->client->execute("ddev start $project");
 		return $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
 	}
 
+	public function startAsync(string $project): Process {
+		return $this->client->executeAsync("ddev start $project");
+	}
+
 	public function stop(string $project): string {
 		$process = $this->client->execute("ddev stop $project");
 		return $process->isSuccessful() ? $process->getOutput() : $process->getErrorOutput();
+	}
+
+	public function stopAsync(string $project): Process {
+		return $this->client->executeAsync("ddev stop $project");
 	}
 }
