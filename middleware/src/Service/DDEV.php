@@ -3,14 +3,16 @@
 namespace App\Service;
 
 use Spatie\Ssh\Ssh;
+use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
 class DDEV {
 	private Ssh $client;
 
-	public function __construct() {
-		$this->client = (new Ssh(getenv('SSH_USER'), getenv('SSH_HOST')))->usePrivateKey(
-			dirname(__DIR__, 2) . '/ssh_key'
-		);
+	public function __construct(ParameterBagInterface $params) {
+		$this->client = Ssh::create(
+			$params->get('app.ssh_user'),
+			$params->get('app.ssh_host'),
+		)->usePrivateKey($params->get('app.ssh_key_path'));
 	}
 
 	public function projects(): array {
