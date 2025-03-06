@@ -1,4 +1,4 @@
-FROM webdevops/php:8.3 as deps
+FROM webdevops/php:8.3 AS deps
 
 COPY composer.json /
 COPY composer.lock /
@@ -17,5 +17,6 @@ RUN docker-cronjob '*/5 * * * * php /cli/sync.php'
 # Stop stale projects every hour
 RUN docker-cronjob '33 * * * * php /cli/stop.php'
 
+# @todo add SSH key to allow access to server
 # USER application
 # COPY ./root/.ssh /home/application/.ssh

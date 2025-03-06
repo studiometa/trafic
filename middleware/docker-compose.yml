@@ -9,6 +9,7 @@ services:
       - REDIS_HOST=ddev-server-redis
     networks:
       - ddev-server-network
+      - ddev_default
     ports:
       - "127.0.0.1:8080:80"
     volumes:
@@ -33,3 +34,6 @@ volumes:
 networks:
   ddev-server-network:
     driver: bridge
+  ddev_default:
+    external: true
+    name: ddev_default
