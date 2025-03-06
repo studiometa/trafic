@@ -8,7 +8,7 @@ class DDEV {
 	private Ssh $client;
 
 	public function __construct() {
-		$this->client = (new Ssh('studiometa', '51.254.39.148'))->usePrivateKey(
+		$this->client = (new Ssh(getenv('SSH_USER'), getenv('SSH_HOST')))->usePrivateKey(
 			dirname(__DIR__, 2) . '/ssh_key'
 		);
 	}
