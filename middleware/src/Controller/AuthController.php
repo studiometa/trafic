@@ -27,8 +27,8 @@ class AuthController extends AbstractController
 
         $token       = $request->headers->get('x-ddev-auth-token');
         $subdomain   = $host ? current(explode('.', $host)) : null;
-        $user        = $_SERVER['PHP_AUTH_USER'] ?? null;
-        $password    = $_SERVER['PHP_AUTH_PW'] ?? null;
+        $user        = $request->headers->get('php-auth-user');
+        $password    = $request->headers->get('php-auth-pw');
         $config_path = dirname(__DIR__, 2) . '/auth.config.php';
 
         if (!file_exists($config_path)) {

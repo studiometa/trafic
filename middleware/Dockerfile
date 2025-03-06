@@ -4,7 +4,7 @@ COPY composer.json /
 COPY composer.lock /
 RUN composer install --no-dev --optimize-autoloader --prefer-dist
 
-FROM webdevops/php-apache:8.3
+FROM webdevops/php-nginx:8.3
 
 WORKDIR /app
 COPY --from=deps /vendor /app/vendor
