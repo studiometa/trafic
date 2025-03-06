@@ -11,7 +11,7 @@ class MaybeStartProjectInBackgroundAction {
 		private DDEV $ddev,
 	) {}
 
-	public function execute(string $host) {
+	public function execute(?string $host) {
 		if ($host && $this->redis->exists($host)) {
           $project = json_decode($this->redis->get($host), true);
           $project_name = $project['name'];

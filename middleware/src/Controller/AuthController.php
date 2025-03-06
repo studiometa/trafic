@@ -16,7 +16,7 @@ class AuthController extends AbstractController
     public function index(
       Request $request,
       Redis $redis,
-      MaybeStartProjectInBackgroundAction $maybeStartProjectInBackgroundAction
+      MaybeStartProjectInBackgroundAction $maybeStartProjectInBackgroundAction,
     ): Response
     {
         $host = $request->headers->get('x-forwarded-host');
