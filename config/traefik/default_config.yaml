@@ -30,7 +30,7 @@ http:
         status:
           - "400-599"
         service: ddev-server-traefik-middleware
-        query: "/__error__?status={status}"
+        query: "/?status={status}"
 
   services:
     ddev-server-traefik-middleware:
