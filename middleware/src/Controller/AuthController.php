@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Action\MaybeStartProjectInBackgroundAction;
 use App\Service\DDEV;
 use App\Service\Redis;
 use Symfony\Component\HttpFoundation\Response;
@@ -12,11 +13,15 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 class AuthController extends AbstractController
 {
     #[Route('/__auth__', name: 'auth')]
-    public function index(Request $request, Redis $redis, DDEV $ddev): Response
+    public function index(
+      Request $request,
+      Redis $redis,
+      MaybeStartProjectInBackgroundAction $maybeStartProjectInBackgroundAction
+    ): Response
     {
         $host = $request->headers->get('x-forwarded-host');
 
-        $this->maybeStartProjectInBackground($redis, $host);
+        $maybeStartProjectInBackgroundAction->execute($host);
 
         // Available auth methods: IP, token or basic auth.
         $ip = $request->headers->get('cf-connecting-ip')
