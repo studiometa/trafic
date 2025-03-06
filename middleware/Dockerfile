@@ -9,6 +9,7 @@ FROM webdevops/php-nginx:8.3
 WORKDIR /app
 COPY --from=deps /vendor /app/vendor
 COPY . .
+RUN chown -R application:application /app
 ENV APP_ENV=prod
 
 # Sync project list every 5th minute
