@@ -2,13 +2,15 @@
 
 namespace App\Controller;
 
-use App\Action\MaybeStartProjectInBackgroundAction;
 use App\Service\DDEV;
 use App\Service\Redis;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use App\Message\MaybeStartProjectMessage;
+use App\Message\UpdateLastAccessedAtMessage;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 class AuthController extends AbstractController
 {
@@ -16,12 +18,13 @@ class AuthController extends AbstractController
     public function index(
       Request $request,
       Redis $redis,
-      MaybeStartProjectInBackgroundAction $maybeStartProjectInBackgroundAction,
+      MessageBusInterface $messageBus,
     ): Response
     {
         $host = $request->headers->get('x-forwarded-host');
 
-        $maybeStartProjectInBackgroundAction->execute($host);
+        $messageBus->dispatch(new MaybeStartProjectMessage($host));
+        $messageBus->dispatch(new UpdateLastAccessedAtMessage($host));
 
         // Available auth methods: IP, token or basic auth.
         $ip = $request->headers->get('cf-connecting-ip')
