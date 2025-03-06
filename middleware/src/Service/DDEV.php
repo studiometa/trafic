@@ -44,6 +44,8 @@ class DDEV {
 		if ($status !== 'running' && $status !== 'starting') {
 			return $this->start($project);
 		}
+
+		return 'project already running';
 	}
 
 	public function start(string $project): string {
