@@ -7,7 +7,7 @@ sudo cp $DDEV_SERVER_ROOT/config/vimrc /home/ubuntu/.vimrc && sudo chown ubuntu:
 sudo su - ubuntu -c "zsh /home/ubuntu/.zshrc"
 
 # Create ddev user
-sudo useradd --create-home ddev
+sudo useradd --create-home ddev || echo "ddev user already exists"
 sudo usermod -aG docker ddev
 sudo chsh -s $(which zsh) ddev
 sudo echo "ddev ALL= NOPASSWD:SETENV: /usr/bin/mkcert, /usr/bin/ddev, /usr/bin/hostname" | sudo tee /etc/sudoers.d/100-ddev > /dev/null
