@@ -9,18 +9,21 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 #[AsMessageHandler]
 class MaybeStartProjectMessageHandler {
+	public function __construct(
+		private readonly Redis $redis,
+		private readonly DDEV $ddev,
+	) {}
+
 	public function __invoke(
 		MaybeStartProjectMessage $message,
-		Redis $redis,
-		DDEV $ddev
 	): void {
 		$host = $message->host;
 
-		if (!$host || !$redis->exists($host)) {
+		if (!$host || !$this->redis->exists($host)) {
 			return;
 		}
 
-		$project = $redis->get($host);
-		$ddev->maybeStart($project['name']);
+		$project = $this->redis->get($host);
+		$this->ddev->maybeStart($project['name']);
 	}
 }
