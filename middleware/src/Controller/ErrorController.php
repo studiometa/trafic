@@ -23,6 +23,7 @@ class ErrorController extends AbstractController
             );
         }
 
-        return $this->render('pages/error.html.twig');
+        $response = new Response('', $status);
+        return $this->render('pages/error.html.twig', [], $response);
     }
 }
