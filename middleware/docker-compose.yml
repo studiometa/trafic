@@ -27,7 +27,7 @@ services:
       - .:/app
     restart: always
     working_dir: /app
-    command: ["php", "/app/bin/console", "messenger:consume", "async"]
+    command: ["php", "/app/bin/console", "messenger:consume", "async", "-vv"]
 
   redis:
     image: redis:7.4.2
