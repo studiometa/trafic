@@ -1,5 +1,0 @@
-{
-    "require": {
-        "symfony/redis-messenger": "^5.4"
-    }
-}
