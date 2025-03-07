@@ -10,7 +10,7 @@ WORKDIR /app
 COPY --from=deps /vendor /app/vendor
 COPY . .
 RUN chown -R application:application /app
-ENV APP_ENV=prod
+ENV APP_ENV=dev
 
 # Sync project list every 5th minute
 RUN docker-cronjob '*/5 * * * * php /cli/sync.php'
