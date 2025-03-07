@@ -1,12 +1,10 @@
 services:
-  # Manage basic auth to access projects
-  # Also logs access of each hosts
-  traefik-middleware:
+  middleware:
     build: .
     container_name: ddev-server-traefik-middleware
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
-      - REDIS_HOST=ddev-server-redis
+      - REDIS_HOST=redis
     networks:
       - ddev-server-network
       - ddev_default
@@ -17,8 +15,21 @@ services:
     restart: always
     working_dir: /app
 
-  # Redis service to store state of projects
-  ddev-server-redis:
+  queue:
+    image: webdevops/php:8.3
+    container_name: ddev-server-queue
+    environment:
+      - WEB_DOCUMENT_ROOT=/app/public
+      - REDIS_HOST=redis
+    networks:
+      - ddev-server-network
+    volumes:
+      - .:/app
+    restart: always
+    working_dir: /app
+    command: ["php", "/app/bin/console", "messenger:consume", "async"]
+
+  redis:
     image: redis:7.4.2
     container_name: ddev-server-redis
     networks:

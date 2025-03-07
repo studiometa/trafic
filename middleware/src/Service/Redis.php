@@ -6,7 +6,7 @@ use Predis\Client;
 
 class Redis {
 	public function __construct(
-		private Client $client = new Client(['host' => 'ddev-server-redis']),
+		private Client $client = new Client(['host' => 'redis']),
 	) {}
 
 	public function get(string $key): mixed {
