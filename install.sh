@@ -2,8 +2,8 @@ set -e
 
 cd "$(dirname "$0")"
 
-export DDEV_SERVER_ROOT=$(pwd)
-export DDEV_PROJECT_TLD=${DDEV_PROJECT_TLD:-studiometa.dev}
+export TRAFFIC_ROOT_DIR=$(pwd)
+export DDEV_PROJECT_TLD=${DDEV_PROJECT_TLD:-ikko.dev}
 
 sudo apt update -y
 sudo apt upgrade -y

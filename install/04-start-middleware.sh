@@ -1,3 +1,3 @@
-cd $DDEV_SERVER_ROOT/middleware
+cd $TRAFFIC_ROOT_DIR/middleware
 docker compose up -d --always-recreate-deps --build
-cd $DDEV_SERVER_ROOT
+cd $TRAFFIC_ROOT_DIR
