@@ -9,31 +9,31 @@ http:
   routers:
     ddev-errors-middleware-http:
       rule: HostRegexp(`{host:.+}`)
-      service: ddev-server-traefik-middleware
+      service: traffic-middleware
       tls: false
       priority: 1
       entrypoints:
         - http-80
     ddev-errors-middleware-https:
       rule: HostRegexp(`{host:.+}`)
-      service: ddev-server-traefik-middleware
+      service: traffic-middleware
       tls: true
       priority: 1
       entrypoints:
         - http-443
   middlewares:
-    ddev-forward-auth-middleware:
+    traffic-forward-auth-middleware:
       forwardAuth:
-        address: http://ddev-server-traefik-middleware/__auth__
-    ddev-errors-middleware:
+        address: http://traffic-middleware/__auth__
+    traffic-errors-middleware:
       errors:
         status:
           - "400-599"
-        service: ddev-server-traefik-middleware
+        service: traffic-middleware
         query: "/?status={status}"
 
   services:
-    ddev-server-traefik-middleware:
+    traffic-middleware:
       loadbalancer:
         servers:
-          - url: http://ddev-server-traefik-middleware:80
+          - url: http://traffic-middleware:80
