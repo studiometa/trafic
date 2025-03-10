@@ -32,7 +32,7 @@ class StopCommand extends Command
         $delay = 10; // tmp value
 
         foreach ($this->redis->keys('*') as $key) {
-            $project = json_decode($this->redis->get($key), true);
+            $project = $this->redis->get($key);
             $project_name = $project['name'];
 
             if ($now - $project['last_accessed_at'] > $delay) {
