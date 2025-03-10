@@ -33,7 +33,7 @@ class SyncCommand extends Command
         foreach ($this->ddev->projects() as $project) {
             /** @var string */
             $host = parse_url($project['httpsurl'], PHP_URL_HOST);
-            $hosts[] = $host;
+            $hosts[] = $this->redis->withPrefix($host);
 
             if (!$this->redis->exists($host)) {
                 $output->writeln("Adding $host...");
