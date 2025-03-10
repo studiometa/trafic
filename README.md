@@ -7,7 +7,7 @@ A DDEV add-on to configure a server for preview environments with auth and scale
 On a fresh installation of Ubuntu 24.x with the `ubuntu` user having sudo access: 
 
 1. Clone the repository
-2. Run the `install.sh` script
+2. Run the `./bin/trafic install` script
 
 The install script will : 
 
@@ -16,6 +16,10 @@ The install script will :
 - Configure DDEV with a given custom project TLD 
 - Add custom Traefik configurations to DDEV
 - Start the Traefik middleware for auth and scale-to-zero features
+
+## To-do
+
+- [ ] update architecture doc
 
 ## Architecture
 
@@ -51,7 +55,3 @@ flowchart TD
   ddev-watcher-stop --> |project is not visited and off| do-nothing
   ddev-watcher-stop --> |project is not visited and on| stop-project
 ```
-
-## To-do
-
-- 
