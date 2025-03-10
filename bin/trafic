@@ -13,6 +13,12 @@ if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
 trafic list
 	List synced projects
 
+trafic sync
+	Sync projects
+
+trafic stop
+	Stop stale projects
+
 trafic restart
 	Restart services
 
