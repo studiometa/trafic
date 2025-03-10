@@ -10,7 +10,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Scheduler\Attribute\AsCronTask;
 
-#[AsCronTask('33 * * * *')]
+#[AsCronTask('* * * * *')]
 #[AsCommand(
     name: 'ddev:stop',
     description: 'Stop stale DDEV projects'
