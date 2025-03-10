@@ -1,0 +1,35 @@
+{% extends 'layouts/base.html.twig' %}
+
+{% block body %}
+	<main>
+		<p>💤</p>
+		<p>Dû à une inactivité prolongée, cet environnement a été stoppé.</p>
+		<p>Le serveur redémarre, cette page sera automatiquement actualiser dès qu’il sera prêt.</p>
+		<p id="status">💤 En veille...</p>
+		<p><i>— Studio Meta</i></p>
+	</main>
+
+	<script type="module">
+		const state = document.querySelector('#status');
+
+		async function test() {
+			const { status } = await fetch(location).catch(() => {});
+
+			switch (status) {
+				case 200:
+					location.reload();
+					break;
+				case 502:
+					setTimeout(test, 500);
+					state.textContent = '🚀 Encore quelques secondes...';
+					break;
+				default:
+					state.textContent = '⚙️ Redémarrage...';
+					setTimeout(test, 500);
+					break;
+			}
+		}
+
+		test();
+	</script>
+{% endblock %}

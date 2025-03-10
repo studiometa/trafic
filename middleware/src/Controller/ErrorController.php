@@ -13,17 +13,19 @@ class ErrorController extends AbstractController
     #[Route('/', name: 'error')]
     public function index(Request $request, Redis $redis): Response
     {
-        $host   = $request->getHost();
-        $status = $request->request->get('status', 404);
-
-        if ($status !== 404 || !$redis->get($host)) {
-            return new Response(
-                sprintf('<p><b>%s</b></p><p>Oops, an error occured, try again later.</p>', $status),
-                $status,
-            );
-        }
-
+        $host     = $request->getHost();
+        $status   = $request->request->get('status', 404);
         $response = new Response('', $status);
-        return $this->render('pages/error.html.twig', [], $response);
+
+        return $this->render(
+            $status !== 404 || !$redis->exists($host)
+                ? 'pages/error.html.twig'
+                : 'pages/wait.html.twig',
+            [
+                'host'   => $host,
+                'status' => $status,
+            ],
+            $response
+        );
     }
 }
