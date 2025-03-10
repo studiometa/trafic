@@ -4,13 +4,14 @@ LAST_UPDATED_AT=$(git log -1 --format=%cd --date=unix)
 
 git pull
 
-for file in $TRAFFIC_ROOT_DIR/migrations/*.sh; do
-	filename=$(basename "$file")
-	migrate_at="${filename%.sh}"
+for FILE in $TRAFFIC_ROOT_DIR/migrations/*.sh; do
+	FILENAME=$(basename "$FILE")
+	MIGRATE_AT="${FILENAME%.sh}"
 
-	if [ $migrate_at -gt $last_updated_at ]; then
-		echo "Running migration for $migrate_at"
-		source $file
+	if [[ $MIGRATE_AT -gt $LAST_UPDATED_AT ]]
+	then
+		echo "Running migration for $MIGRATE_AT..."
+		source $FILE
 	fi
 done
 
