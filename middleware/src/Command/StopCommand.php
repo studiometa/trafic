@@ -29,15 +29,25 @@ class StopCommand extends Command
     {
         $now = time();
         $delay = 3600 * 4;
-        $delay = 10; // tmp value
 
-        foreach ($this->redis->keys('*') as $key) {
-            $project = $this->redis->get($key);
-            $project_name = $project['name'];
+        $is_first_project = true;
+        foreach ($this->ddev->projects() as $project) {
+            // Only consider running projects
+            if ($project['status'] !== 'running') continue;
 
-            if ($now - $project['last_accessed_at'] > $delay) {
-                $output->writeln("Stopping $key...");
-                $output->write($this->ddev->stop($project_name));
+            // Skip the first project to always keep 1 project running
+            // in order to keep the ddev-router alive
+            if ($is_first_project) {
+                $is_first_project = false;
+                continue;
+            }
+
+            $host = parse_url($project['httpsurl'], PHP_URL_HOST);
+            $last_accessed_at = $this->redis->get($host)['last_accessed_at'];
+
+            if ($now - $last_accessed_at > $delay) {
+                $output->writeln("Stopping $host...");
+                $output->write($this->ddev->stop($project['name']));
             }
         }
 
