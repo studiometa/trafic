@@ -10,7 +10,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Scheduler\Attribute\AsCronTask;
 
-#[AsCronTask('*/5 * * * *')]
+#[AsCronTask('*/2 * * * *')]
 #[AsCommand(
     name: 'trafic:sync',
     description: 'Sync list of configured DDEV projects'
@@ -35,7 +35,12 @@ class SyncCommand extends Command
             $host = parse_url($project['httpsurl'], PHP_URL_HOST);
             $hosts[] = $this->redis->withPrefix($host);
 
-            if (!$this->redis->exists($host)) {
+            if ($this->redis->exists($host)) {
+                $output->writeln("Updating $host...");
+                $details = $this->redis->get($host);
+                $details['status'] = $project['status'];
+                $this->redis->set($host, $details);
+            } else {
                 $output->writeln("Adding $host...");
                 $this->redis->set(
                     $host,
