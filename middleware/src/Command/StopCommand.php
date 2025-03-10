@@ -28,7 +28,7 @@ class StopCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $now = time();
-        $delay = 3600 * 4;
+        $delay = 600;
 
         $is_first_project = true;
         foreach ($this->ddev->projects() as $project) {
