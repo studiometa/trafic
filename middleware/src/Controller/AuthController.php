@@ -23,8 +23,9 @@ class AuthController extends AbstractController
     {
         $host = $request->headers->get('x-forwarded-host');
 
+        // Try to start the project as early as possible in order
+        // to wait the least amount of time on the loading screen.
         $messageBus->dispatch(new MaybeStartProjectMessage($host));
-        $messageBus->dispatch(new UpdateLastAccessedAtMessage($host));
 
         // Available auth methods: IP, token or basic auth.
         $ip = $request->headers->get('cf-connecting-ip')
@@ -50,33 +51,39 @@ class AuthController extends AbstractController
         $allowed_subdomains = $config['subdomains'];
         $allowed_users      = $config['users'];
 
-        // @todo log access here, use redis?
+        $is_allowed = false;
 
         // IP detection
         if (in_array($ip, $allowed_ips)) {
-          return new Response('ip authorized');
+          $is_allowed = true;
         }
 
         // Authorize local IPs
         if (str_starts_with($ip, '127.0.') || str_starts_with($ip, '192.168.')) {
-          return new Response('local ip authorized');
+          $is_allowed = true;
         }
 
         // Header token detection
         if ($token && in_array($token, $allowed_tokens)) {
-          return new Response('token authorized');
+          $is_allowed = true;
         }
 
         // Subdomain detection
         if ($subdomain && in_array($subdomain, $allowed_subdomains)) {
-          return new Response('subdomain authorized');
+          $is_allowed = true;
         }
 
         $is_valid_user = ($allowed_users[$user] ?? null) === $password;
 
         // Basic auth detection
         if ($user && $password && $is_valid_user) {
-          return new Response('user authorized');
+          $is_allowed = true;
+        }
+
+
+        if ($is_allowed) {
+          $messageBus->dispatch(new UpdateLastAccessedAtMessage($host));
+          return new Response('authorized', Response::HTTP_OK);
         }
 
         return new Response(
