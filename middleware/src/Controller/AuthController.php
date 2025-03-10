@@ -33,7 +33,7 @@ class AuthController extends AbstractController
           ?? $request->server->get('REMOTE_ADDR')
           ?? null;
 
-        $token       = $request->headers->get('x-ddev-auth-token');
+        $token       = $request->headers->get('x-traffic-auth-token');
         $subdomain   = $host ? current(explode('.', $host)) : null;
         $user        = $request->headers->get('php-auth-user');
         $password    = $request->headers->get('php-auth-pw');
@@ -86,28 +86,5 @@ class AuthController extends AbstractController
                 'www-authenticate' => 'Basic realm="Identification"',
             ]
         );
-    }
-
-    private function maybeStartProjectInBackground(Redis $redis, ?string $host) {
-        if ($host && $redis->exists($host)) {
-          $project = json_decode($redis->get($host), true);
-          $project_name = $project['name'];
-          $project['last_accessed_at'] = time();
-          if ($project['status'] === 'stopped') {
-            echo "Starting $project_name..." . PHP_EOL;
-            $ssh = (new \Spatie\Ssh\Ssh('studiometa', '51.254.39.148'))->disableStrictHostKeyChecking();
-            $process = $ssh->execute("ddev start $project_name");
-            if ($process->isSuccessful()) {
-              echo "started $project_name!" . PHP_EOL;
-              echo $process->getOutput();
-            } else {
-              echo "failed to start $project_name" . PHP_EOL;
-              echo $process->getErrorOutput();
-            }
-          }
-
-          $redis->set($host, json_encode($project));
-          echo "updating $host..." . PHP_EOL;
-        }
     }
 }

@@ -10,7 +10,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
-    name: 'ddev:list',
+    name: 'traffic:list',
     description: 'List synced DDEV projects'
 )]
 class ListCommand extends Command

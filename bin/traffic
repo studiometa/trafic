@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o nounset
+set -o pipefail
+if [[ "${TRACE-0}" == "1" ]]; then
+	set -o xtrace
+fi
+
+if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
+	echo 'Usage: traffic <command>
+
+traffic list
+	List synced projects
+
+traffic restart
+	Restart services
+
+traffic update
+	Pull repository and run migrations
+'
+	exit
+fi
+
+cd "$(dirname "$0")"
+
+export TRAFFIC_BIN_DIR=$(pwd)
+export TRAFFIC_ROOT_DIR=$(realpath ..)
+
+main() {
+	CMD=${1:-list}
+
+	if [[ -f $TRAFFIC_BIN_DIR/commands/$CMD.sh ]]
+	then
+		source "$TRAFFIC_BIN_DIR/commands/$CMD.sh"
+	fi
+}
+
+main "$@"
+

@@ -11,7 +11,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
-    name: 'ddev:update-last-access',
+    name: 'traffic:update-last-access',
     description: 'Update last access time for a given DDEV project'
 )]
 class UpdateLastAccessCommand extends Command

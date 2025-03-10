@@ -9,7 +9,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
-    name: 'ddev:clear',
+    name: 'traffic:clear',
     description: 'Clear data from Redis'
 )]
 class ClearCommand extends Command

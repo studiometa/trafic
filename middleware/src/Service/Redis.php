@@ -5,7 +5,7 @@ namespace App\Service;
 use Predis\Client;
 
 class Redis {
-	public const PREFIX = 'ddev_server:';
+	public const PREFIX = 'traffic:';
 
 	public function __construct(
 		private Client $client = new Client(['host' => 'redis']),
