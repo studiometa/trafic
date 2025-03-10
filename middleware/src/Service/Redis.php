@@ -21,7 +21,7 @@ class Redis {
 
 	public function get(string $key): mixed {
 		$value = $this->client->get($this->withPrefix($key));
-		return json_decode($value, true);
+		return is_null($value) ? $value : json_decode($value, true);
 	}
 
 	public function set(string $key, mixed $value) {
