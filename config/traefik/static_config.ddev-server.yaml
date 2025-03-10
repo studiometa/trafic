@@ -2,19 +2,19 @@ entryPoints:
   http-443:
     http:
       middlewares:
-        - traffic-forward-auth-middleware@file
+        - trafic-forward-auth-middleware@file
 
   http-80:
     http:
       middlewares:
-        - traffic-forward-auth-middleware@file
+        - trafic-forward-auth-middleware@file
 
   http-2052:
     http:
       middlewares:
-        - traffic-forward-auth-middleware@file
+        - trafic-forward-auth-middleware@file
 
   http-2053:
     http:
       middlewares:
-        - traffic-forward-auth-middleware@file
+        - trafic-forward-auth-middleware@file

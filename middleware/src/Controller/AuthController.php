@@ -33,7 +33,7 @@ class AuthController extends AbstractController
           ?? $request->server->get('REMOTE_ADDR')
           ?? null;
 
-        $token       = $request->headers->get('x-traffic-auth-token');
+        $token       = $request->headers->get('x-trafic-auth-token');
         $subdomain   = $host ? current(explode('.', $host)) : null;
         $user        = $request->headers->get('php-auth-user');
         $password    = $request->headers->get('php-auth-pw');

@@ -12,7 +12,7 @@ use Symfony\Component\Scheduler\Attribute\AsCronTask;
 
 #[AsCronTask('*/5 * * * *')]
 #[AsCommand(
-    name: 'traffic:sync',
+    name: 'trafic:sync',
     description: 'Sync list of configured DDEV projects'
 )]
 class SyncCommand extends Command

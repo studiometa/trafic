@@ -1,4 +1,4 @@
-# Traffic
+# Trafic
 
 A DDEV add-on to configure a server for preview environments with auth and scale to zero features.
 

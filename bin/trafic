@@ -8,15 +8,15 @@ if [[ "${TRACE-0}" == "1" ]]; then
 fi
 
 if [[ "${1-}" =~ ^-*h(elp)?$ ]]; then
-	echo 'Usage: traffic <command>
+	echo 'Usage: trafic <command>
 
-traffic list
+trafic list
 	List synced projects
 
-traffic restart
+trafic restart
 	Restart services
 
-traffic update
+trafic update
 	Pull repository and run migrations
 '
 	exit
@@ -24,15 +24,15 @@ fi
 
 cd "$(dirname "$0")"
 
-export TRAFFIC_BIN_DIR=$(pwd)
-export TRAFFIC_ROOT_DIR=$(realpath ..)
+export TRAFIC_BIN_DIR=$(pwd)
+export TRAFIC_ROOT_DIR=$(realpath ..)
 
 main() {
 	CMD=${1:-list}
 
-	if [[ -f $TRAFFIC_BIN_DIR/commands/$CMD.sh ]]
+	if [[ -f $TRAFIC_BIN_DIR/commands/$CMD.sh ]]
 	then
-		source "$TRAFFIC_BIN_DIR/commands/$CMD.sh"
+		source "$TRAFIC_BIN_DIR/commands/$CMD.sh"
 	fi
 }
 

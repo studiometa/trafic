@@ -1,9 +1,9 @@
 # Change shell for ubuntu user
 sudo chsh -s $(which zsh) ubuntu
 sudo usermod -aG docker ubuntu
-sudo cp $TRAFFIC_ROOT_DIR/config/zshrc /home/ubuntu/.zshrc && sudo chown ubuntu:ubuntu /home/ubuntu/.zshrc
-sudo cp $TRAFFIC_ROOT_DIR/config/gitconfig /home/ubuntu/.gitconfig && sudo chown ubuntu:ubuntu /home/ubuntu/.gitconfig
-sudo cp $TRAFFIC_ROOT_DIR/config/vimrc /home/ubuntu/.vimrc && sudo chown ubuntu:ubuntu /home/ubuntu/.vimrc
+sudo cp $TRAFIC_ROOT_DIR/config/zshrc /home/ubuntu/.zshrc && sudo chown ubuntu:ubuntu /home/ubuntu/.zshrc
+sudo cp $TRAFIC_ROOT_DIR/config/gitconfig /home/ubuntu/.gitconfig && sudo chown ubuntu:ubuntu /home/ubuntu/.gitconfig
+sudo cp $TRAFIC_ROOT_DIR/config/vimrc /home/ubuntu/.vimrc && sudo chown ubuntu:ubuntu /home/ubuntu/.vimrc
 sudo su - ubuntu -c "zsh /home/ubuntu/.zshrc"
 
 # Create ddev user
@@ -11,9 +11,9 @@ sudo useradd --create-home ddev || echo "ddev user already exists"
 sudo usermod -aG docker ddev
 sudo chsh -s $(which zsh) ddev
 sudo echo "ddev ALL= NOPASSWD:SETENV: /usr/bin/mkcert, /usr/bin/ddev, /usr/bin/hostname" | sudo tee /etc/sudoers.d/100-ddev > /dev/null
-sudo cp $TRAFFIC_ROOT_DIR/config/zshrc /home/ddev/.zshrc && sudo chown ddev:ddev /home/ddev/.zshrc
-sudo cp $TRAFFIC_ROOT_DIR/config/gitconfig /home/ddev/.gitconfig && sudo chown ddev:ddev /home/ddev/.gitconfig
-sudo cp $TRAFFIC_ROOT_DIR/config/vimrc /home/ddev/.vimrc && sudo chown ddev:ddev /home/ddev/.vimrc
+sudo cp $TRAFIC_ROOT_DIR/config/zshrc /home/ddev/.zshrc && sudo chown ddev:ddev /home/ddev/.zshrc
+sudo cp $TRAFIC_ROOT_DIR/config/gitconfig /home/ddev/.gitconfig && sudo chown ddev:ddev /home/ddev/.gitconfig
+sudo cp $TRAFIC_ROOT_DIR/config/vimrc /home/ddev/.vimrc && sudo chown ddev:ddev /home/ddev/.vimrc
 sudo su - ddev -c "zsh /home/ddev/.zshrc"
 
 # Generate an SSH key for the ddev user

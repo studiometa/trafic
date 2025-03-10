@@ -1,12 +1,12 @@
 services:
   middleware:
     build: .
-    container_name: traffic-middleware
+    container_name: trafic-middleware
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
       - REDIS_HOST=redis
     networks:
-      - traffic-network
+      - trafic-network
       - ddev_default
     ports:
       - "127.0.0.1:8080:80"
@@ -17,12 +17,12 @@ services:
 
   queue:
     image: webdevops/php:8.3
-    container_name: traffic-queue
+    container_name: trafic-queue
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
       - REDIS_HOST=redis
     networks:
-      - traffic-network
+      - trafic-network
     volumes:
       - .:/app
     restart: always
@@ -31,19 +31,19 @@ services:
 
   redis:
     image: redis:7.4.2
-    container_name: traffic-redis
+    container_name: trafic-redis
     networks:
-      - traffic-network
+      - trafic-network
     ports:
       - "6379:6379"
     volumes:
-      - traffic-redis-data:/data
+      - trafic-redis-data:/data
 
 volumes:
-  traffic-redis-data: {}
+  trafic-redis-data: {}
 
 networks:
-  traffic-network:
+  trafic-network:
     driver: bridge
   ddev_default:
     external: true

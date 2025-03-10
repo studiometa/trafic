@@ -12,7 +12,7 @@ use Symfony\Component\Scheduler\Attribute\AsCronTask;
 
 #[AsCronTask('* * * * *')]
 #[AsCommand(
-    name: 'traffic:stop',
+    name: 'trafic:stop',
     description: 'Stop stale DDEV projects'
 )]
 class StopCommand extends Command

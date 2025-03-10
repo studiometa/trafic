@@ -9,31 +9,31 @@ http:
   routers:
     ddev-errors-middleware-http:
       rule: HostRegexp(`{host:.+}`)
-      service: traffic-middleware
+      service: trafic-middleware
       tls: false
       priority: 1
       entrypoints:
         - http-80
     ddev-errors-middleware-https:
       rule: HostRegexp(`{host:.+}`)
-      service: traffic-middleware
+      service: trafic-middleware
       tls: true
       priority: 1
       entrypoints:
         - http-443
   middlewares:
-    traffic-forward-auth-middleware:
+    trafic-forward-auth-middleware:
       forwardAuth:
-        address: http://traffic-middleware/__auth__
-    traffic-errors-middleware:
+        address: http://trafic-middleware/__auth__
+    trafic-errors-middleware:
       errors:
         status:
           - "400-599"
-        service: traffic-middleware
+        service: trafic-middleware
         query: "/?status={status}"
 
   services:
-    traffic-middleware:
+    trafic-middleware:
       loadbalancer:
         servers:
-          - url: http://traffic-middleware:80
+          - url: http://trafic-middleware:80
