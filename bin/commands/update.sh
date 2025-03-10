@@ -19,4 +19,4 @@ done
 
 cd -
 
-source ./restart.sh
+source $TRAFFIC_BIN_DIR/commands/restart.sh
