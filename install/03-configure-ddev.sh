@@ -13,7 +13,7 @@ sudo su - ddev -c "
 
 # Add the custom Traefik configurations
 sudo mkdir -p /home/ddev/.config/ddev/traefik/config/
-sudo cp $TRAFIC_ROOT_DIR/config/traefik/static_config.ddev-server.yaml /home/ddev/.config/ddev/traefik/
-sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/static_config.ddev-server.yaml
+sudo cp $TRAFIC_ROOT_DIR/config/traefik/static_config.trafic.yaml /home/ddev/.config/ddev/traefik/
+sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/static_config.trafic.yaml
 sudo cp $TRAFIC_ROOT_DIR/config/traefik/default_config.yaml /home/ddev/.config/ddev/traefik/config/
 sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/config/default_config.yaml
