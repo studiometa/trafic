@@ -30,12 +30,14 @@ class UpdateLastAccessCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $host = $input->getFirstArgument();
+        $host = $input->getArgument('project');
 
         if (!$host || !$this->redis->exists($host)) {
+            $output->writeln("Invalid $host");
             return Command::INVALID;
         }
 
+        $output->writeln("Updating $host...");
         $project = $this->redis->get($host);
         $project['last_accessed_at'] = time();
         $this->redis->set($host, $project);
