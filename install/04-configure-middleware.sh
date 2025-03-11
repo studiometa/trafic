@@ -6,6 +6,7 @@ sudo mkdir -p /home/ddev/.ssh
 echo "# trafic
 $(cat $TRAFIC_ROOT_DIR/middleware/ssh_key.pub)
 " | sudo tee -a /home/ddev/.ssh/authorized_keys2
+sudo chown ddev:ddev /home/ddev/.ssh/authorized_keys2
 
 # Condigure server external IP
 EXTERNAL_IP=$(curl --silent https://ipv4.icanhazip.com/)
