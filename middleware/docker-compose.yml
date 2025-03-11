@@ -13,8 +13,6 @@ services:
     post_start:
       - command: composer install --no-dev --optimize-autoloader --prefer-dist
         user: application
-    ports:
-      - "127.0.0.1:8080:80"
     restart: always
     working_dir: /app
 
