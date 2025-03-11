@@ -15,6 +15,6 @@ for FILE in $TRAFIC_ROOT_DIR/migrations/*.sh; do
 	fi
 done
 
-cd -
+cd - > /dev/null
 
 source $TRAFIC_BIN_DIR/commands/restart.sh
