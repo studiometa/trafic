@@ -18,3 +18,7 @@ sudo su - ddev -c "zsh /home/ddev/.zshrc"
 
 # Generate an SSH key for the ddev user
 sudo su - ddev -c "ssh-keygen -t ed25519 -a 32 -f ~/.ssh/id_ed25519 -N ''"
+
+# Allow SSH access to ddev user
+sudo cat /home/ubuntu/.ssh/authorized_keys | sudo tee /home/ddev/.ssh/authorized_keys
+sudo chown ddev:ddev /home/ddev/.ssh/authorized_keys
