@@ -8,7 +8,7 @@ class Redis {
 	public const PREFIX = 'trafic:';
 
 	public function __construct(
-		private Client $client = new Client(['host' => 'redis']),
+		private Client $client = new Client(['host' => 'trafic-redis']),
 	) {}
 
 	public function withPrefix(string $key): string {
