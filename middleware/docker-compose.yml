@@ -1,6 +1,8 @@
 services:
   middleware:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: trafic-middleware
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
