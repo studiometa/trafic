@@ -42,7 +42,8 @@ services:
       - trafic-redis-data:/data
 
 volumes:
-  trafic-redis-data: {}
+  trafic-redis-data:
+    name: trafic-redis-data
 
 networks:
   trafic-network:
