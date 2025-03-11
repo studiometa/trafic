@@ -20,7 +20,6 @@ The install script will :
 ## To-do
 
 - [ ] update architecture doc
-- [ ] setup unattended-upgrade
 
 ## Architecture
 
