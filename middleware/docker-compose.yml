@@ -1,9 +1,6 @@
 services:
   middleware:
-    build:
-      context: .
-      network: host
-      dockerfile: app.Dockerfile
+    image: webdevops/php-nginx:8.3
     container_name: trafic-middleware
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
@@ -11,21 +8,20 @@ services:
     networks:
       - trafic-network
       - ddev_default
-    ports:
-      - "127.0.0.1:8080:80"
     volumes:
       - .:/app
+    post_start:
+      - command: composer install --no-dev --optimize-autoloader --prefer-dist
+        user: application
+    ports:
+      - "127.0.0.1:8080:80"
     restart: always
     working_dir: /app
 
   queue:
-    build:
-      context: .
-      network: host
-      dockerfile: queue.Dockerfile
+    image: webdevops/php:8.3
     container_name: trafic-queue
     environment:
-      - WEB_DOCUMENT_ROOT=/app/public
       - REDIS_HOST=redis
     networks:
       - trafic-network
