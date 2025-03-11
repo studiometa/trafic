@@ -3,6 +3,7 @@
 # a limited set of open ports on its router.
 # @see https://developers.cloudflare.com/fundamentals/reference/network-ports/
 sudo su - ddev -c "
+	export XDG_CONFIG_HOME=/home/ddev/.config
 	ddev config global \
 		--project-tld=${DDEV_PROJECT_TLD:-ddev.site} \
 		--omit-containers=ddev-ssh-agent \
