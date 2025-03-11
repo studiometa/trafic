@@ -18,3 +18,6 @@ sudo cp $TRAFIC_ROOT_DIR/config/traefik/static_config.trafic.yaml /home/ddev/.co
 sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/static_config.trafic.yaml
 sudo cp $TRAFIC_ROOT_DIR/config/traefik/default_config.yaml /home/ddev/.config/ddev/traefik/config/
 sudo chown ddev:ddev /home/ddev/.config/ddev/traefik/config/default_config.yaml
+
+# Install mkcert CA for ddev user
+sudo su - ddev -c "sudo mkcert -install"
