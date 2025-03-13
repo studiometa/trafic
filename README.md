@@ -19,6 +19,8 @@ The install script will :
 
 ## To-do
 
+- [ ] make stop delay configurable (per project?)
+- [ ] improve configuration of auth.config.php
 - [ ] update architecture doc
 
 ## Architecture
