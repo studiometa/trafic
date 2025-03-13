@@ -3,6 +3,6 @@
 {% block body %}
 	<main>
 		<p><b>{{ status }}</b></p>
-		<p>Oops, an error occured, try again later.</p>
+		<p>{{ message ?? 'Oops, an error occured, try again later.' }}</p>
 	</main>
 {% endblock %}

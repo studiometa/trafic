@@ -40,8 +40,12 @@ class AuthController extends AbstractController
         $password    = $request->headers->get('php-auth-pw');
         $config_path = dirname(__DIR__, 2) . '/auth.config.php';
 
+        $response = new Response('Not authorized', Response::HTTP_UNAUTHORIZED);
+
         if (!file_exists($config_path)) {
-          return new Response('missing auth.config.php configuration file', 409);
+          $response->setStatusCode(Response::HTTP_CONFLICT);
+          $response->setContent('Missing auth configuration file');
+          return $this->render('pages/error.html.twig', $this->getContext($response), $response);
         }
 
         // Get configured credentials.
@@ -83,15 +87,17 @@ class AuthController extends AbstractController
 
         if ($is_allowed) {
           $messageBus->dispatch(new UpdateLastAccessedAtMessage($host));
-          return new Response('authorized', Response::HTTP_OK);
+          return new Response('Authorized', Response::HTTP_OK);
         }
 
-        return new Response(
-            'not authorized',
-            Response::HTTP_UNAUTHORIZED,
-            [
-                'www-authenticate' => 'Basic realm="Identification"',
-            ]
-        );
+        $response->headers->set('www-authenticate', 'Basic realm="Identification"');
+        return $this->render('pages/error.html.twig', $this->getContext($response), $response);
+    }
+
+    private function getContext(Response $response):array {
+      return [
+        'status'  => $response->getStatusCode(),
+        'message' => $response->getContent(),
+      ];
     }
 }
