@@ -1,6 +1,6 @@
 services:
   middleware:
-    image: webdevops/php-nginx:8.3
+    image: webdevops/php-apache:8.3
     container_name: trafic-middleware
     environment:
       - WEB_DOCUMENT_ROOT=/app/public
