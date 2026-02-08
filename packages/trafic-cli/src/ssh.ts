@@ -62,8 +62,12 @@ export async function test(
   options: SSHOptions,
   command: string,
 ): Promise<boolean> {
-  const result = await exec(options, command);
-  return result.exitCode === 0;
+  try {
+    const result = await exec(options, command);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
