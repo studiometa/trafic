@@ -1,0 +1,57 @@
+{
+  "name": "@studiometa/trafic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DDEV preview environments on any Linux server",
+  "keywords": [
+    "ddev",
+    "deploy",
+    "preview",
+    "scale-to-zero",
+    "traefik",
+    "vps"
+  ],
+  "license": "MIT",
+  "author": "Studio Meta",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/studiometa/trafic"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:ci": "npm run test:ci --workspaces --if-present",
+    "lint": "oxlint packages/",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules",
+    "version:patch": "npm version --include-workspace-root --workspaces --no-git-tag-version patch",
+    "version:minor": "npm version --include-workspace-root --workspaces --no-git-tag-version minor",
+    "version:major": "npm version --include-workspace-root --workspaces --no-git-tag-version major",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^16.0.0",
+    "oxlint": "^1.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "oxlint --fix"
+    ]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
