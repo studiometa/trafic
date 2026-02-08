@@ -1,0 +1,86 @@
+# GitHub Actions — Deploy to DDEV server with trafic
+#
+# Required secrets:
+#   SSH_PRIVATE_KEY — SSH key with access to the server
+#
+# Required variables:
+#   SSH_HOST — Server hostname or IP
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: dist/
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: dist/
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - run: >-
+          npx @studiometa/trafic-cli deploy
+          --host ${{ vars.SSH_HOST }}
+          --name ${{ github.event.repository.name }}
+          --sync "dist/"
+          --script "composer install --no-dev"
+
+  deploy_preview:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+          path: dist/
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - run: >-
+          npx @studiometa/trafic-cli deploy
+          --host ${{ vars.SSH_HOST }}
+          --name ${{ github.event.repository.name }}
+          --preview ${{ github.event.pull_request.number }}
+          --sync "dist/"
+          --script "composer install --no-dev"
+
+  destroy_preview:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - run: >-
+          npx @studiometa/trafic-cli destroy
+          --host ${{ vars.SSH_HOST }}
+          --name ${{ github.event.repository.name }}
+          --preview ${{ github.event.pull_request.number }}
