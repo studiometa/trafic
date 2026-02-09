@@ -24,8 +24,8 @@ export interface AgentConfig {
  * Authentication configuration
  */
 export interface AuthConfig {
-  /** Default policy: "allow" | "deny" | "basic" */
-  defaultPolicy: "allow" | "deny" | "basic";
+  /** Default policy: "allow" | "deny" | "basic" | "token" */
+  defaultPolicy: "allow" | "deny" | "basic" | "token";
   /** IP addresses or CIDR ranges to always allow */
   allowedIps: string[];
   /** Bearer tokens to allow */

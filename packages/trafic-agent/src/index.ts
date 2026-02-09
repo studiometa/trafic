@@ -48,6 +48,14 @@ export {
   cleanOldLogs,
 } from "./utils/db.js";
 
+// Project config utilities
+export {
+  loadProjectConfig,
+  shouldNeverStop,
+  getIdleTimeoutMs,
+} from "./utils/project-config.js";
+export type { ProjectConfig } from "./utils/project-config.js";
+
 // Tasks
 export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
 

@@ -118,9 +118,10 @@ export function validateConfig(config: AgentConfig): string[] {
   if (
     config.auth.defaultPolicy !== "allow" &&
     config.auth.defaultPolicy !== "deny" &&
-    config.auth.defaultPolicy !== "basic"
+    config.auth.defaultPolicy !== "basic" &&
+    config.auth.defaultPolicy !== "token"
   ) {
-    errors.push('auth.default_policy must be "allow", "deny", or "basic"');
+    errors.push('auth.default_policy must be "allow", "deny", "basic", or "token"');
   }
 
   return errors;

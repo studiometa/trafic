@@ -73,7 +73,15 @@ describe("validateConfig", () => {
     };
     const errors = validateConfig(config);
     expect(errors).toContain(
-      'auth.default_policy must be "allow", "deny", or "basic"',
+      'auth.default_policy must be "allow", "deny", "basic", or "token"',
     );
+  });
+
+  it("accepts token as default policy", () => {
+    const config = {
+      ...validConfig,
+      auth: { ...validConfig.auth, defaultPolicy: "token" as const },
+    };
+    expect(validateConfig(config)).toEqual([]);
   });
 });

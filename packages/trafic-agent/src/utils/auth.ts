@@ -216,6 +216,15 @@ function applyDefaultPolicy(
       return { allowed: false, reason: "default" };
     }
 
+    case "token": {
+      if (!authorization) return { allowed: false, reason: "default" };
+      const token = parseBearerToken(authorization);
+      if (token && config.tokens.includes(token)) {
+        return { allowed: true, reason: "token" };
+      }
+      return { allowed: false, reason: "default" };
+    }
+
     default:
       return { allowed: false, reason: "default" };
   }

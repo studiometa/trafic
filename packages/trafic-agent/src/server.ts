@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig } from "./types.js";
+import type { AgentConfig, AuthConfig } from "./types.js";
 import { checkAuth } from "./utils/auth.js";
 import {
   loadProjectList,
@@ -18,6 +18,7 @@ import {
   setProjectStatus,
   getProject,
 } from "./utils/db.js";
+import { loadProjectConfig } from "./utils/project-config.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +26,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let config: AgentConfig;
 let projectList: Map<string, string>;
 let hostnameIndex: Map<string, string>;
+// Cache of per-project configs (project name -> config)
+const projectConfigs = new Map<string, ReturnType<typeof loadProjectConfig>>();
 
 /**
  * Load HTML template
@@ -39,6 +42,22 @@ function loadTemplate(name: string): string {
 }
 
 /**
+ * Get effective auth config for a project (merges global + per-project)
+ */
+function getEffectiveAuthConfig(projectName: string | undefined): AuthConfig {
+  if (!projectName) return config.auth;
+
+  const projectConfig = projectConfigs.get(projectName);
+  if (!projectConfig?.auth_policy) return config.auth;
+
+  // Override default policy with project-specific policy
+  return {
+    ...config.auth,
+    defaultPolicy: projectConfig.auth_policy,
+  };
+}
+
+/**
  * Handle forward auth requests from Traefik
  * Traefik sends the original request headers, we return 200 (allow) or 401 (deny)
  */
@@ -48,6 +67,12 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
   const authorization = req.headers["authorization"];
   const path = req.headers["x-forwarded-uri"] as string ?? "/";
 
+  // Find project from hostname
+  const projectName = hostnameIndex.get(hostname);
+
+  // Get effective auth config (global + per-project overrides)
+  const authConfig = getEffectiveAuthConfig(projectName);
+
   const result = checkAuth(
     {
       hostname,
@@ -55,11 +80,8 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
       authorization,
       forwardedFor: ip,
     },
-    config.auth,
+    authConfig,
   );
-
-  // Find project from hostname
-  const projectName = hostnameIndex.get(hostname);
 
   if (result.allowed) {
     // Log access and update last access time
@@ -199,12 +221,23 @@ async function handleRequest(
 }
 
 /**
- * Reload project list
+ * Reload project list and their configs
  */
 function reloadProjects(): void {
   projectList = loadProjectList(config.projectListPath);
   hostnameIndex = buildHostnameIndex(projectList, config.tld);
-  console.log(`Loaded ${projectList.size} projects`);
+
+  // Load per-project configs
+  projectConfigs.clear();
+  for (const [name, projectDir] of projectList) {
+    const projectConfig = loadProjectConfig(projectDir);
+    if (projectConfig.auth_policy || projectConfig.idle_timeout) {
+      projectConfigs.set(name, projectConfig);
+      console.log(`  ${name}: auth=${projectConfig.auth_policy ?? "default"}, idle=${projectConfig.idle_timeout ?? "default"}`);
+    }
+  }
+
+  console.log(`Loaded ${projectList.size} projects (${projectConfigs.size} with custom config)`);
 }
 
 /**
