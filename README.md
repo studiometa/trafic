@@ -18,16 +18,15 @@ Trafic turns a VPS into a preview server for your web projects. It handles authe
 
 ## How it works
 
-```
-HTTPS request
-  ↓
-Traefik (DDEV router)
-  ├── forwardAuth → trafic agent (auth check)
-  │     ├── OK (200) → route to DDEV project
-  │     └── KO (401) → basic auth prompt
-  └── errors middleware (502) → trafic agent
-        ├── known project → waiting page + auto-start
-        └── unknown project → error page
+```mermaid
+flowchart TD
+  request[HTTPS request] --> traefik[Traefik / DDEV router]
+  traefik --> forwardAuth[forwardAuth → trafic agent]
+  forwardAuth --> |200 OK| ddev-web[DDEV project]
+  forwardAuth --> |401| basic-auth[Basic auth prompt]
+  traefik --> |502 error| errors[errors middleware → trafic agent]
+  errors --> |known project| waiting[Waiting page + auto-start]
+  errors --> |unknown project| error-page[Error page]
 ```
 
 ## Quick start
