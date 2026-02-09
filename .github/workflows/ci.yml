@@ -32,6 +32,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:ci
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          flags: unit
+          fail_ci_if_error: false
 
   integration:
     name: Integration Tests
@@ -46,3 +51,8 @@ jobs:
       - run: npm run build
       - name: Run integration tests
         run: npm run test:integration:ci --workspace=@studiometa/trafic-cli
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          flags: integration
+          fail_ci_if_error: false
