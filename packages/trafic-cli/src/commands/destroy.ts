@@ -7,8 +7,9 @@ import { resolveProjectName } from "../types.js";
  * Destroy a DDEV project on a remote server.
  *
  * Steps:
- * 1. Stop and delete the DDEV project
- * 2. Remove the project directory
+ * 1. Backup the database (unless --no-backup)
+ * 2. Stop and delete the DDEV project
+ * 3. Remove the project directory
  */
 export async function destroy(options: DestroyOptions): Promise<void> {
   resetSteps();
@@ -28,7 +29,19 @@ export async function destroy(options: DestroyOptions): Promise<void> {
     return;
   }
 
-  // 1. Stop and delete DDEV project
+  // 1. Backup database before destroy
+  if (!options.noBackup) {
+    step("Backup database before destroy");
+
+    try {
+      await ssh.exec(options, `trafic-agent backup --name ${projectName}`);
+    } catch (err) {
+      warn("Backup failed — continuing with destroy");
+      info(String(err));
+    }
+  }
+
+  // 2. Stop and delete DDEV project
   step("Delete DDEV project");
 
   try {
