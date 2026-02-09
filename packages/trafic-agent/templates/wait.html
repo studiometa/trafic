@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Starting {{project}}...</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+    .spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 2rem;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    p {
+      opacity: 0.8;
+      font-size: 0.9rem;
+    }
+    .project {
+      font-family: monospace;
+      background: rgba(255,255,255,0.2);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <h1>Starting your environment...</h1>
+    <p><span class="project">{{project}}</span> is waking up</p>
+    <p style="margin-top: 1rem; font-size: 0.8rem;">This page will refresh automatically</p>
+  </div>
+  <script>
+    // Poll for status
+    const project = '{{project}}';
+    const hostname = '{{hostname}}';
+    
+    async function checkStatus() {
+      try {
+        const res = await fetch(`/__status__?project=${encodeURIComponent(project)}`);
+        const data = await res.json();
+        if (data.ready) {
+          window.location.reload();
+        }
+      } catch (e) {
+        // Ignore errors, keep polling
+      }
+    }
+    
+    // Check every 2 seconds
+    setInterval(checkStatus, 2000);
+    
+    // Also reload after 30 seconds as fallback
+    setTimeout(() => window.location.reload(), 30000);
+  </script>
+</body>
+</html>
