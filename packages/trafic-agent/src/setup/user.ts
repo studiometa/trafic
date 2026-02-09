@@ -29,11 +29,17 @@ export function createDdevUser(): void {
   exec("chmod 700 /home/ddev/.ssh");
   exec("chown ddev:ddev /home/ddev/.ssh");
 
-  // Note: ddev user doesn't need sudo
-  // - Docker access via docker group membership
-  // - DDEV runs as regular user
-  // - Agent runs as systemd service (root manages it)
-  success("User ddev configured (no sudo needed)");
+  // Note: ddev user doesn't need sudo when DNS is properly configured
+  // - Docker access: via docker group membership
+  // - DDEV: runs as regular user, no sudo needed
+  // - Agent: runs as systemd service (root manages it)
+  // - Hostname resolution: via DNS (*.tld → server IP), not /etc/hosts
+  //
+  // If DNS is NOT configured for the custom TLD, DDEV will try to edit
+  // /etc/hosts which requires sudo. In that case, you'd need:
+  //   echo "ddev ALL=(ALL) NOPASSWD: /usr/local/bin/ddev-hostname" >> /etc/sudoers.d/ddev
+  // But it's better to just configure DNS properly.
+  success("User ddev configured (no sudo needed with proper DNS)");
 }
 
 /**

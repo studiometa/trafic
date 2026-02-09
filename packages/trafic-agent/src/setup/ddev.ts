@@ -23,6 +23,14 @@ export function installDdev(): void {
 
 /**
  * Configure DDEV global settings for production
+ *
+ * Note on DNS and /etc/hosts:
+ * When using a custom TLD (not ddev.site), DDEV may try to edit /etc/hosts
+ * if it can't resolve project hostnames via DNS. To avoid this:
+ * 1. Configure DNS so *.{tld} resolves to the server's IP (recommended)
+ * 2. Or install dnsmasq for local wildcard DNS resolution
+ *
+ * With proper DNS, DDEV won't need sudo for hostname management.
  */
 export function configureDdev(tld: string, email?: string): void {
   step("Configure DDEV");
@@ -31,6 +39,8 @@ export function configureDdev(tld: string, email?: string): void {
   const ddevCmd = (cmd: string) => `su - ddev -c '${cmd}'`;
 
   // Configure global settings
+  // use_dns_when_possible=true (default) means DDEV uses DNS resolution
+  // and only falls back to /etc/hosts if DNS fails
   exec(
     ddevCmd(
       `ddev config global --project-tld=${tld} --router-http-port=80 --router-https-port=443 --use-letsencrypt=${email ? "true" : "false"} ${email ? `--letsencrypt-email=${email}` : ""}`,
@@ -38,6 +48,7 @@ export function configureDdev(tld: string, email?: string): void {
   );
 
   success(`DDEV configured with TLD: ${tld}`);
+  info(`Ensure DNS is configured: *.${tld} → server IP`);
 
   if (email) {
     success(`Let's Encrypt enabled with email: ${email}`);
@@ -51,6 +62,52 @@ export function configureDdev(tld: string, email?: string): void {
   exec(ddevCmd("ddev start"));
 
   success("DDEV router started");
+}
+
+/**
+ * Install dnsmasq for local DNS resolution (optional)
+ * This allows the server itself to resolve *.{tld} hostnames
+ * without needing to edit /etc/hosts for each project
+ */
+export function installDnsmasq(tld: string): void {
+  step("Install dnsmasq for local DNS");
+
+  exec("apt-get update && apt-get install -y dnsmasq", { silent: true });
+
+  // Get server's public IP
+  const serverIp = exec(
+    "curl -4 -s ifconfig.me || hostname -I | awk '{print $1}'",
+    { silent: true },
+  )?.trim() || "127.0.0.1";
+
+  // Configure dnsmasq to resolve *.{tld} to server IP
+  const { writeFileSync } = require("node:fs");
+  const dnsmasqConfig = `# Trafic: Local DNS for DDEV projects
+# Resolve all *.${tld} to this server
+address=/${tld}/${serverIp}
+
+# Don't read /etc/resolv.conf
+no-resolv
+
+# Use upstream DNS for everything else
+server=1.1.1.1
+server=8.8.8.8
+
+# Listen on localhost only
+listen-address=127.0.0.1
+bind-interfaces
+`;
+
+  writeFileSync("/etc/dnsmasq.d/trafic.conf", dnsmasqConfig);
+
+  // Configure system to use local dnsmasq
+  exec("systemctl restart dnsmasq");
+  exec("systemctl enable dnsmasq");
+
+  // Update resolv.conf to use local DNS first
+  info("Configure /etc/resolv.conf to use 127.0.0.1 as primary DNS");
+
+  success(`dnsmasq configured: *.${tld} → ${serverIp}`);
 }
 
 /**
