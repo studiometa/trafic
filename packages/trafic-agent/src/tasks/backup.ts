@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, existsSync, readdirSync, statSync, rmSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProjectList, startProject, stopProject, getProjectInfo } from "../utils/ddev.js";
+import { loadProjectList, startProject, getProjectInfo } from "../utils/ddev.js";
 import type { AgentConfig, BackupConfig, BackupResult, BackupEntry } from "../types.js";
 
 /**
@@ -21,29 +21,33 @@ function ensureDateDir(localDir: string, date: string): string {
 }
 
 /**
- * Export a single project's database using ddev export-db
+ * Export a single project's database using ddev export-db.
+ * The project must be running. Use `forceStart` to start stopped projects
+ * (only for explicit manual requests, not for scheduled backups).
  */
 export function backupProjectDb(
   projectName: string,
   projectDir: string,
   outputDir: string,
+  forceStart = false,
 ): BackupResult {
   const outputFile = join(outputDir, `${projectName}.sql.gz`);
 
-  // Check if the project is running, start it if needed
   const info = getProjectInfo(projectName);
-  const wasStopped = info?.status !== "running";
 
-  try {
-    if (wasStopped) {
-      console.log(`  Starting ${projectName} for backup...`);
-      const started = startProject(projectName);
-      if (!started) {
-        return { project: projectName, success: false, error: "Failed to start project" };
-      }
+  if (info?.status !== "running") {
+    if (!forceStart) {
+      return { project: projectName, success: false, error: "Project is not running (skipped)" };
     }
 
-    // Export database
+    console.log(`  Starting ${projectName} for backup...`);
+    const started = startProject(projectName);
+    if (!started) {
+      return { project: projectName, success: false, error: "Failed to start project" };
+    }
+  }
+
+  try {
     execSync(`ddev export-db --gzip --file="${outputFile}"`, {
       cwd: projectDir,
       encoding: "utf-8",
@@ -55,12 +59,6 @@ export function backupProjectDb(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { project: projectName, success: false, error: message };
-  } finally {
-    // Stop the project again if it was stopped before backup
-    if (wasStopped) {
-      console.log(`  Stopping ${projectName} after backup...`);
-      stopProject(projectName);
-    }
   }
 }
 
@@ -88,12 +86,30 @@ export function backupAgentData(config: AgentConfig, outputDir: string): void {
 }
 
 /**
- * Run backup for all projects (or a specific one)
+ * Options for runBackup
+ */
+export interface RunBackupOptions {
+  /** Backup a specific project (default: all) */
+  projectName?: string;
+  /** Start stopped projects for backup (default: false, only for explicit CLI requests) */
+  forceStart?: boolean;
+}
+
+/**
+ * Run backup for all projects (or a specific one).
+ *
+ * By default, only running projects are backed up. Stopped projects are
+ * skipped because starting them is resource-intensive. Instead, projects
+ * are backed up automatically before being stopped by the idle scheduler.
+ *
+ * Use `forceStart: true` for explicit manual backup requests
+ * (e.g., `trafic-agent backup --name my-app`).
  */
 export function runBackup(
   config: AgentConfig,
-  projectName?: string,
+  options: RunBackupOptions = {},
 ): BackupResult[] {
+  const { projectName, forceStart = false } = options;
   const date = formatDate(new Date());
   const outputDir = ensureDateDir(config.backup.localDir, date);
   const results: BackupResult[] = [];
@@ -104,7 +120,7 @@ export function runBackup(
   const projects = loadProjectList(config.projectListPath);
 
   if (projectName) {
-    // Backup a specific project
+    // Backup a specific project — forceStart for explicit requests
     const projectDir = projects.get(projectName);
     if (!projectDir) {
       results.push({ project: projectName, success: false, error: "Project not found" });
@@ -112,14 +128,14 @@ export function runBackup(
     }
 
     console.log(`Backing up: ${projectName}`);
-    results.push(backupProjectDb(projectName, projectDir, outputDir));
+    results.push(backupProjectDb(projectName, projectDir, outputDir, forceStart));
   } else {
-    // Backup all projects
+    // Backup all projects — only running ones unless forceStart
     console.log(`Backing up ${projects.size} projects...`);
 
     for (const [name, projectDir] of projects) {
       console.log(`Backing up: ${name}`);
-      results.push(backupProjectDb(name, projectDir, outputDir));
+      results.push(backupProjectDb(name, projectDir, outputDir, forceStart));
     }
 
     // Also backup agent data when doing a full backup
@@ -128,10 +144,11 @@ export function runBackup(
 
   // Print summary
   const succeeded = results.filter((r) => r.success).length;
-  const failed = results.filter((r) => !r.success).length;
-  console.log(`\nBackup complete: ${succeeded} succeeded, ${failed} failed`);
+  const skipped = results.filter((r) => !r.success && r.error?.includes("skipped")).length;
+  const failed = results.filter((r) => !r.success && !r.error?.includes("skipped")).length;
+  console.log(`\nBackup complete: ${succeeded} succeeded, ${skipped} skipped, ${failed} failed`);
 
-  for (const result of results.filter((r) => !r.success)) {
+  for (const result of results.filter((r) => !r.success && !r.error?.includes("skipped"))) {
     console.error(`  ✗ ${result.project}: ${result.error}`);
   }
 

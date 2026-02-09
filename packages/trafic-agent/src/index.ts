@@ -70,6 +70,7 @@ export {
   restoreProjectDb,
   findBackup,
 } from "./tasks/backup.js";
+export type { RunBackupOptions } from "./tasks/backup.js";
 export { startBackupScheduler } from "./tasks/backup-scheduler.js";
 
 // Server

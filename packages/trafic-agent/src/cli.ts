@@ -175,8 +175,13 @@ function runBackupCommand(values: Record<string, unknown>): void {
     return;
   }
 
-  const results = runBackup(config, values.name as string | undefined);
-  const failed = results.filter((r) => !r.success);
+  const projectName = values.name as string | undefined;
+  const results = runBackup(config, {
+    projectName,
+    // Explicit CLI request: start stopped projects if targeting a specific one
+    forceStart: !!projectName,
+  });
+  const failed = results.filter((r) => !r.success && !r.error?.includes("skipped"));
   if (failed.length > 0) {
     process.exit(1);
   }
