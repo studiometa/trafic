@@ -18,6 +18,42 @@ export interface AgentConfig {
   idleCheckInterval: string;
   /** Auth configuration */
   auth: AuthConfig;
+  /** Backup configuration */
+  backup: BackupConfig;
+}
+
+/**
+ * Backup configuration
+ */
+export interface BackupConfig {
+  /** Enable scheduled backups (default: false) */
+  enabled: boolean;
+  /** Cron-like schedule (e.g., "0 3 * * *") — only the hour is used for the simple scheduler */
+  scheduleHour: number;
+  /** Number of days to retain local backups (default: 7) */
+  retainDays: number;
+  /** Local directory for backups (default: /var/backups/trafic) */
+  localDir: string;
+}
+
+/**
+ * Result of a single project backup
+ */
+export interface BackupResult {
+  project: string;
+  success: boolean;
+  file?: string;
+  error?: string;
+}
+
+/**
+ * Metadata for an existing backup entry
+ */
+export interface BackupEntry {
+  project: string;
+  date: string;
+  file: string;
+  sizeBytes: number;
 }
 
 /**
