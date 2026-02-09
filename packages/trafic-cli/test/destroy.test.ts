@@ -23,6 +23,7 @@ const baseOptions: DestroyOptions = {
   sshOptions: "",
   name: "my-app",
   projectsDir: "~/www",
+  noBackup: false,
 };
 
 describe("destroy", () => {
@@ -43,6 +44,18 @@ describe("destroy", () => {
     mockedTest.mockResolvedValue(true);
 
     await destroy(baseOptions);
+
+    expect(mockedExec).toHaveBeenCalledTimes(3);
+    const commands = mockedExec.mock.calls.map((c) => c[1]);
+    expect(commands[0]).toContain("trafic-agent backup --name my-app");
+    expect(commands[1]).toContain("ddev delete");
+    expect(commands[2]).toContain("rm -rf");
+  });
+
+  it("skips backup when --no-backup is set", async () => {
+    mockedTest.mockResolvedValue(true);
+
+    await destroy({ ...baseOptions, noBackup: true });
 
     expect(mockedExec).toHaveBeenCalledTimes(2);
     const commands = mockedExec.mock.calls.map((c) => c[1]);
@@ -65,13 +78,29 @@ describe("destroy", () => {
   it("continues if ddev delete fails", async () => {
     mockedTest.mockResolvedValue(true);
     mockedExec
+      .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }) // backup
       .mockRejectedValueOnce(new Error("ddev delete failed")) // ddev delete
       .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // rm -rf
 
     await destroy(baseOptions);
 
-    // Should still call rm -rf
-    expect(mockedExec).toHaveBeenCalledTimes(2);
-    expect(mockedExec.mock.calls[1]![1]).toContain("rm -rf");
+    // Should still call rm -rf (backup + delete + rm)
+    expect(mockedExec).toHaveBeenCalledTimes(3);
+    expect(mockedExec.mock.calls[2]![1]).toContain("rm -rf");
+  });
+
+  it("continues destroy if backup fails", async () => {
+    mockedTest.mockResolvedValue(true);
+    mockedExec
+      .mockRejectedValueOnce(new Error("backup failed")) // backup
+      .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }) // ddev delete
+      .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // rm -rf
+
+    await destroy(baseOptions);
+
+    // Should still delete and rm (backup failure is non-blocking)
+    expect(mockedExec).toHaveBeenCalledTimes(3);
+    expect(mockedExec.mock.calls[1]![1]).toContain("ddev delete");
+    expect(mockedExec.mock.calls[2]![1]).toContain("rm -rf");
   });
 });
