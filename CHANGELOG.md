@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-02-09
+
 ### Added
 
 - **CLI**: `trafic deploy` command — 7-step DDEV deployment orchestration
@@ -15,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI**: Auto-detection of repo URL and branch from GitLab CI and GitHub Actions
 - **CLI**: Preview environment support with `--preview <iid>` flag
 - **CLI**: Step-based logger with colored output for CI readability
+- **Agent**: Forward auth middleware for Traefik (IP whitelist, basic auth, tokens)
+- **Agent**: Scale-to-zero — stop idle DDEV projects automatically
+- **Agent**: Auto-start — waiting page that starts stopped projects on request
+- **Agent**: Per-project config via `.ddev/config.trafic.yaml`
+- **Agent**: `trafic-agent setup` command for server provisioning
+- **Agent**: SQLite database for project state and request tracking
 - GitHub Actions CI and publish workflows
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
+
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
