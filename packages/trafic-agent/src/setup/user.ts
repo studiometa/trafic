@@ -29,14 +29,11 @@ export function createDdevUser(): void {
   exec("chmod 700 /home/ddev/.ssh");
   exec("chown ddev:ddev /home/ddev/.ssh");
 
-  // Enable passwordless sudo for ddev and docker commands
-  const sudoersContent = `# Trafic: Allow ddev user to manage DDEV and Docker
-ddev ALL=(ALL) NOPASSWD: /usr/bin/ddev, /usr/bin/docker, /usr/bin/systemctl restart trafic-agent
-`;
-
-  exec(`echo '${sudoersContent}' > /etc/sudoers.d/trafic`);
-  exec("chmod 440 /etc/sudoers.d/trafic");
-  success("Configured sudo for ddev user");
+  // Note: ddev user doesn't need sudo
+  // - Docker access via docker group membership
+  // - DDEV runs as regular user
+  // - Agent runs as systemd service (root manages it)
+  success("User ddev configured (no sudo needed)");
 }
 
 /**
