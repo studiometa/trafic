@@ -37,9 +37,11 @@
   "scripts": {
     "dev": "vite build --watch",
     "build": "vite build && tsc --emitDeclarationOnly",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ci": "vitest run --coverage",
+    "test": "vitest run --exclude 'test/integration/**'",
+    "test:watch": "vitest --exclude 'test/integration/**'",
+    "test:ci": "vitest run --coverage --exclude 'test/integration/**'",
+    "test:integration": "node test/integration/run.js",
+    "test:integration:ci": "node test/integration/run.js --coverage",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
