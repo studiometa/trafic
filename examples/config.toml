@@ -4,35 +4,56 @@
 # Required: TLD for DDEV projects
 tld = "previews.example.com"
 
-# Scale-to-zero: stop idle projects after this duration
+# Agent HTTP server port (default: 9876)
+port = 9876
+
+# Path to SQLite database (default: /var/lib/trafic/db.sqlite)
+db_path = "/var/lib/trafic/db.sqlite"
+
+# Path to DDEV's project_list.yaml (default: /home/ddev/.ddev/project_list.yaml)
+project_list_path = "/home/ddev/.ddev/project_list.yaml"
+
+# Directory where projects are stored (default: /home/ddev/www)
+projects_dir = "/home/ddev/www"
+
+# Scale-to-zero: stop idle projects after this duration (default: 30m)
 idle_timeout = "4h"
 
-# Authentication rules
-[auth]
-# Default: require basic auth for all hostnames
-default = "basic"
+# How often to check for idle projects (default: 5m)
+idle_check_interval = "5m"
 
-# IP whitelist (no auth needed from these IPs)
-whitelist = [
+# Authentication configuration
+[auth]
+# Default policy: "allow", "deny", or "basic" (default: basic)
+default_policy = "basic"
+
+# IP whitelist - these IPs bypass auth entirely
+allowed_ips = [
   "192.168.1.0/24",
   "10.0.0.0/8",
 ]
 
-# Basic auth credentials
-[auth.basic]
-username = "preview"
-password = "changeme"
+# Bearer tokens for API/CI access
+tokens = [
+  "your-secret-token-here",
+]
 
-# Per-hostname rules
+# Basic auth credentials (format: "username:password")
+basic_auth = [
+  "preview:changeme",
+  "admin:supersecret",
+]
+
+# Per-hostname rules (evaluated in order, first match wins)
 [[auth.rules]]
-hostname = "*.staging.*"
+match = "*.public.*"
+policy = "allow"
+
+[[auth.rules]]
+match = "admin.*"
 policy = "basic"
 
 [[auth.rules]]
-hostname = "*.public.*"
-policy = "allow"
-
-# Token-based auth (for CI webhooks, APIs, etc.)
-[[auth.tokens]]
-name = "ci-runner"
-token = "your-secret-token-here"
+match = "api.*"
+policy = "token"
+tokens = ["api-specific-token"]
