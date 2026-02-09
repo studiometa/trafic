@@ -38,6 +38,7 @@ const HELP = `
     --name <name>              DDEV project name (required)
     --preview <iid>            MR/PR number (computes the name)
     --projects-dir <path>      Projects directory (default: ~/www)
+    --no-backup                Skip database backup before destroy
 
   Other:
     --version                  Show version
@@ -115,6 +116,7 @@ function main(): void {
       "after-script": { type: "string" },
       "projects-dir": { type: "string", default: "~/www" },
       "no-start": { type: "boolean", default: false },
+      "no-backup": { type: "boolean", default: false },
       timeout: { type: "string", default: "10m" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
@@ -197,6 +199,7 @@ function main(): void {
         name: values.name,
         preview: values.preview,
         projectsDir: values["projects-dir"]!,
+        noBackup: values["no-backup"]!,
       };
 
       destroy(destroyOptions).catch((err: Error) => {

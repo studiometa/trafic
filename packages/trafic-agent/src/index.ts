@@ -5,6 +5,9 @@ export type {
   AuthRule,
   AuthRequest,
   AuthResult,
+  BackupConfig,
+  BackupResult,
+  BackupEntry,
   DdevProject,
   ProjectRecord,
   AccessLog,
@@ -58,6 +61,17 @@ export type { ProjectConfig } from "./utils/project-config.js";
 
 // Tasks
 export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
+export {
+  runBackup,
+  backupProjectDb,
+  backupAgentData,
+  listBackups,
+  cleanOldBackups,
+  restoreProjectDb,
+  findBackup,
+} from "./tasks/backup.js";
+export type { RunBackupOptions } from "./tasks/backup.js";
+export { startBackupScheduler } from "./tasks/backup-scheduler.js";
 
 // Server
 export { startServer } from "./server.js";

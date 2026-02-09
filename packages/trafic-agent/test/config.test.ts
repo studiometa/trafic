@@ -44,6 +44,12 @@ describe("validateConfig", () => {
       basicAuth: [],
       rules: [],
     },
+    backup: {
+      enabled: false,
+      scheduleHour: 3,
+      retainDays: 7,
+      localDir: "/var/backups/trafic",
+    },
   };
 
   it("returns no errors for valid config", () => {

@@ -57,3 +57,17 @@ policy = "basic"
 match = "api.*"
 policy = "token"
 tokens = ["api-specific-token"]
+
+# Backup configuration
+[backup]
+# Enable scheduled daily backups (default: false)
+enabled = true
+
+# Hour of day to run backups (0-23, default: 3 = 3am)
+schedule_hour = 3
+
+# Number of days to keep local backups (default: 7)
+retain_days = 7
+
+# Directory for local backup storage (default: /var/backups/trafic)
+local_dir = "/var/backups/trafic"
