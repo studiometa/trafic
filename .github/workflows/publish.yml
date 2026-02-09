@@ -53,6 +53,11 @@ jobs:
         working-directory: packages/trafic-cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish @studiometa/trafic-agent
+        run: npm publish --provenance --access public --tag ${{ env.NPM_TAG }}
+        working-directory: packages/trafic-agent
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ncipollo/release-action@v1
         with:
           tag: ${{ github.ref_name }}
