@@ -53,3 +53,7 @@ export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
 
 // Server
 export { startServer } from "./server.js";
+
+// Setup
+export { setup, audit, runAudit, printAuditResults } from "./setup/index.js";
+export type { SetupOptions, StepResult, AuditCheck } from "./setup/types.js";

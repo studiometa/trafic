@@ -5,6 +5,7 @@ import { loadConfig, validateConfig } from "./utils/config.js";
 import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
 import { closeDb } from "./utils/db.js";
+import { setup, audit } from "./setup/index.js";
 
 declare const __VERSION__: string;
 
@@ -12,20 +13,40 @@ const HELP = `
 trafic-agent — Server agent for DDEV preview environments
 
 Usage:
-  trafic-agent [options]
-  trafic-agent start [options]    Start the agent server
-  trafic-agent version            Show version
-  trafic-agent help               Show this help
+  trafic-agent <command> [options]
 
-Options:
-  -c, --config <path>    Path to config file (default: /etc/trafic/config.toml)
-  -p, --port <port>      Override port from config
-  -h, --help             Show this help
+Commands:
+  start                   Start the agent server
+  setup                   Setup a new server (Docker, DDEV, hardening)
+  audit                   Run security audit checks
+  version                 Show version
+  help                    Show this help
+
+Start options:
+  -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
+  -p, --port <port>       Override port from config
+
+Setup options:
+  --tld <domain>          TLD for DDEV projects (required)
+  --email <email>         Email for Let's Encrypt certificates
+  --no-hardening          Skip server hardening steps
+  --no-docker             Skip Docker installation
+  --no-ddev               Skip DDEV installation
+  --ssh-users <users>     Comma-separated list of SSH users to allow (default: ddev)
+  --dry-run               Show what would be done without making changes
 
 Examples:
+  # Start the agent
   trafic-agent start
   trafic-agent start --config /path/to/config.toml
-  trafic-agent start --port 8080
+
+  # Setup a new server
+  sudo trafic-agent setup --tld=previews.example.com
+  sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com
+  sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
+
+  # Run security audit
+  trafic-agent audit
 `;
 
 function printHelp(): void {
@@ -36,40 +57,13 @@ function printVersion(): void {
   console.log(__VERSION__);
 }
 
-async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    allowPositionals: true,
-    options: {
-      config: { type: "string", short: "c" },
-      port: { type: "string", short: "p" },
-      help: { type: "boolean", short: "h" },
-    },
-  });
-
-  const command = positionals[0] ?? "start";
-
-  if (values.help || command === "help") {
-    printHelp();
-    process.exit(0);
-  }
-
-  if (command === "version") {
-    printVersion();
-    process.exit(0);
-  }
-
-  if (command !== "start") {
-    console.error(`Unknown command: ${command}`);
-    printHelp();
-    process.exit(1);
-  }
-
+async function runStart(values: Record<string, unknown>): Promise<void> {
   // Load config
-  const config = loadConfig(values.config);
+  const config = loadConfig(values.config as string | undefined);
 
   // Override port if specified
   if (values.port) {
-    config.port = parseInt(values.port, 10);
+    config.port = parseInt(values.port as string, 10);
   }
 
   // Validate config
@@ -95,6 +89,85 @@ async function main(): Promise<void> {
   // Start server and scheduler
   startServer(config);
   startIdleScheduler(config);
+}
+
+async function runSetup(values: Record<string, unknown>): Promise<void> {
+  const tld = values.tld as string | undefined;
+
+  if (!tld) {
+    console.error("Error: --tld is required for setup");
+    console.error("Example: trafic-agent setup --tld=previews.example.com");
+    process.exit(1);
+  }
+
+  await setup({
+    tld,
+    email: values.email as string | undefined,
+    noHardening: values["no-hardening"] as boolean | undefined,
+    noDocker: values["no-docker"] as boolean | undefined,
+    noDdev: values["no-ddev"] as boolean | undefined,
+    sshUsers: values["ssh-users"]
+      ? (values["ssh-users"] as string).split(",").map((s) => s.trim())
+      : undefined,
+    dryRun: values["dry-run"] as boolean | undefined,
+  });
+}
+
+async function main(): Promise<void> {
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
+    options: {
+      // Common
+      help: { type: "boolean", short: "h" },
+
+      // Start options
+      config: { type: "string", short: "c" },
+      port: { type: "string", short: "p" },
+
+      // Setup options
+      tld: { type: "string" },
+      email: { type: "string" },
+      "no-hardening": { type: "boolean" },
+      "no-docker": { type: "boolean" },
+      "no-ddev": { type: "boolean" },
+      "ssh-users": { type: "string" },
+      "dry-run": { type: "boolean" },
+    },
+  });
+
+  const command = positionals[0] ?? "help";
+
+  if (values.help) {
+    printHelp();
+    process.exit(0);
+  }
+
+  switch (command) {
+    case "help":
+      printHelp();
+      break;
+
+    case "version":
+      printVersion();
+      break;
+
+    case "start":
+      await runStart(values);
+      break;
+
+    case "setup":
+      await runSetup(values);
+      break;
+
+    case "audit":
+      await audit();
+      break;
+
+    default:
+      console.error(`Unknown command: ${command}`);
+      printHelp();
+      process.exit(1);
+  }
 }
 
 main().catch((error) => {
