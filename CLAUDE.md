@@ -8,8 +8,8 @@ Trafic is a CLI tool and server agent for managing DDEV preview environments on 
 
 ```
 packages/
-├── trafic-cli/      # @studiometa/trafic-cli — CLI for CI (deploy, destroy, setup)
-└── trafic-agent/    # @studiometa/trafic-agent — Server agent (Nitro, auth, scale-to-zero)
+├── trafic-cli/      # @studiometa/trafic-cli — CLI for CI (deploy, destroy)
+└── trafic-agent/    # @studiometa/trafic-agent — Server agent (auth, scale-to-zero, setup)
 ```
 
 ## Git & Commits
@@ -41,7 +41,7 @@ packages/
 - **Build**: Vite lib mode + `tsc --emitDeclarationOnly`
 - **Test**: Vitest with coverage (v8)
 - **Lint**: oxlint
-- **Format**: oxfmt
+- **Format**: oxfmt (not currently configured)
 - **Pre-commit**: husky + lint-staged
 - **CI**: GitHub Actions
 - **Dependencies**: Renovate bot
@@ -58,18 +58,37 @@ packages/
 
 ### CLI (`packages/trafic-cli/`)
 
-Runs on CI runners. Orchestrates deployments via SSH/rsync. Zero runtime dependencies (uses native `node:child_process` for SSH).
+Runs on CI runners. Orchestrates deployments via SSH/rsync. **Zero runtime dependencies** (uses native `node:child_process` for SSH).
+
+Commands:
+- `trafic deploy` — 7-step DDEV deployment
+- `trafic destroy` — Remove project from server
 
 ### Agent (`packages/trafic-agent/`)
 
-Runs on the DDEV server as a systemd service. Built with Nitro (h3 + SQLite + scheduled tasks). Handles:
-- Forward auth for Traefik
+Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + SQLite (better-sqlite3). Handles:
+- Forward auth for Traefik (IP whitelist, basic auth, tokens)
 - Scale-to-zero (stop idle projects)
 - Waiting pages (auto-start on request)
 - Project discovery (watches DDEV project_list.yaml)
 - TOML configuration via c12
+- Per-project config via `.ddev/config.trafic.yaml`
 
-## Plans
+Commands:
+- `trafic-agent start` — Start the agent server
+- `trafic-agent setup` — Server provisioning (Docker, DDEV, hardening)
+- `trafic-agent audit` — Security audit checks
 
-- [Open-source plan](docs/open-source-plan.md) — Architecture, conventions, transition plan
-- [Deploy CLI plan](docs/deploy-cli-plan.md) — CLI design, SSH orchestration, CI integration
+## Testing
+
+- **Unit tests**: `npm test` (77 tests across both packages)
+- **Integration tests**: `npm run test:integration` (Docker-based SSH tests)
+- **Coverage**: `npm run test:ci` (with Codecov upload in CI)
+
+## Documentation
+
+- [CLI README](packages/trafic-cli/README.md) — Deploy and destroy commands
+- [Agent README](packages/trafic-agent/README.md) — Server setup and configuration
+- [Example config](examples/config.toml) — Full configuration reference
+- [Open-source plan](docs/open-source-plan.md) — Architecture, conventions
+- [Deploy CLI plan](docs/deploy-cli-plan.md) — CLI design, SSH orchestration
