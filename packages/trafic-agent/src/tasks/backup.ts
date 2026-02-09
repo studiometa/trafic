@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, existsSync, readdirSync, statSync, rmSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadProjectList, startProject, getProjectInfo } from "../utils/ddev.js";
+import { loadProjectList, startProject, stopProject, getProjectInfo } from "../utils/ddev.js";
 import type { AgentConfig, BackupConfig, BackupResult, BackupEntry } from "../types.js";
 
 /**
@@ -30,12 +30,12 @@ export function backupProjectDb(
 ): BackupResult {
   const outputFile = join(outputDir, `${projectName}.sql.gz`);
 
-  try {
-    // Check if the project is running, start it if needed
-    const info = getProjectInfo(projectName);
-    const wasStarted = info?.status !== "running";
+  // Check if the project is running, start it if needed
+  const info = getProjectInfo(projectName);
+  const wasStopped = info?.status !== "running";
 
-    if (wasStarted) {
+  try {
+    if (wasStopped) {
       console.log(`  Starting ${projectName} for backup...`);
       const started = startProject(projectName);
       if (!started) {
@@ -55,6 +55,12 @@ export function backupProjectDb(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { project: projectName, success: false, error: message };
+  } finally {
+    // Stop the project again if it was stopped before backup
+    if (wasStopped) {
+      console.log(`  Stopping ${projectName} after backup...`);
+      stopProject(projectName);
+    }
   }
 }
 
