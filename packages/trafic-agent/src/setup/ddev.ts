@@ -92,11 +92,7 @@ export function configureDdev(tld: string, email?: string): void {
   // Disable instrumentation (telemetry)
   exec(ddevCmd("ddev config global --instrumentation-opt-in=false"));
 
-  // Start the router
-  exec(ddevCmd("ddev poweroff || true"));
-  exec(ddevCmd("ddev start"));
-
-  success("DDEV router started");
+  success("DDEV global settings configured");
 }
 
 /**
