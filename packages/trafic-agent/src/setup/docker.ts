@@ -1,3 +1,4 @@
+import { writeFileSync, existsSync, readFileSync } from "node:fs";
 import { step, success, info, exec, commandExists, warn } from "./steps.js";
 
 /**
@@ -49,7 +50,6 @@ export function configureDocker(): void {
   exec("mkdir -p /etc/docker");
 
   const configPath = "/etc/docker/daemon.json";
-  const { writeFileSync, existsSync, readFileSync } = require("node:fs");
 
   // Check if config already exists
   if (existsSync(configPath)) {
@@ -82,7 +82,6 @@ export function setupDockerPrune(): void {
 0 3 * * 0 root docker system prune -af --volumes 2>&1 | logger -t docker-prune
 `;
 
-  const { writeFileSync } = require("node:fs");
   writeFileSync("/etc/cron.d/trafic-docker-prune", cronContent);
   exec("chmod 644 /etc/cron.d/trafic-docker-prune");
 

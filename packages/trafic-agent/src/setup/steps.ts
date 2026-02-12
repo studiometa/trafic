@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { writeFileSync as fsWriteFile } from "node:fs";
 
 let stepNumber = 0;
 let dryRun = false;
@@ -128,6 +129,5 @@ export function writeFile(path: string, content: string): void {
     return;
   }
 
-  const { writeFileSync } = require("node:fs");
-  writeFileSync(path, content);
+  fsWriteFile(path, content);
 }

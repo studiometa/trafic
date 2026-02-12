@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { step, success, info, exec, commandExists } from "./steps.js";
 
 /**
@@ -81,7 +82,6 @@ export function installDnsmasq(tld: string): void {
   )?.trim() || "127.0.0.1";
 
   // Configure dnsmasq to resolve *.{tld} to server IP
-  const { writeFileSync } = require("node:fs");
   const dnsmasqConfig = `# Trafic: Local DNS for DDEV projects
 # Resolve all *.${tld} to this server
 address=/${tld}/${serverIp}
@@ -145,7 +145,6 @@ http:
           - url: "http://host.docker.internal:9876"
 `;
 
-  const { writeFileSync } = require("node:fs");
   writeFileSync("/home/ddev/.ddev/traefik/trafic.yaml", staticConfig);
   exec("chown ddev:ddev /home/ddev/.ddev/traefik/trafic.yaml");
 
