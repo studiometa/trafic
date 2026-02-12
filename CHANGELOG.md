@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-02-12
+
+### Fixed
+
+- **Agent**: Fix DDEV install — use manual download instead of buggy install script ([#8])
+
 ## [0.1.2] - 2026-02-12
 
 ### Fixed
@@ -43,11 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.2...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.3...HEAD
+[0.1.3]: https://github.com/studiometa/trafic/compare/0.1.2...0.1.3
 [0.1.2]: https://github.com/studiometa/trafic/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/studiometa/trafic/compare/0.1.0...0.1.1
 
 [#7]: https://github.com/studiometa/trafic/pull/7
+[#8]: https://github.com/studiometa/trafic/pull/8
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
