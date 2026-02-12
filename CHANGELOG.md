@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-02-12
+
+### Fixed
+
+- **Agent**: Fix DDEV setup — don't start router without a project ([#9])
+
 ## [0.1.3] - 2026-02-12
 
 ### Fixed
@@ -49,13 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.3...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.4...HEAD
+[0.1.4]: https://github.com/studiometa/trafic/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/studiometa/trafic/compare/0.1.2...0.1.3
 [0.1.2]: https://github.com/studiometa/trafic/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/studiometa/trafic/compare/0.1.0...0.1.1
 
 [#7]: https://github.com/studiometa/trafic/pull/7
 [#8]: https://github.com/studiometa/trafic/pull/8
+[#9]: https://github.com/studiometa/trafic/pull/9
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
