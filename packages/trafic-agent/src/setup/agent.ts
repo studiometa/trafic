@@ -107,6 +107,9 @@ rules = []
 export function createSystemdService(): void {
   step("Create systemd service");
 
+  // Find the trafic-agent binary path
+  const agentPath = exec("which trafic-agent", { silent: true })?.trim() || "/usr/bin/trafic-agent";
+
   const serviceContent = `[Unit]
 Description=Trafic Agent - DDEV preview environment manager
 After=network.target docker.service
@@ -116,7 +119,7 @@ Requires=docker.service
 Type=simple
 User=ddev
 Group=ddev
-ExecStart=/usr/local/bin/npx trafic-agent start --config /etc/trafic/config.toml
+ExecStart=${agentPath} start --config /etc/trafic/config.toml
 Restart=always
 RestartSec=5
 StandardOutput=journal
