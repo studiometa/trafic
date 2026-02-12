@@ -80,7 +80,13 @@ log "Trafic Agent Installer"
 log "TLD: $TLD"
 echo ""
 
-# Step 1: Install Node.js if needed
+# Step 1: Install build essentials (needed for native modules like better-sqlite3)
+log "Installing build essentials..."
+apt-get update -qq
+apt-get install -y build-essential python3
+success "Build essentials installed"
+
+# Step 2: Install Node.js if needed
 if ! command -v node &> /dev/null; then
   log "Installing Node.js 24..."
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
@@ -90,12 +96,12 @@ else
   success "Node.js $(node --version) already installed"
 fi
 
-# Step 2: Install trafic-agent globally
+# Step 3: Install trafic-agent globally
 log "Installing @studiometa/trafic-agent..."
 npm install -g @studiometa/trafic-agent
 success "trafic-agent installed"
 
-# Step 3: Run setup
+# Step 4: Run setup
 log "Running trafic-agent setup..."
 echo ""
 trafic-agent setup $SETUP_ARGS
