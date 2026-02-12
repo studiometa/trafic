@@ -13,17 +13,47 @@ export function installDdev(): void {
     return;
   }
 
-  // Install DDEV using the official install script
-  // Must run as ddev user (not root) per DDEV requirements
-  info("Installing DDEV as user 'ddev'...");
-  exec(
-    "su - ddev -c 'curl -fsSL https://ddev.com/install.sh | bash -s -- --version latest'",
-  );
+  // Install DDEV manually (the official script has issues with non-interactive shells)
+  // Get latest release version
+  info("Fetching latest DDEV version...");
+  const latestVersion = exec(
+    "curl -fsSL https://api.github.com/repos/ddev/ddev/releases/latest | grep '\"tag_name\"' | sed -E 's/.*\"([^\"]+)\".*/\\1/'",
+    { silent: true },
+  )?.trim();
 
-  // Symlink ddev binary to /usr/local/bin so it's available system-wide
-  exec("ln -sf /home/ddev/.ddev/bin/ddev /usr/local/bin/ddev");
+  if (!latestVersion) {
+    throw new Error("Could not determine latest DDEV version");
+  }
 
-  success("DDEV installed");
+  info(`Installing DDEV ${latestVersion}...`);
+
+  // Download and extract
+  const arch = exec("uname -m", { silent: true })?.trim() === "x86_64" ? "amd64" : "arm64";
+  const tarball = `ddev_linux-${arch}.${latestVersion}.tar.gz`;
+  const url = `https://github.com/ddev/ddev/releases/download/${latestVersion}/${tarball}`;
+
+  exec(`curl -fsSL -o /tmp/${tarball} ${url}`);
+  exec(`tar -xzf /tmp/${tarball} -C /tmp ddev`);
+
+  // Install to /usr/local/bin (we're root)
+  exec("mv /tmp/ddev /usr/local/bin/ddev");
+  exec("chmod +x /usr/local/bin/ddev");
+  exec(`rm -f /tmp/${tarball}`);
+
+  // Also install mkcert for local HTTPS
+  info("Installing mkcert...");
+  const mkcertVersion = exec(
+    "curl -fsSL https://api.github.com/repos/FiloSottile/mkcert/releases/latest | grep '\"tag_name\"' | sed -E 's/.*\"([^\"]+)\".*/\\1/'",
+    { silent: true },
+  )?.trim();
+
+  if (mkcertVersion) {
+    const mkcertBin = `mkcert-${mkcertVersion}-linux-${arch}`;
+    exec(`curl -fsSL -o /usr/local/bin/mkcert https://github.com/FiloSottile/mkcert/releases/download/${mkcertVersion}/${mkcertBin}`);
+    exec("chmod +x /usr/local/bin/mkcert");
+  }
+
+  success(`DDEV ${latestVersion} installed`);
 }
 
 /**
