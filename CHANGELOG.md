@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-02-12
+
+### Added
+
+- Add one-liner install script for server setup ([f086115], [36bca6b])
+
+### Fixed
+
+- **Agent**: Fix ESM `require()` errors in setup scripts ([1012821])
+
 ## [0.1.0] - 2026-02-09
 
 ### Added
@@ -27,5 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.0...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.1...HEAD
+[0.1.1]: https://github.com/studiometa/trafic/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
+
+[1012821]: https://github.com/studiometa/trafic/commit/1012821
+[f086115]: https://github.com/studiometa/trafic/commit/f086115
+[36bca6b]: https://github.com/studiometa/trafic/commit/36bca6b
