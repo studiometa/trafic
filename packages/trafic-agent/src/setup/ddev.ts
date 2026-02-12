@@ -14,10 +14,14 @@ export function installDdev(): void {
   }
 
   // Install DDEV using the official install script
-  info("Installing DDEV...");
+  // Must run as ddev user (not root) per DDEV requirements
+  info("Installing DDEV as user 'ddev'...");
   exec(
-    "curl -fsSL https://ddev.com/install.sh | bash -s -- --version latest",
+    "su - ddev -c 'curl -fsSL https://ddev.com/install.sh | bash -s -- --version latest'",
   );
+
+  // Symlink ddev binary to /usr/local/bin so it's available system-wide
+  exec("ln -sf /home/ddev/.ddev/bin/ddev /usr/local/bin/ddev");
 
   success("DDEV installed");
 }
