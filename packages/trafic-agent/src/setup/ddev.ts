@@ -44,13 +44,13 @@ export function installDdev(): void {
   const tarball = `ddev_linux-${arch}.${latestVersion}.tar.gz`;
   const url = `https://github.com/ddev/ddev/releases/download/${latestVersion}/${tarball}`;
 
-  exec(`curl -fsSL -o /tmp/${tarball} ${url}`);
-  exec(`tar -xzf /tmp/${tarball} -C /tmp ddev`);
+  exec(`curl -fsSL -o /tmp/${tarball} ${url}`, { silent: true });
+  exec(`tar -xzf /tmp/${tarball} -C /tmp ddev`, { silent: true });
 
   // Install to /usr/local/bin (we're root)
-  exec("mv /tmp/ddev /usr/local/bin/ddev");
-  exec("chmod +x /usr/local/bin/ddev");
-  exec(`rm -f /tmp/${tarball}`);
+  exec("mv /tmp/ddev /usr/local/bin/ddev", { silent: true });
+  exec("chmod +x /usr/local/bin/ddev", { silent: true });
+  exec(`rm -f /tmp/${tarball}`, { silent: true });
 
   // Also install mkcert for local HTTPS
   info("Installing mkcert...");
@@ -61,8 +61,8 @@ export function installDdev(): void {
 
   if (mkcertVersion) {
     const mkcertBin = `mkcert-${mkcertVersion}-linux-${arch}`;
-    exec(`curl -fsSL -o /usr/local/bin/mkcert https://github.com/FiloSottile/mkcert/releases/download/${mkcertVersion}/${mkcertBin}`);
-    exec("chmod +x /usr/local/bin/mkcert");
+    exec(`curl -fsSL -o /usr/local/bin/mkcert https://github.com/FiloSottile/mkcert/releases/download/${mkcertVersion}/${mkcertBin}`, { silent: true });
+    exec("chmod +x /usr/local/bin/mkcert", { silent: true });
   }
 
   success(`DDEV ${latestVersion} installed`);
@@ -155,8 +155,8 @@ export function configureTraefik(): void {
   step("Configure Traefik for forward auth");
 
   // Create custom Traefik config directory
-  exec("mkdir -p /home/ddev/.ddev/traefik");
-  exec("chown -R ddev:ddev /home/ddev/.ddev");
+  exec("mkdir -p /home/ddev/.ddev/traefik", { silent: true });
+  exec("chown -R ddev:ddev /home/ddev/.ddev", { silent: true });
 
   // Static configuration for Trafic middleware
   const staticConfig = `# Trafic: Forward auth middleware
@@ -184,7 +184,7 @@ http:
 `;
 
   writeFileSync("/home/ddev/.ddev/traefik/trafic.yaml", staticConfig);
-  exec("chown ddev:ddev /home/ddev/.ddev/traefik/trafic.yaml");
+  exec("chown ddev:ddev /home/ddev/.ddev/traefik/trafic.yaml", { silent: true });
 
   // Create default router config that applies middleware to all projects
   const routerConfig = `# Trafic: Default router configuration
@@ -201,7 +201,7 @@ http:
 `;
 
   writeFileSync("/home/ddev/.ddev/traefik/dynamic.yaml", routerConfig);
-  exec("chown ddev:ddev /home/ddev/.ddev/traefik/dynamic.yaml");
+  exec("chown ddev:ddev /home/ddev/.ddev/traefik/dynamic.yaml", { silent: true });
 
   success("Traefik configured with Trafic middleware");
 }
