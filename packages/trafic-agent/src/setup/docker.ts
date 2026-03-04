@@ -14,19 +14,19 @@ export function installDocker(): void {
   }
 
   // Install Docker using official script
-  info("Downloading Docker install script...");
+  info("Downloading and running Docker install script...");
   exec("curl -fsSL https://get.docker.com -o /tmp/get-docker.sh");
-  exec("sh /tmp/get-docker.sh");
+  exec("sh /tmp/get-docker.sh", { silent: true });
   exec("rm /tmp/get-docker.sh");
 
   // Enable and start Docker
-  exec("systemctl enable docker");
-  exec("systemctl start docker");
+  exec("systemctl enable docker", { silent: true });
+  exec("systemctl start docker", { silent: true });
 
   success("Docker installed and started");
 
   // Add ddev user to docker group
-  exec("usermod -aG docker ddev");
+  exec("usermod -aG docker ddev", { silent: true });
   success("Added ddev user to docker group");
 }
 
