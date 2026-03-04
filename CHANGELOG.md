@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-03-04
+
 ### Fixed
 
 - **Agent**: Fix setup hanging on apt installs — add `NEEDRESTART_MODE=a` to suppress interactive service restart prompts
@@ -85,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.7...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.8...HEAD
+[0.1.8]: https://github.com/studiometa/trafic/compare/0.1.7...0.1.8
 [0.1.7]: https://github.com/studiometa/trafic/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/studiometa/trafic/compare/0.1.5...0.1.6
 [0.1.5]: https://github.com/studiometa/trafic/compare/0.1.4...0.1.5
