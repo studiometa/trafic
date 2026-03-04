@@ -83,14 +83,14 @@ echo ""
 # Step 1: Install build essentials (needed for native modules like better-sqlite3)
 log "Installing build essentials..."
 apt-get update -qq
-apt-get install -y build-essential python3
+DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y build-essential python3
 success "Build essentials installed"
 
 # Step 2: Install Node.js if needed
 if ! command -v node &> /dev/null; then
   log "Installing Node.js 24..."
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-  apt-get install -y nodejs
+  DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y nodejs
   success "Node.js $(node --version) installed"
 else
   success "Node.js $(node --version) already installed"
