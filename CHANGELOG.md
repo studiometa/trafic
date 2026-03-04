@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-03-04
+
+### Fixed
+
+- **CLI**: Fix `ddev start` via SSH — add `DDEV_NONINTERACTIVE=true` to prevent `ddev-hostname` lookup failure ([745770b])
+- **Agent**: Fix setup — silence noisy Docker install script and `systemctl` output ([982da49])
+- **Agent**: Fix setup — merge `ddev config global` calls and silence output ([56ca884], [5112332])
+- **Agent**: Fix install script — suppress `needrestart` prompts during apt calls ([3a057d0])
+
+### Security
+
+- Update rollup to patch arbitrary file write vulnerability ([GHSA-mw96-cpmx-2vgc]) ([157f822])
+
 ## [0.1.8] - 2026-03-04
 
 ### Fixed
@@ -87,7 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.8...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.9...HEAD
+[0.1.9]: https://github.com/studiometa/trafic/compare/0.1.8...0.1.9
 [0.1.8]: https://github.com/studiometa/trafic/compare/0.1.7...0.1.8
 [0.1.7]: https://github.com/studiometa/trafic/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/studiometa/trafic/compare/0.1.5...0.1.6
@@ -102,7 +116,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#9]: https://github.com/studiometa/trafic/pull/9
 [#10]: https://github.com/studiometa/trafic/pull/10
 [#11]: https://github.com/studiometa/trafic/pull/11
+[GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
+
+[745770b]: https://github.com/studiometa/trafic/commit/745770b
+[5112332]: https://github.com/studiometa/trafic/commit/5112332
+[982da49]: https://github.com/studiometa/trafic/commit/982da49
+[56ca884]: https://github.com/studiometa/trafic/commit/56ca884
+[157f822]: https://github.com/studiometa/trafic/commit/157f822
+[3a057d0]: https://github.com/studiometa/trafic/commit/3a057d0
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
