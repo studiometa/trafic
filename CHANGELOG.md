@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Agent**: Fix setup hanging on apt installs — add `NEEDRESTART_MODE=a` to suppress interactive service restart prompts
 - **Agent**: Fix SSH service reload — use `ssh` before `sshd` (Ubuntu uses `ssh.service`)
+- **Agent**: Fix SSH hardening locking out root — use `PermitRootLogin prohibit-password` and keep `root` in `AllowUsers` to retain key-based root access after setup
 
 ## [0.1.7] - 2026-03-04
 
