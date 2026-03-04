@@ -50,7 +50,7 @@ MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
     return;
   }
 
-  exec("systemctl reload sshd || systemctl reload ssh");
+  exec("systemctl reload ssh || systemctl reload sshd");
   success("SSH hardened: root login disabled, password auth disabled");
   info(`Allowed users: ${allowedUsers.join(", ")}`);
 }
@@ -63,7 +63,7 @@ export function configureFirewall(): void {
 
   // Install UFW if not present
   if (!commandExists("ufw")) {
-    exec("apt-get update && apt-get install -y ufw", { silent: true });
+    exec("DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y ufw", { silent: true });
   }
 
   // Reset and configure
@@ -88,7 +88,7 @@ export function configureUnattendedUpgrades(): void {
 
   // Install unattended-upgrades
   exec(
-    "DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades apt-listchanges",
+    "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y unattended-upgrades apt-listchanges",
     { silent: true },
   );
 
@@ -140,7 +140,7 @@ export function configureFail2ban(): void {
 
   // Install fail2ban
   if (!commandExists("fail2ban-client")) {
-    exec("apt-get update && apt-get install -y fail2ban", { silent: true });
+    exec("DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y fail2ban", { silent: true });
   }
 
   // Configure jail

@@ -8,7 +8,7 @@ export function installSystemDeps(): void {
   step("Install system dependencies");
 
   exec("apt-get update -qq", { silent: true });
-  exec("DEBIAN_FRONTEND=noninteractive apt-get install -y jq curl rsync", { silent: true });
+  exec("DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y jq curl rsync", { silent: true });
 
   success("System dependencies installed: jq, curl, rsync");
 }

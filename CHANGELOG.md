@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent**: Fix setup hanging on apt installs — add `NEEDRESTART_MODE=a` to suppress interactive service restart prompts
+- **Agent**: Fix SSH service reload — use `ssh` before `sshd` (Ubuntu uses `ssh.service`)
+
 ## [0.1.7] - 2026-03-04
 
 ### Changed
