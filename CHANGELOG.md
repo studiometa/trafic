@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-03-04
+
 ### Changed
 
 - **Agent**: `setup` reads existing `/etc/trafic/config.toml` to reuse `tld` on re-runs — `--tld` is no longer required when config already exists
@@ -77,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.6...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.7...HEAD
+[0.1.7]: https://github.com/studiometa/trafic/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/studiometa/trafic/compare/0.1.5...0.1.6
 [0.1.5]: https://github.com/studiometa/trafic/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/studiometa/trafic/compare/0.1.3...0.1.4
