@@ -74,7 +74,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
 
     if (status !== "running") {
       info(`Status: ${status} — starting DDEV…`);
-      await ssh.exec(options, `cd ${projectDir} && ddev start`);
+      await ssh.exec(options, `cd ${projectDir} && DDEV_NONINTERACTIVE=true ddev start`);
     } else {
       info("Container already running");
     }
