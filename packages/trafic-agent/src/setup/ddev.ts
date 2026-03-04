@@ -85,13 +85,12 @@ export function configureDdev(tld: string, email?: string): void {
   // Run as ddev user
   const ddevCmd = (cmd: string) => `su - ddev -c '${cmd}'`;
 
-  // Configure global settings
-  // use_dns_when_possible=true (default) means DDEV uses DNS resolution
-  // and only falls back to /etc/hosts if DNS fails
+  // Configure all global settings in a single call
   exec(
     ddevCmd(
-      `ddev config global --project-tld=${tld} --router-http-port=80 --router-https-port=443 --use-letsencrypt=${email ? "true" : "false"} ${email ? `--letsencrypt-email=${email}` : ""}`,
+      `ddev config global --project-tld=${tld} --router-http-port=80 --router-https-port=443 --use-letsencrypt=${email ? "true" : "false"} ${email ? `--letsencrypt-email=${email}` : ""} --instrumentation-opt-in=false`,
     ),
+    { silent: true },
   );
 
   success(`DDEV configured with TLD: ${tld}`);
@@ -100,9 +99,6 @@ export function configureDdev(tld: string, email?: string): void {
   if (email) {
     success(`Let's Encrypt enabled with email: ${email}`);
   }
-
-  // Disable instrumentation (telemetry)
-  exec(ddevCmd("ddev config global --instrumentation-opt-in=false"));
 
   success("DDEV global settings configured");
 }
