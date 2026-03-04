@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent**: `setup` reads existing `/etc/trafic/config.toml` to reuse `tld` on re-runs — `--tld` is no longer required when config already exists
+- **Agent**: `setup` skips writing `/etc/trafic/config.toml` if it already exists to preserve user edits
+
 ### Fixed
 
 - **Agent**: Fix `ddev start` — set `DDEV_NONINTERACTIVE=true` in systemd service to skip `ddev-hostname` `/etc/hosts` management (see [ddev/ddev#2696])

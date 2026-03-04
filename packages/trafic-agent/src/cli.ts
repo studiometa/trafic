@@ -27,7 +27,7 @@ Start options:
   -p, --port <port>       Override port from config
 
 Setup options:
-  --tld <domain>          TLD for DDEV projects (required)
+  --tld <domain>          TLD for DDEV projects (required on first run, reused from config on re-runs)
   --email <email>         Email for Let's Encrypt certificates
   --no-hardening          Skip server hardening steps
   --no-docker             Skip Docker installation
@@ -92,7 +92,9 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
 }
 
 async function runSetup(values: Record<string, unknown>): Promise<void> {
-  const tld = values.tld as string | undefined;
+  // Load existing config to use as defaults on re-runs
+  const existingConfig = loadConfig();
+  const tld = (values.tld as string | undefined) ?? (existingConfig.tld || undefined);
 
   if (!tld) {
     console.error("Error: --tld is required for setup");
