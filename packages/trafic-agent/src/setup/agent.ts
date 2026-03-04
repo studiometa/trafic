@@ -128,6 +128,10 @@ SyslogIdentifier=trafic-agent
 
 # Environment
 Environment=NODE_ENV=production
+# Skip ddev-hostname /etc/hosts management — on a server, hostnames resolve
+# to the public IP (not localhost), which would trigger ddev-hostname on every
+# ddev start. DDEV_NONINTERACTIVE=true skips that entirely.
+Environment=DDEV_NONINTERACTIVE=true
 
 # Security hardening
 NoNewPrivileges=true

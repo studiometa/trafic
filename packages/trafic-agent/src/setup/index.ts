@@ -2,7 +2,7 @@ import type { SetupOptions } from "./types.js";
 import { step, info, error, setDryRun, resetSteps, isRoot } from "./steps.js";
 import { createDdevUser } from "./user.js";
 import { installDocker, configureDocker, setupDockerPrune } from "./docker.js";
-import { installDdev, configureDdev, configureTraefik } from "./ddev.js";
+import { installSystemDeps, installDdev, configureDdev, configureTraefik } from "./ddev.js";
 import { installNode, installAgent, createAgentConfig, createSystemdService } from "./agent.js";
 import { hardenServer } from "./hardening.js";
 import { runAudit, printAuditResults } from "./audit.js";
@@ -39,10 +39,13 @@ export async function setup(options: SetupOptions): Promise<void> {
   }
 
   try {
-    // Step 1: Create ddev user
+    // Step 1: Install system dependencies
+    installSystemDeps();
+
+    // Step 2: Create ddev user
     createDdevUser();
 
-    // Step 2: Install Docker
+    // Step 3: Install Docker
     if (!options.noDocker) {
       installDocker();
       configureDocker();
@@ -52,7 +55,7 @@ export async function setup(options: SetupOptions): Promise<void> {
       info("Skipped (--no-docker)");
     }
 
-    // Step 3: Install DDEV
+    // Step 4: Install DDEV
     if (!options.noDdev) {
       installDdev();
       configureDdev(options.tld, options.email);
@@ -62,15 +65,15 @@ export async function setup(options: SetupOptions): Promise<void> {
       info("Skipped (--no-ddev)");
     }
 
-    // Step 4: Install Node.js
+    // Step 5: Install Node.js
     installNode();
 
-    // Step 5: Install and configure agent
+    // Step 6: Install and configure agent
     installAgent();
     createAgentConfig(options.tld, options.email);
     createSystemdService();
 
-    // Step 6: Server hardening
+    // Step 7: Server hardening
     if (!options.noHardening) {
       const sshUsers = options.sshUsers ?? ["ddev"];
       hardenServer(sshUsers);

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent**: Fix `ddev start` — set `DDEV_NONINTERACTIVE=true` in systemd service to skip `ddev-hostname` `/etc/hosts` management (see [ddev/ddev#2696])
+- **Agent**: Fix setup — install system dependencies (`jq`, `curl`, `rsync`) as a first step
+
 ## [0.1.6] - 2026-02-12
 
 ### Fixed
@@ -80,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#9]: https://github.com/studiometa/trafic/pull/9
 [#10]: https://github.com/studiometa/trafic/pull/10
 [#11]: https://github.com/studiometa/trafic/pull/11
+[ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
