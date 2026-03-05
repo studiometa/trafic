@@ -44,11 +44,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
     "smol-toml": "^1.6.0"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13"
   },
   "engines": {
     "node": ">=24.0.0"
