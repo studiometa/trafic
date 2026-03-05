@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.10] - 2026.03.04
+
 ### Fixed
 
-- **Agent**: Fix DDEV install — use official apt repository instead of manual tarball, ensuring `ddev-hostname` and `mkcert` are always installed ([cdf41a4])
+- **Agent**: Fix DDEV install — use official apt repository instead of manual tarball, ensuring `ddev-hostname` and `mkcert` are always installed ([cdf41a4], [#14])
 
 ## [0.1.9] - 2026-03-04
 
@@ -104,7 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.9...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.10...HEAD
+[0.1.10]: https://github.com/studiometa/trafic/compare/0.1.9...0.1.10
 [0.1.9]: https://github.com/studiometa/trafic/compare/0.1.8...0.1.9
 [0.1.8]: https://github.com/studiometa/trafic/compare/0.1.7...0.1.8
 [0.1.7]: https://github.com/studiometa/trafic/compare/0.1.6...0.1.7
@@ -120,6 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#9]: https://github.com/studiometa/trafic/pull/9
 [#10]: https://github.com/studiometa/trafic/pull/10
 [#11]: https://github.com/studiometa/trafic/pull/11
+[#14]: https://github.com/studiometa/trafic/pull/14
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -129,6 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [56ca884]: https://github.com/studiometa/trafic/commit/56ca884
 [157f822]: https://github.com/studiometa/trafic/commit/157f822
 [3a057d0]: https://github.com/studiometa/trafic/commit/3a057d0
+[cdf41a4]: https://github.com/studiometa/trafic/commit/cdf41a4
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
