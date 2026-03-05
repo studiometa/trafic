@@ -25,47 +25,29 @@ export function installDdev(): void {
     return;
   }
 
-  // Install DDEV manually (the official script has issues with non-interactive shells)
-  // Get latest release version
-  info("Fetching latest DDEV version...");
-  const latestVersion = exec(
-    "curl -fsSL https://api.github.com/repos/ddev/ddev/releases/latest | grep '\"tag_name\"' | sed -E 's/.*\"([^\"]+)\".*/\\1/'",
+  // Install DDEV via the official apt repository
+  // See https://docs.ddev.com/en/stable/users/install/ddev-installation/#debianubuntu
+  info("Adding DDEV apt repository...");
+  exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
+  exec(
+    "curl -fsSL https://pkg.ddev.com/apt/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/ddev.gpg > /dev/null",
     { silent: true },
-  )?.trim();
-
-  if (!latestVersion) {
-    throw new Error("Could not determine latest DDEV version");
-  }
-
-  info(`Installing DDEV ${latestVersion}...`);
-
-  // Download and extract
-  const arch = exec("uname -m", { silent: true })?.trim() === "x86_64" ? "amd64" : "arm64";
-  const tarball = `ddev_linux-${arch}.${latestVersion}.tar.gz`;
-  const url = `https://github.com/ddev/ddev/releases/download/${latestVersion}/${tarball}`;
-
-  exec(`curl -fsSL -o /tmp/${tarball} ${url}`, { silent: true });
-  exec(`tar -xzf /tmp/${tarball} -C /tmp ddev`, { silent: true });
-
-  // Install to /usr/local/bin (we're root)
-  exec("mv /tmp/ddev /usr/local/bin/ddev", { silent: true });
-  exec("chmod +x /usr/local/bin/ddev", { silent: true });
-  exec(`rm -f /tmp/${tarball}`, { silent: true });
-
-  // Also install mkcert for local HTTPS
-  info("Installing mkcert...");
-  const mkcertVersion = exec(
-    "curl -fsSL https://api.github.com/repos/FiloSottile/mkcert/releases/latest | grep '\"tag_name\"' | sed -E 's/.*\"([^\"]+)\".*/\\1/'",
+  );
+  exec("chmod a+r /etc/apt/keyrings/ddev.gpg", { silent: true });
+  exec(
+    "echo \"deb [signed-by=/etc/apt/keyrings/ddev.gpg] https://pkg.ddev.com/apt/ * *\" | tee /etc/apt/sources.list.d/ddev.list > /dev/null",
     { silent: true },
-  )?.trim();
+  );
 
-  if (mkcertVersion) {
-    const mkcertBin = `mkcert-${mkcertVersion}-linux-${arch}`;
-    exec(`curl -fsSL -o /usr/local/bin/mkcert https://github.com/FiloSottile/mkcert/releases/download/${mkcertVersion}/${mkcertBin}`, { silent: true });
-    exec("chmod +x /usr/local/bin/mkcert", { silent: true });
-  }
+  info("Installing DDEV...");
+  exec("apt-get update -qq", { silent: true });
+  exec("DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y ddev", { silent: true });
 
-  success(`DDEV ${latestVersion} installed`);
+  // Initialize mkcert certificate authority
+  exec("mkcert -install", { silent: true });
+
+  const version = exec("ddev --version 2>/dev/null | head -1", { silent: true });
+  success(`DDEV installed: ${version?.trim() ?? "unknown version"}`);
 }
 
 /**
