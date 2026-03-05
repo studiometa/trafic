@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.12] - 2026.03.04
+
+### Fixed
+
+- **Agent**: Fix mkcert CA not found by DDEV — run `mkcert -install` with `HOME=/home/ddev` and `chown` the result to `ddev:ddev` so the CA is installed in the ddev user trust store ([304fa0b], [#19])
+
+### Changed
+
+- **CI**: Add `CODECOV_TOKEN` and explicit `lcov.info` file paths to Codecov upload steps ([beaeab3], [#19])
+
 ## [0.1.11] - 2026.03.04
 
 ### Added
@@ -118,7 +128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.11...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.12...HEAD
+[0.1.12]: https://github.com/studiometa/trafic/compare/0.1.11...0.1.12
 [0.1.11]: https://github.com/studiometa/trafic/compare/0.1.10...0.1.11
 [0.1.10]: https://github.com/studiometa/trafic/compare/0.1.9...0.1.10
 [0.1.9]: https://github.com/studiometa/trafic/compare/0.1.8...0.1.9
@@ -139,6 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#14]: https://github.com/studiometa/trafic/pull/14
 [#17]: https://github.com/studiometa/trafic/pull/17
 [#18]: https://github.com/studiometa/trafic/pull/18
+[#19]: https://github.com/studiometa/trafic/pull/19
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -153,6 +165,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [5724b7a]: https://github.com/studiometa/trafic/commit/5724b7a
 [9279484]: https://github.com/studiometa/trafic/commit/9279484
 [df92fc8]: https://github.com/studiometa/trafic/commit/df92fc8
+[304fa0b]: https://github.com/studiometa/trafic/commit/304fa0b
+[beaeab3]: https://github.com/studiometa/trafic/commit/beaeab3
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
