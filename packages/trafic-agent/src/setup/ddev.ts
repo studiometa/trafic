@@ -14,6 +14,23 @@ export function installSystemDeps(): void {
 }
 
 /**
+ * Add the official DDEV apt repository and GPG key.
+ * Idempotent: safe to call even if the repository is already configured.
+ */
+export function addDdevAptRepo(): void {
+  exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
+  exec(
+    "curl -fsSL https://pkg.ddev.com/apt/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/ddev.gpg > /dev/null",
+    { silent: true },
+  );
+  exec("chmod a+r /etc/apt/keyrings/ddev.gpg", { silent: true });
+  exec(
+    "echo \"deb [signed-by=/etc/apt/keyrings/ddev.gpg] https://pkg.ddev.com/apt/ * *\" | tee /etc/apt/sources.list.d/ddev.list > /dev/null",
+    { silent: true },
+  );
+}
+
+/**
  * Install DDEV
  */
 export function installDdev(): void {
@@ -28,16 +45,7 @@ export function installDdev(): void {
   // Install DDEV via the official apt repository
   // See https://docs.ddev.com/en/stable/users/install/ddev-installation/#debianubuntu
   info("Adding DDEV apt repository...");
-  exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
-  exec(
-    "curl -fsSL https://pkg.ddev.com/apt/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/ddev.gpg > /dev/null",
-    { silent: true },
-  );
-  exec("chmod a+r /etc/apt/keyrings/ddev.gpg", { silent: true });
-  exec(
-    "echo \"deb [signed-by=/etc/apt/keyrings/ddev.gpg] https://pkg.ddev.com/apt/ * *\" | tee /etc/apt/sources.list.d/ddev.list > /dev/null",
-    { silent: true },
-  );
+  addDdevAptRepo();
 
   info("Installing DDEV...");
   exec("apt-get update -qq", { silent: true });

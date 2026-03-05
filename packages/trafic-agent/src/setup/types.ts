@@ -1,4 +1,32 @@
 /**
+ * A versioned server migration
+ */
+export interface Migration {
+  /** Unique identifier, e.g. "0001__ddev_apt_repo" */
+  id: string;
+  /** Human-readable description shown in --list output and on run */
+  description: string;
+  /** Run the migration. Must be idempotent and non-interactive. */
+  run(): void;
+}
+
+/**
+ * Persisted migration state stored in /etc/trafic/.migrations.json
+ */
+export interface MigrationState {
+  /** Ordered list of applied migration IDs */
+  applied: string[];
+}
+
+/**
+ * Entry returned by listMigrations()
+ */
+export interface MigrationListEntry {
+  migration: Migration;
+  status: "applied" | "pending";
+}
+
+/**
  * Setup command options
  */
 export interface SetupOptions {

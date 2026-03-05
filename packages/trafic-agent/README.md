@@ -42,6 +42,32 @@ trafic-agent setup --tld previews.example.com
 - Root access (for initial setup)
 - Wildcard DNS pointing to the server
 
+### `trafic-agent upgrade`
+
+Run pending server migrations to bring an existing server up-to-date after a `trafic-agent` update. Migrations are forward-only and idempotent — safe to run multiple times.
+
+Fresh servers set up with `trafic-agent setup` have all migrations automatically marked as applied, so `upgrade` is only relevant for existing deployments.
+
+```bash
+# Preview what would be done
+sudo trafic-agent upgrade --dry-run
+
+# Apply all pending migrations
+sudo trafic-agent upgrade
+
+# List all migrations and their status
+trafic-agent upgrade --list
+```
+
+Example `--list` output:
+
+```
+✓ 0001__ddev_apt_repo   Migrate DDEV from manual tarball to apt repository   (applied)
+→ 0002__...             ...                                                    (pending)
+```
+
+State is stored in `/etc/trafic/.migrations.json` and is updated after each individual migration, so a partial failure leaves the state consistent.
+
 ## Configuration
 
 Create `/etc/trafic/config.toml`:
