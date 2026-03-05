@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.16] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix `upgrade` — re-exec the newly installed binary after `npm install -g` so new migrations are picked up by the new process, not the old one ([dbf7562], [#23])
+- **Agent**: Fix migration `0003__ddev_router_bind_all_interfaces` — replace `ddev restart router` (invalid) with `ddev poweroff && ddev start --all` ([84a82cf], [#23])
+
 ## [0.1.15] - 2026.03.05
 
 ### Fixed
@@ -152,7 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.15...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.16...HEAD
+[0.1.16]: https://github.com/studiometa/trafic/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/studiometa/trafic/compare/0.1.14...0.1.15
 [0.1.14]: https://github.com/studiometa/trafic/compare/0.1.13...0.1.14
 [0.1.13]: https://github.com/studiometa/trafic/compare/0.1.12...0.1.13
@@ -181,6 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#20]: https://github.com/studiometa/trafic/pull/20
 [#21]: https://github.com/studiometa/trafic/pull/21
 [#22]: https://github.com/studiometa/trafic/pull/22
+[#23]: https://github.com/studiometa/trafic/pull/23
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -201,6 +210,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [a891c4f]: https://github.com/studiometa/trafic/commit/a891c4f
 [6686bc5]: https://github.com/studiometa/trafic/commit/6686bc5
 [206c7ed]: https://github.com/studiometa/trafic/commit/206c7ed
+[dbf7562]: https://github.com/studiometa/trafic/commit/dbf7562
+[84a82cf]: https://github.com/studiometa/trafic/commit/84a82cf
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
