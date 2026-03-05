@@ -2,12 +2,17 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import type { Migration, MigrationState, MigrationListEntry } from "../types.js";
 import { migration0001DdevAptRepo } from "./0001__ddev_apt_repo.js";
 import { migration0002MkcertDdevUser } from "./0002__mkcert_ddev_user.js";
+import { migration0003DdevRouterBindAllInterfaces } from "./0003__ddev_router_bind_all_interfaces.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
 
 /** Ordered registry of all known migrations */
-export const ALL_MIGRATIONS: Migration[] = [migration0001DdevAptRepo, migration0002MkcertDdevUser];
+export const ALL_MIGRATIONS: Migration[] = [
+  migration0001DdevAptRepo,
+  migration0002MkcertDdevUser,
+  migration0003DdevRouterBindAllInterfaces,
+];
 
 // ---------------------------------------------------------------------------
 // State helpers
