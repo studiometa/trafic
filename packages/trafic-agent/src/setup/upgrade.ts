@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { step, success, info, warn, exec, isRoot } from "./steps.js";
 import { runPendingMigrations } from "./migrations/index.js";
 
@@ -45,6 +45,17 @@ export function installLatestAgent(dryRun: boolean): void {
 }
 
 /**
+ * Re-exec the newly installed trafic-agent binary with the same arguments.
+ * Used after a self-update so the new binary runs its own migrations.
+ * This function never returns — it replaces the current process.
+ */
+export function reExecNewBinary(args: string[]): never {
+  const binary = execSync("which trafic-agent", { encoding: "utf-8", stdio: "pipe" }).trim();
+  const result = spawnSync(binary, args, { stdio: "inherit" });
+  process.exit(result.status ?? 0);
+}
+
+/**
  * Restart the trafic-agent systemd service.
  */
 export function restartAgentService(dryRun: boolean): void {
@@ -54,11 +65,12 @@ export function restartAgentService(dryRun: boolean): void {
 /**
  * Full upgrade sequence:
  *  1. Check for a new version on npm
- *  2. Install it globally if one is found
+ *  2. Install it globally if one is found — then re-exec the new binary
+ *     so that steps 3 and 4 run with the new migration registry
  *  3. Run pending migrations
  *  4. Restart the systemd service
  */
-export function runUpgrade(dryRun = false): void {
+export function runUpgrade(dryRun = false, reExecArgs?: string[]): void {
   if (!isRoot() && !dryRun) {
     console.error("    \x1b[31m✗\x1b[0m This command must be run as root");
     console.log("  Run: sudo trafic-agent upgrade");
@@ -83,6 +95,10 @@ export function runUpgrade(dryRun = false): void {
     installLatestAgent(dryRun);
     if (!dryRun) {
       success(`Installed @studiometa/trafic-agent@${latest}`);
+      // Re-exec the newly installed binary so steps 3 and 4 run with the
+      // new migration registry — the current process only knows about
+      // migrations that existed at the time it was compiled.
+      reExecNewBinary(reExecArgs ?? ["upgrade"]);
     }
   } else {
     success(`Already up to date (${current})`);
