@@ -6,6 +6,7 @@ import { installSystemDeps, installDdev, configureDdev, configureTraefik } from 
 import { installNode, installAgent, createAgentConfig, createSystemdService } from "./agent.js";
 import { hardenServer } from "./hardening.js";
 import { runAudit, printAuditResults } from "./audit.js";
+import { markAllMigrationsApplied } from "./migrations/index.js";
 
 export * from "./types.js";
 export * from "./audit.js";
@@ -81,6 +82,9 @@ export async function setup(options: SetupOptions): Promise<void> {
       step("Server hardening");
       info("Skipped (--no-hardening)");
     }
+
+    // Mark all migrations as applied — fresh servers are already up-to-date
+    markAllMigrationsApplied();
 
     // Done
     console.log("\n\x1b[32m✓ Setup complete!\x1b[0m\n");
