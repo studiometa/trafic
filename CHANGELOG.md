@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent**: Add `trafic-agent upgrade` command — versioned, forward-only migration system to update server tooling between releases without re-running `setup` ([9279484], [df92fc8], [#18])
+- **Agent**: Add `0001__ddev_apt_repo` migration — migrates DDEV from manual tarball install to official apt repository on existing servers ([df92fc8], [#18])
+
+### Changed
+
+- **Agent**: Replace `better-sqlite3` native addon with built-in `node:sqlite` — no more C++ compilation on install ([f5d93d5], [#17])
+- **Agent**: Remove `build-essential` and `python3` from install script — no longer needed without native addons ([5724b7a], [#17])
+
 ## [0.1.10] - 2026.03.04
 
 ### Fixed
@@ -124,6 +134,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#10]: https://github.com/studiometa/trafic/pull/10
 [#11]: https://github.com/studiometa/trafic/pull/11
 [#14]: https://github.com/studiometa/trafic/pull/14
+[#17]: https://github.com/studiometa/trafic/pull/17
+[#18]: https://github.com/studiometa/trafic/pull/18
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -134,6 +146,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [157f822]: https://github.com/studiometa/trafic/commit/157f822
 [3a057d0]: https://github.com/studiometa/trafic/commit/3a057d0
 [cdf41a4]: https://github.com/studiometa/trafic/commit/cdf41a4
+[f5d93d5]: https://github.com/studiometa/trafic/commit/f5d93d5
+[5724b7a]: https://github.com/studiometa/trafic/commit/5724b7a
+[9279484]: https://github.com/studiometa/trafic/commit/9279484
+[df92fc8]: https://github.com/studiometa/trafic/commit/df92fc8
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
