@@ -1,14 +1,14 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import type { ProjectRecord, AccessLog } from "../types.js";
 
-let db: Database.Database | null = null;
+let db: DatabaseSync | null = null;
 
 /**
  * Initialize the database connection and schema
  */
-export function initDb(dbPath: string): Database.Database {
-  db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+export function initDb(dbPath: string): DatabaseSync {
+  db = new DatabaseSync(dbPath);
+  db.exec("PRAGMA journal_mode=WAL");
 
   // Create tables
   db.exec(`
@@ -37,7 +37,7 @@ export function initDb(dbPath: string): Database.Database {
 /**
  * Get the database instance
  */
-export function getDb(): Database.Database {
+export function getDb(): DatabaseSync {
   if (!db) {
     throw new Error("Database not initialized. Call initDb first.");
   }
@@ -75,7 +75,7 @@ export function getProject(name: string): ProjectRecord | undefined {
   const stmt = database.prepare(
     "SELECT name, last_access as lastAccess, status FROM projects WHERE name = ?",
   );
-  return stmt.get(name) as ProjectRecord | undefined;
+  return stmt.get(name) as unknown as ProjectRecord | undefined;
 }
 
 /**
@@ -105,7 +105,7 @@ export function getIdleProjects(thresholdMs: number): ProjectRecord[] {
     FROM projects
     WHERE last_access < ? AND status = 'running'
   `);
-  return stmt.all(cutoff) as ProjectRecord[];
+  return stmt.all(cutoff) as unknown as ProjectRecord[];
 }
 
 /**
@@ -132,7 +132,7 @@ export function getAccessLogs(project: string, limit = 100): AccessLog[] {
     ORDER BY timestamp DESC
     LIMIT ?
   `);
-  return stmt.all(project, limit) as AccessLog[];
+  return stmt.all(project, limit) as unknown as AccessLog[];
 }
 
 /**
@@ -143,5 +143,5 @@ export function cleanOldLogs(days: number): number {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   const stmt = database.prepare("DELETE FROM access_logs WHERE timestamp < ?");
   const result = stmt.run(cutoff);
-  return result.changes;
+  return Number(result.changes);
 }

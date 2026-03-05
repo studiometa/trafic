@@ -80,13 +80,7 @@ log "Trafic Agent Installer"
 log "TLD: $TLD"
 echo ""
 
-# Step 1: Install build essentials (needed for native modules like better-sqlite3)
-log "Installing build essentials..."
-apt-get update -qq
-DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y build-essential python3
-success "Build essentials installed"
-
-# Step 2: Install Node.js if needed
+# Step 1: Install Node.js if needed
 if ! command -v node &> /dev/null; then
   log "Installing Node.js 24..."
   curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
