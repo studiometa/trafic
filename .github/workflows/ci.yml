@@ -34,7 +34,10 @@ jobs:
       - run: npm run test:ci
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./packages/trafic-agent/coverage/lcov.info,./packages/trafic-cli/coverage/lcov.info
           flags: unit
           fail_ci_if_error: false
 
@@ -53,6 +56,9 @@ jobs:
         run: npm run test:integration:ci --workspace=@studiometa/trafic-cli
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./packages/trafic-cli/coverage/lcov.info
           flags: integration
           fail_ci_if_error: false
