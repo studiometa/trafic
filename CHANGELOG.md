@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.20] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix `upgrade` infinite loop — verify installed version from `package.json` on disk before re-execing, use `--prefer-online` to bypass npm cache, and guard re-exec with `TRAFIC_UPGRADE_REEXEC=1` env var ([99bc7ba], [#26])
+
 ## [0.1.19] - 2026.03.05
 
 ### Fixed
@@ -180,7 +186,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.19...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.20...HEAD
+[0.1.20]: https://github.com/studiometa/trafic/compare/0.1.19...0.1.20
 [0.1.19]: https://github.com/studiometa/trafic/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/studiometa/trafic/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/studiometa/trafic/compare/0.1.16...0.1.17
@@ -216,6 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#23]: https://github.com/studiometa/trafic/pull/23
 [#24]: https://github.com/studiometa/trafic/pull/24
 [#25]: https://github.com/studiometa/trafic/pull/25
+[#26]: https://github.com/studiometa/trafic/pull/26
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -244,6 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [a703523]: https://github.com/studiometa/trafic/commit/a703523
 [ef986b4]: https://github.com/studiometa/trafic/commit/ef986b4
 [09bbc8a]: https://github.com/studiometa/trafic/commit/09bbc8a
+[99bc7ba]: https://github.com/studiometa/trafic/commit/99bc7ba
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
