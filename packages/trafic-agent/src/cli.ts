@@ -6,7 +6,8 @@ import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
 import { closeDb } from "./utils/db.js";
 import { setup, audit } from "./setup/index.js";
-import { listMigrations, runPendingMigrations } from "./setup/migrations/index.js";
+import { listMigrations } from "./setup/migrations/index.js";
+import { runUpgrade } from "./setup/upgrade.js";
 
 declare const __VERSION__: string;
 
@@ -19,7 +20,8 @@ Usage:
 Commands:
   start                   Start the agent server
   setup                   Setup a new server (Docker, DDEV, hardening)
-  upgrade                 Run pending server migrations
+  upgrade                 Check for a new version, install it, run migrations, restart the service
+  update                  Alias for upgrade
   audit                   Run security audit checks
   version                 Show version
   help                    Show this help
@@ -37,9 +39,9 @@ Setup options:
   --ssh-users <users>     Comma-separated list of SSH users to allow (default: ddev)
   --dry-run               Show what would be done without making changes
 
-Upgrade options:
+Upgrade/update options:
   --dry-run               Show what would be done without making changes
-  --list                  List all migrations and their status
+  --list                  List all migrations and their status (no install or restart)
 
 Examples:
   # Start the agent
@@ -51,10 +53,11 @@ Examples:
   sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
 
-  # Run pending server migrations
+  # Upgrade: install latest version, run migrations, restart service
   sudo trafic-agent upgrade
   sudo trafic-agent upgrade --dry-run
   trafic-agent upgrade --list
+  sudo trafic-agent update          # alias for upgrade
 
   # Run security audit
   trafic-agent audit
@@ -102,7 +105,7 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   startIdleScheduler(config);
 }
 
-function runUpgrade(values: Record<string, unknown>): void {
+function handleUpgrade(values: Record<string, unknown>): void {
   const dryRun = values["dry-run"] as boolean | undefined;
   const list = values.list as boolean | undefined;
 
@@ -126,7 +129,7 @@ function runUpgrade(values: Record<string, unknown>): void {
     console.log("\x1b[33m⚠ Dry-run mode: no changes will be made\x1b[0m\n");
   }
 
-  runPendingMigrations(dryRun ?? false);
+  runUpgrade(dryRun ?? false);
 
   if (!dryRun) {
     console.log("\n\x1b[32m✓ Upgrade complete!\x1b[0m\n");
@@ -207,7 +210,8 @@ async function main(): Promise<void> {
       break;
 
     case "upgrade":
-      runUpgrade(values);
+    case "update":
+      handleUpgrade(values);
       break;
 
     case "audit":

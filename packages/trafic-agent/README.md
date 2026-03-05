@@ -42,31 +42,37 @@ trafic-agent setup --tld previews.example.com
 - Root access (for initial setup)
 - Wildcard DNS pointing to the server
 
-### `trafic-agent upgrade`
+### `trafic-agent upgrade` / `trafic-agent update`
 
-Run pending server migrations to bring an existing server up-to-date after a `trafic-agent` update. Migrations are forward-only and idempotent — safe to run multiple times.
+Upgrade the server to the latest version of `trafic-agent` in one command. `update` is an alias for `upgrade`.
 
-Fresh servers set up with `trafic-agent setup` have all migrations automatically marked as applied, so `upgrade` is only relevant for existing deployments.
+Steps:
+1. **Check for updates** — queries the npm registry for the latest version
+2. **Install** — runs `npm install -g @studiometa/trafic-agent@latest` if a newer version is available
+3. **Migrations** — runs any pending server migrations (forward-only, idempotent)
+4. **Restart** — restarts the `trafic-agent` systemd service
+
+Fresh servers set up with `trafic-agent setup` have all migrations automatically marked as applied, so migrations only run when needed on existing deployments.
 
 ```bash
-# Preview what would be done
-sudo trafic-agent upgrade --dry-run
-
-# Apply all pending migrations
+# Upgrade to the latest version (recommended)
 sudo trafic-agent upgrade
 
-# List all migrations and their status
+# Preview what would be done without making changes
+sudo trafic-agent upgrade --dry-run
+
+# List all migrations and their status (no install or restart)
 trafic-agent upgrade --list
 ```
 
 Example `--list` output:
 
 ```
-✓ 0001__ddev_apt_repo   Migrate DDEV from manual tarball to apt repository   (applied)
-→ 0002__...             ...                                                    (pending)
+✓ 0001__ddev_apt_repo     Migrate DDEV from manual tarball to apt repository   (applied)
+✓ 0002__mkcert_ddev_user  Install mkcert CA in the ddev user trust store       (applied)
 ```
 
-State is stored in `/etc/trafic/.migrations.json` and is updated after each individual migration, so a partial failure leaves the state consistent.
+Migration state is stored in `/etc/trafic/.migrations.json` and updated after each individual migration, so a partial failure leaves the state consistent.
 
 ## Configuration
 
