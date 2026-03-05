@@ -143,6 +143,19 @@ bind-interfaces
 }
 
 /**
+ * Get the Docker bridge gateway IP — the host address reachable from inside
+ * Docker containers on Linux. Falls back to 172.17.0.1 (default bridge).
+ * `host.docker.internal` is not available on Linux without extra configuration.
+ */
+export function getDockerGatewayIp(): string {
+  const ip = exec(
+    "docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null",
+    { silent: true },
+  )?.trim();
+  return ip || "172.17.0.1";
+}
+
+/**
  * Configure Traefik for forward auth
  */
 export function configureTraefik(): void {
@@ -152,13 +165,17 @@ export function configureTraefik(): void {
   exec("mkdir -p /home/ddev/.ddev/traefik", { silent: true });
   exec("chown -R ddev:ddev /home/ddev/.ddev", { silent: true });
 
+  // Use the Docker bridge gateway IP instead of host.docker.internal —
+  // the latter is not available on Linux without extra Docker configuration.
+  const gatewayIp = getDockerGatewayIp();
+
   // Static configuration for Trafic middleware
   const staticConfig = `# Trafic: Forward auth middleware
 http:
   middlewares:
     trafic-auth:
       forwardAuth:
-        address: "http://host.docker.internal:9876/__auth__"
+        address: "http://${gatewayIp}:9876/__auth__"
         authResponseHeaders:
           - "X-Trafic-Project"
 
@@ -174,7 +191,7 @@ http:
     trafic-service:
       loadBalancer:
         servers:
-          - url: "http://host.docker.internal:9876"
+          - url: "http://${gatewayIp}:9876"
 `;
 
   writeFileSync("/home/ddev/.ddev/traefik/trafic.yaml", staticConfig);
