@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.13] - 2026.03.04
+
+### Fixed
+
+- **Agent**: Add migration `0002__mkcert_ddev_user` — install mkcert CA in the ddev user trust store on servers provisioned before 0.1.12 ([155af84], [#20])
+
+### Changed
+
+- **Agent**: Revert mkcert change from migration `0001__ddev_apt_repo` — released migrations are immutable; the fix is now a standalone migration ([155af84], [#20])
+
 ## [0.1.12] - 2026.03.04
 
 ### Fixed
@@ -128,7 +138,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.12...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.13...HEAD
+[0.1.13]: https://github.com/studiometa/trafic/compare/0.1.12...0.1.13
 [0.1.12]: https://github.com/studiometa/trafic/compare/0.1.11...0.1.12
 [0.1.11]: https://github.com/studiometa/trafic/compare/0.1.10...0.1.11
 [0.1.10]: https://github.com/studiometa/trafic/compare/0.1.9...0.1.10
@@ -151,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#17]: https://github.com/studiometa/trafic/pull/17
 [#18]: https://github.com/studiometa/trafic/pull/18
 [#19]: https://github.com/studiometa/trafic/pull/19
+[#20]: https://github.com/studiometa/trafic/pull/20
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -167,6 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [df92fc8]: https://github.com/studiometa/trafic/commit/df92fc8
 [304fa0b]: https://github.com/studiometa/trafic/commit/304fa0b
 [beaeab3]: https://github.com/studiometa/trafic/commit/beaeab3
+[155af84]: https://github.com/studiometa/trafic/commit/155af84
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
