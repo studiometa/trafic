@@ -51,8 +51,12 @@ export function installDdev(): void {
   exec("apt-get update -qq", { silent: true });
   exec("DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y ddev", { silent: true });
 
-  // Initialize mkcert certificate authority
-  exec("mkcert -install", { silent: true });
+  // Initialize mkcert certificate authority for the ddev user.
+  // mkcert installs the CA into the home directory of the current user.
+  // Since setup runs as root, we must point HOME to the ddev user's home
+  // so the CA is trusted by DDEV when it runs as that user.
+  exec("HOME=/home/ddev mkcert -install", { silent: true });
+  exec("chown -R ddev:ddev /home/ddev/.local/share/mkcert", { silent: true });
 
   const version = exec("ddev --version 2>/dev/null | head -1", { silent: true });
   success(`DDEV installed: ${version?.trim() ?? "unknown version"}`);
