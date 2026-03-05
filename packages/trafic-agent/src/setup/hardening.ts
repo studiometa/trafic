@@ -73,11 +73,14 @@ export function configureFirewall(): void {
   exec("ufw allow 22/tcp comment 'SSH'");
   exec("ufw allow 80/tcp comment 'HTTP'");
   exec("ufw allow 443/tcp comment 'HTTPS'");
+  // Allow trafic-agent port from Docker bridge subnets so ddev-router can
+  // reach the forward-auth endpoint. Docker typically uses 172.16.0.0/12.
+  exec("ufw allow from 172.16.0.0/12 to any port 9876 comment 'trafic-agent from Docker'");
 
   // Enable firewall
   exec("ufw --force enable");
 
-  success("Firewall enabled: SSH (22), HTTP (80), HTTPS (443) allowed");
+  success("Firewall enabled: SSH (22), HTTP (80), HTTPS (443), trafic-agent (9876 from Docker) allowed");
 }
 
 /**
