@@ -82,7 +82,7 @@ export function configureDdev(tld: string, email?: string): void {
   // Configure all global settings in a single call
   exec(
     ddevCmd(
-      `ddev config global --project-tld=${tld} --router-http-port=80 --router-https-port=443 --use-letsencrypt=${email ? "true" : "false"} ${email ? `--letsencrypt-email=${email}` : ""} --instrumentation-opt-in=false`,
+      `ddev config global --project-tld=${tld} --router-http-port=80 --router-https-port=443 --router-bind-all-interfaces=true --use-letsencrypt=${email ? "true" : "false"} ${email ? `--letsencrypt-email=${email}` : ""} --instrumentation-opt-in=false`,
     ),
     { silent: true },
   );
