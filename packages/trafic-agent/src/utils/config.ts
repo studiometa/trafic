@@ -1,12 +1,19 @@
 import { readFileSync, existsSync } from "node:fs";
 import { parse } from "smol-toml";
-import type { AgentConfig, AuthConfig, AuthRule } from "../types.js";
+import type { AgentConfig, AuthConfig, AuthRule, BackupConfig } from "../types.js";
 
 const DEFAULT_CONFIG_PATHS = [
   "/etc/trafic/config.toml",
   "./config.toml",
   "./trafic.toml",
 ];
+
+const DEFAULT_BACKUP_CONFIG: BackupConfig = {
+  enabled: false,
+  scheduleHour: 3,
+  retainDays: 7,
+  localDir: "/var/backups/trafic",
+};
 
 const DEFAULT_CONFIG: AgentConfig = {
   tld: "",
@@ -23,6 +30,7 @@ const DEFAULT_CONFIG: AgentConfig = {
     basicAuth: [],
     rules: [],
   },
+  backup: { ...DEFAULT_BACKUP_CONFIG },
 };
 
 /**
@@ -60,6 +68,7 @@ export function loadConfig(configPath?: string): AgentConfig {
 
   // Merge with defaults
   const auth = mergeAuthConfig(parsed.auth as Record<string, unknown>);
+  const backup = mergeBackupConfig(parsed.backup as Record<string, unknown>);
 
   return {
     tld: (parsed.tld as string) ?? DEFAULT_CONFIG.tld,
@@ -74,6 +83,7 @@ export function loadConfig(configPath?: string): AgentConfig {
       (parsed.idle_check_interval as string) ??
       DEFAULT_CONFIG.idleCheckInterval,
     auth,
+    backup,
   };
 }
 
@@ -98,6 +108,19 @@ function mergeAuthConfig(raw?: Record<string, unknown>): AuthConfig {
         allowedIps: r.allowed_ips as string[] | undefined,
       }),
     ),
+  };
+}
+
+function mergeBackupConfig(raw?: Record<string, unknown>): BackupConfig {
+  if (!raw) return { ...DEFAULT_BACKUP_CONFIG };
+
+  return {
+    enabled: (raw.enabled as boolean) ?? DEFAULT_BACKUP_CONFIG.enabled,
+    scheduleHour:
+      (raw.schedule_hour as number) ?? DEFAULT_BACKUP_CONFIG.scheduleHour,
+    retainDays:
+      (raw.retain_days as number) ?? DEFAULT_BACKUP_CONFIG.retainDays,
+    localDir: (raw.local_dir as string) ?? DEFAULT_BACKUP_CONFIG.localDir,
   };
 }
 

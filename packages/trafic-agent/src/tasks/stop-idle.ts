@@ -1,7 +1,10 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { getIdleProjects, setProjectStatus } from "../utils/db.js";
 import { stopProject, getProjectInfo, loadProjectList } from "../utils/ddev.js";
 import { parseDuration } from "../utils/config.js";
 import { loadProjectConfig, shouldNeverStop, getIdleTimeoutMs } from "../utils/project-config.js";
+import { backupProjectDb } from "./backup.js";
 import type { AgentConfig } from "../types.js";
 
 /**
@@ -49,6 +52,21 @@ export function stopIdleProjects(config: AgentConfig): void {
     }
 
     console.log(`Stopping idle project: ${project.name}`);
+
+    // Backup database before stopping (project is still running)
+    if (config.backup.enabled && projectDir) {
+      const date = new Date().toISOString().slice(0, 10);
+      const outputDir = join(config.backup.localDir, date);
+      mkdirSync(outputDir, { recursive: true });
+
+      const result = backupProjectDb(project.name, projectDir, outputDir);
+      if (result.success) {
+        console.log(`  Backed up before stop: ${project.name}`);
+      } else {
+        console.warn(`  Backup failed before stop: ${project.name} — ${result.error}`);
+      }
+    }
+
     const success = stopProject(project.name);
 
     if (success) {

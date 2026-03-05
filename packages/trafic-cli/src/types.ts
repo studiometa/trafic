@@ -50,6 +50,8 @@ export interface DestroyOptions extends SSHOptions {
   preview?: string;
   /** Projects directory on the server (default: "~/www") */
   projectsDir: string;
+  /** Skip backup before destroy (default: false) */
+  noBackup: boolean;
 }
 
 /**
