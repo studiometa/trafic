@@ -1,4 +1,19 @@
+import { writeFileSync } from "node:fs";
 import { step, success, info, exec, execSilent, warn } from "./steps.js";
+
+/**
+ * Write /etc/sudoers.d/trafic-ddev allowing the ddev user to run
+ * ddev-hostname without a password. Idempotent — safe to call multiple times.
+ */
+export function configureDdevSudoers(): void {
+  const sudoersContent = `# Trafic: allow ddev user to run ddev-hostname without a password.
+# ddev-hostname manages /etc/hosts and always calls sudo internally.
+ddev ALL=(ALL) NOPASSWD: /usr/bin/ddev-hostname
+`;
+  writeFileSync("/etc/sudoers.d/trafic-ddev", sudoersContent);
+  exec("chmod 440 /etc/sudoers.d/trafic-ddev", { silent: true });
+  success("Configured passwordless sudo for ddev-hostname");
+}
 
 /**
  * Create the ddev user with proper permissions
@@ -29,17 +44,13 @@ export function createDdevUser(): void {
   exec("chmod 700 /home/ddev/.ssh");
   exec("chown ddev:ddev /home/ddev/.ssh");
 
-  // Note: ddev user doesn't need sudo when DNS is properly configured
-  // - Docker access: via docker group membership
-  // - DDEV: runs as regular user, no sudo needed
-  // - Agent: runs as systemd service (root manages it)
-  // - Hostname resolution: via DNS (*.tld → server IP), not /etc/hosts
-  //
-  // If DNS is NOT configured for the custom TLD, DDEV will try to edit
-  // /etc/hosts which requires sudo. In that case, you'd need:
-  //   echo "ddev ALL=(ALL) NOPASSWD: /usr/local/bin/ddev-hostname" >> /etc/sudoers.d/ddev
-  // But it's better to just configure DNS properly.
-  success("User ddev configured (no sudo needed with proper DNS)");
+  // Allow ddev user to run ddev-hostname without a password.
+  // ddev-hostname manages /etc/hosts entries and always calls sudo internally,
+  // even when DDEV_NONINTERACTIVE=true. Without this rule, any ddev command
+  // that touches hostname resolution (start, restart, poweroff + start) will
+  // fail with "sudo: a terminal is required to read the password".
+  configureDdevSudoers();
+  success("User ddev configured");
 }
 
 /**
