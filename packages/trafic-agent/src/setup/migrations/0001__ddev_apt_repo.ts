@@ -37,7 +37,9 @@ export const migration0001DdevAptRepo: Migration = {
       silent: true,
     });
 
-    // 4. Re-install mkcert CA (mkcert is now bundled with DDEV via apt)
-    exec("mkcert -install", { silent: true });
+    // 4. Re-install mkcert CA for the ddev user (mkcert is now bundled with DDEV via apt).
+    // Must run with HOME=/home/ddev so the CA lands in the right trust store.
+    exec("HOME=/home/ddev mkcert -install", { silent: true });
+    exec("chown -R ddev:ddev /home/ddev/.local/share/mkcert", { silent: true });
   },
 };
