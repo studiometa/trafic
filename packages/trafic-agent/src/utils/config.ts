@@ -77,6 +77,22 @@ export function loadConfig(configPath?: string): AgentConfig {
   };
 }
 
+/**
+ * Parse basic_auth entries from TOML.
+ * Accepts either plain strings ("user:pass") or objects ({username, password}).
+ */
+function parseBasicAuthEntries(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.map((entry) => {
+    if (typeof entry === "string") return entry;
+    if (typeof entry === "object" && entry !== null) {
+      const { username, password } = entry as Record<string, unknown>;
+      return `${username}:${password}`;
+    }
+    return String(entry);
+  });
+}
+
 function mergeAuthConfig(raw?: Record<string, unknown>): AuthConfig {
   if (!raw) return DEFAULT_CONFIG.auth;
 
@@ -89,7 +105,7 @@ function mergeAuthConfig(raw?: Record<string, unknown>): AuthConfig {
     allowedIps:
       (raw.allowed_ips as string[]) ?? DEFAULT_CONFIG.auth.allowedIps,
     tokens: (raw.tokens as string[]) ?? DEFAULT_CONFIG.auth.tokens,
-    basicAuth: (raw.basic_auth as string[]) ?? DEFAULT_CONFIG.auth.basicAuth,
+    basicAuth: parseBasicAuthEntries(raw.basic_auth) ?? DEFAULT_CONFIG.auth.basicAuth,
     rules: rules.map(
       (r): AuthRule => ({
         match: r.match as string,

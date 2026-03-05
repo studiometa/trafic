@@ -170,16 +170,20 @@ export function getDockerGatewayIp(): string {
 export function configureTraefik(): void {
   step("Configure Traefik for forward auth");
 
-  // Create custom Traefik config directory
-  exec("mkdir -p /home/ddev/.ddev/traefik", { silent: true });
+  // Create custom Traefik config directories
+  exec("mkdir -p /home/ddev/.ddev/traefik/custom-global-config", { silent: true });
   exec("chown -R ddev:ddev /home/ddev/.ddev", { silent: true });
 
   // Use the Docker bridge gateway IP instead of host.docker.internal —
   // the latter is not available on Linux without extra Docker configuration.
   const gatewayIp = getDockerGatewayIp();
 
-  // Static configuration for Trafic middleware
-  const staticConfig = `# Trafic: Forward auth middleware
+  // Dynamic configuration: defines the trafic-auth and trafic-errors middlewares
+  // and the trafic-service backend pointing at the agent.
+  // Written to:
+  //   - custom-global-config/ — picked up by DDEV 1.25+ (survives config dir purge on restart)
+  //   - traefik root — also watched by older DDEV versions
+  const dynamicConfig = `# Trafic: Forward auth middleware definition
 http:
   middlewares:
     trafic-auth:
@@ -203,25 +207,30 @@ http:
           - url: "http://${gatewayIp}:9876"
 `;
 
-  writeFileSync("/home/ddev/.ddev/traefik/trafic.yaml", staticConfig);
+  writeFileSync("/home/ddev/.ddev/traefik/trafic.yaml", dynamicConfig);
   exec("chown ddev:ddev /home/ddev/.ddev/traefik/trafic.yaml", { silent: true });
+  writeFileSync("/home/ddev/.ddev/traefik/custom-global-config/trafic.yaml", dynamicConfig);
+  exec("chown ddev:ddev /home/ddev/.ddev/traefik/custom-global-config/trafic.yaml", { silent: true });
 
-  // Create default router config that applies middleware to all projects
-  const routerConfig = `# Trafic: Default router configuration
-# This file makes all DDEV projects use the Trafic auth middleware
-http:
-  routers:
-    trafic-catch-all:
-      rule: "HostRegexp(\`.+\`)"
-      priority: 1
+  // Static configuration: attaches trafic-auth and trafic-errors to the
+  // http-80 and http-443 entry points so every request goes through auth —
+  // regardless of which project router handles it.
+  // DDEV merges all static_config.*.yaml files into .static_config.yaml on start.
+  const staticConfig = `entryPoints:
+  http-80:
+    http:
       middlewares:
-        - trafic-auth
-        - trafic-errors
-      service: api@internal
+        - trafic-auth@file
+        - trafic-errors@file
+  http-443:
+    http:
+      middlewares:
+        - trafic-auth@file
+        - trafic-errors@file
 `;
 
-  writeFileSync("/home/ddev/.ddev/traefik/dynamic.yaml", routerConfig);
-  exec("chown ddev:ddev /home/ddev/.ddev/traefik/dynamic.yaml", { silent: true });
+  writeFileSync("/home/ddev/.ddev/traefik/static_config.trafic.yaml", staticConfig);
+  exec("chown ddev:ddev /home/ddev/.ddev/traefik/static_config.trafic.yaml", { silent: true });
 
   success("Traefik configured with Trafic middleware");
 }
