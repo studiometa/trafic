@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.21] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix `upgrade` loop — use `readlink -f` to resolve the binary symlink and read `package.json` directly for the installed version check ([be2b7b9])
+- **Agent**: Fix UFW — allow trafic-agent port 9876 from Docker bridge subnets (`172.16.0.0/12`) so `ddev-router` can reach the forward-auth endpoint; without this auth silently times out ([bc9304e])
+- **Agent**: Add migration `0007__ufw_docker_trafic_port` — adds the UFW rule on existing servers ([bc9304e])
+
 ## [0.1.20] - 2026.03.05
 
 ### Fixed
@@ -186,7 +194,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.20...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.21...HEAD
+[0.1.21]: https://github.com/studiometa/trafic/compare/0.1.20...0.1.21
 [0.1.20]: https://github.com/studiometa/trafic/compare/0.1.19...0.1.20
 [0.1.19]: https://github.com/studiometa/trafic/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/studiometa/trafic/compare/0.1.17...0.1.18
@@ -224,6 +233,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#24]: https://github.com/studiometa/trafic/pull/24
 [#25]: https://github.com/studiometa/trafic/pull/25
 [#26]: https://github.com/studiometa/trafic/pull/26
+[be2b7b9]: https://github.com/studiometa/trafic/commit/be2b7b9
+[bc9304e]: https://github.com/studiometa/trafic/commit/bc9304e
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
