@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.22] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix auth bypass — switch Traefik from catch-all router (priority=1, ineffective against DDEV project routers) to entry point-level middleware via `static_config.trafic.yaml`; DDEV merges this into `.static_config.yaml` so every request on `http-80`/`http-443` passes through auth ([9c1adf5], [#27])
+- **Agent**: Fix `basic_auth` parsing — TOML inline tables (`{username, password}`) were not normalized to `"user:pass"` strings, causing credentials to always fail ([f2ac2bc], [#27])
+- **Agent**: Add migration `0008__traefik_entrypoint_middleware` — applies the Traefik config change on existing servers and restarts DDEV ([9c1adf5], [#27])
+- **CI**: Run CI checks on `fix/**` branches ([b63e29b], [#27])
+
 ## [0.1.21] - 2026.03.05
 
 ### Fixed
@@ -194,7 +203,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.21...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.22...HEAD
+[0.1.22]: https://github.com/studiometa/trafic/compare/0.1.21...0.1.22
 [0.1.21]: https://github.com/studiometa/trafic/compare/0.1.20...0.1.21
 [0.1.20]: https://github.com/studiometa/trafic/compare/0.1.19...0.1.20
 [0.1.19]: https://github.com/studiometa/trafic/compare/0.1.18...0.1.19
@@ -235,6 +245,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#26]: https://github.com/studiometa/trafic/pull/26
 [be2b7b9]: https://github.com/studiometa/trafic/commit/be2b7b9
 [bc9304e]: https://github.com/studiometa/trafic/commit/bc9304e
+[f2ac2bc]: https://github.com/studiometa/trafic/commit/f2ac2bc
+[9c1adf5]: https://github.com/studiometa/trafic/commit/9c1adf5
+[b63e29b]: https://github.com/studiometa/trafic/commit/b63e29b
+[#27]: https://github.com/studiometa/trafic/pull/27
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
