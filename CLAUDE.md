@@ -66,7 +66,7 @@ Commands:
 
 ### Agent (`packages/trafic-agent/`)
 
-Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + SQLite (better-sqlite3). Handles:
+Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + `node:sqlite`. Handles:
 - Forward auth for Traefik (IP whitelist, basic auth, tokens)
 - Scale-to-zero (stop idle projects)
 - Waiting pages (auto-start on request)
@@ -77,7 +77,30 @@ Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + 
 Commands:
 - `trafic-agent start` — Start the agent server
 - `trafic-agent setup` — Server provisioning (Docker, DDEV, hardening)
+- `trafic-agent upgrade` — Run pending server migrations
 - `trafic-agent audit` — Security audit checks
+
+### Agent migrations (`packages/trafic-agent/src/setup/migrations/`)
+
+Migrations fix server state on **existing** servers when the correct behaviour changes between releases. They are forward-only and run exactly once per server.
+
+**When to write a new migration (not edit an existing one):**
+- A bug fix changes how something was installed or configured on a server (e.g. wrong path, wrong user, wrong flags)
+- An existing migration has already shipped in a release — servers that ran it are in the old state and need a corrective step
+- Never modify a migration that has already been released: treat released migrations as immutable
+
+**When NOT to write a migration:**
+- The change only affects fresh installs (`setup` already does the right thing)
+- The change is purely in-process (config file format, database schema handled elsewhere, etc.)
+
+**How to add a migration:**
+1. Create `packages/trafic-agent/src/setup/migrations/NNNN__short_description.ts` (zero-padded 4-digit sequence)
+2. Export a `const migrationNNNN... : Migration` object with `id`, `description`, and `run()`
+3. `run()` **must be idempotent** — guard with an `existsSync` or equivalent condition check
+4. Register it at the end of `ALL_MIGRATIONS` in `migrations/index.ts`
+5. `markAllMigrationsApplied()` is called by `setup()` — fresh servers automatically skip all migrations
+
+**Migration file naming:** `NNNN__short_description.ts` where `NNNN` is the next available 4-digit number (e.g. `0003__...` after `0002__...`).
 
 ## Testing
 
