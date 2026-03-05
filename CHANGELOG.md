@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.19] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix `getDockerGatewayIp()` — inspect `ddev_default` network first (where `ddev-router` actually runs) instead of the default `bridge` network ([ef986b4])
+- **Agent**: Add migration `0006__traefik_gateway_ip_fix` — corrects the wrong IP written by migration `0005` on existing servers ([09bbc8a])
+
 ## [0.1.18] - 2026.03.05
 
 ### Fixed
@@ -173,7 +180,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.18...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.19...HEAD
+[0.1.19]: https://github.com/studiometa/trafic/compare/0.1.18...0.1.19
 [0.1.18]: https://github.com/studiometa/trafic/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/studiometa/trafic/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/studiometa/trafic/compare/0.1.15...0.1.16
@@ -234,6 +242,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [8d11700]: https://github.com/studiometa/trafic/commit/8d11700
 [5e342d9]: https://github.com/studiometa/trafic/commit/5e342d9
 [a703523]: https://github.com/studiometa/trafic/commit/a703523
+[ef986b4]: https://github.com/studiometa/trafic/commit/ef986b4
+[09bbc8a]: https://github.com/studiometa/trafic/commit/09bbc8a
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
