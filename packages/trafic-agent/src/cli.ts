@@ -129,7 +129,9 @@ function handleUpgrade(values: Record<string, unknown>): void {
     console.log("\x1b[33m⚠ Dry-run mode: no changes will be made\x1b[0m\n");
   }
 
-  runUpgrade(dryRun ?? false);
+  // Build re-exec args so flags survive the binary swap after a self-update
+  const reExecArgs = ["upgrade", ...(dryRun ? ["--dry-run"] : [])];
+  runUpgrade(dryRun ?? false, reExecArgs);
 
   if (!dryRun) {
     console.log("\n\x1b[32m✓ Upgrade complete!\x1b[0m\n");

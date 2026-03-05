@@ -19,6 +19,8 @@ export const migration0003DdevRouterBindAllInterfaces: Migration = {
 
   run(): void {
     exec("su - ddev -c 'ddev config global --router-bind-all-interfaces=true'", { silent: true });
-    exec("su - ddev -c 'ddev restart router'", { silent: true });
+    // Restart all running projects so the router picks up the new bind setting
+    exec("su - ddev -c 'ddev poweroff'", { silent: true });
+    exec("su - ddev -c 'ddev start --all'", { silent: true });
   },
 };
