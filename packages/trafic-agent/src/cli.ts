@@ -6,6 +6,7 @@ import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
 import { closeDb } from "./utils/db.js";
 import { setup, audit } from "./setup/index.js";
+import { listMigrations, runPendingMigrations } from "./setup/migrations/index.js";
 
 declare const __VERSION__: string;
 
@@ -18,6 +19,7 @@ Usage:
 Commands:
   start                   Start the agent server
   setup                   Setup a new server (Docker, DDEV, hardening)
+  upgrade                 Run pending server migrations
   audit                   Run security audit checks
   version                 Show version
   help                    Show this help
@@ -35,6 +37,10 @@ Setup options:
   --ssh-users <users>     Comma-separated list of SSH users to allow (default: ddev)
   --dry-run               Show what would be done without making changes
 
+Upgrade options:
+  --dry-run               Show what would be done without making changes
+  --list                  List all migrations and their status
+
 Examples:
   # Start the agent
   trafic-agent start
@@ -44,6 +50,11 @@ Examples:
   sudo trafic-agent setup --tld=previews.example.com
   sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
+
+  # Run pending server migrations
+  sudo trafic-agent upgrade
+  sudo trafic-agent upgrade --dry-run
+  trafic-agent upgrade --list
 
   # Run security audit
   trafic-agent audit
@@ -91,6 +102,37 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   startIdleScheduler(config);
 }
 
+function runUpgrade(values: Record<string, unknown>): void {
+  const dryRun = values["dry-run"] as boolean | undefined;
+  const list = values.list as boolean | undefined;
+
+  if (list) {
+    const entries = listMigrations();
+    console.log("\nMigrations:\n");
+
+    for (const { migration, status } of entries) {
+      const icon = status === "applied" ? "\x1b[32m✓\x1b[0m" : "\x1b[36m→\x1b[0m";
+      const label = status === "applied" ? "\x1b[90m(applied)\x1b[0m" : "(pending)";
+      console.log(`  ${icon} \x1b[1m${migration.id.padEnd(30)}\x1b[0m ${migration.description.padEnd(55)} ${label}`);
+    }
+
+    console.log("");
+    return;
+  }
+
+  console.log("\n\x1b[1m🚦 Trafic Server Upgrade\x1b[0m\n");
+
+  if (dryRun) {
+    console.log("\x1b[33m⚠ Dry-run mode: no changes will be made\x1b[0m\n");
+  }
+
+  runPendingMigrations(dryRun ?? false);
+
+  if (!dryRun) {
+    console.log("\n\x1b[32m✓ Upgrade complete!\x1b[0m\n");
+  }
+}
+
 async function runSetup(values: Record<string, unknown>): Promise<void> {
   // Load existing config to use as defaults on re-runs
   const existingConfig = loadConfig();
@@ -134,6 +176,9 @@ async function main(): Promise<void> {
       "no-ddev": { type: "boolean" },
       "ssh-users": { type: "string" },
       "dry-run": { type: "boolean" },
+
+      // Upgrade options
+      list: { type: "boolean" },
     },
   });
 
@@ -159,6 +204,10 @@ async function main(): Promise<void> {
 
     case "setup":
       await runSetup(values);
+      break;
+
+    case "upgrade":
+      runUpgrade(values);
       break;
 
     case "audit":
