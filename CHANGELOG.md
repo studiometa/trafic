@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent**: Fix DDEV install — use official apt repository instead of manual tarball, ensuring `ddev-hostname` and `mkcert` are always installed ([cdf41a4])
+
 ## [0.1.9] - 2026-03-04
 
 ### Fixed
