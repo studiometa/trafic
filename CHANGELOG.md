@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.17] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix setup — write `/etc/sudoers.d/trafic-ddev` to allow `ddev` user to run `ddev-hostname` without a password; without this rule `ddev start` fails in non-interactive contexts (migrations, upgrade) ([02af8ff], [#24])
+- **Agent**: Add migration `0004__ddev_hostname_sudoers` — writes the sudoers rule on existing servers ([8d11700], [#24])
+
 ## [0.1.16] - 2026.03.05
 
 ### Fixed
@@ -159,7 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.16...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.17...HEAD
+[0.1.17]: https://github.com/studiometa/trafic/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/studiometa/trafic/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/studiometa/trafic/compare/0.1.14...0.1.15
 [0.1.14]: https://github.com/studiometa/trafic/compare/0.1.13...0.1.14
@@ -190,6 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#21]: https://github.com/studiometa/trafic/pull/21
 [#22]: https://github.com/studiometa/trafic/pull/22
 [#23]: https://github.com/studiometa/trafic/pull/23
+[#24]: https://github.com/studiometa/trafic/pull/24
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -212,6 +221,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [206c7ed]: https://github.com/studiometa/trafic/commit/206c7ed
 [dbf7562]: https://github.com/studiometa/trafic/commit/dbf7562
 [84a82cf]: https://github.com/studiometa/trafic/commit/84a82cf
+[02af8ff]: https://github.com/studiometa/trafic/commit/02af8ff
+[8d11700]: https://github.com/studiometa/trafic/commit/8d11700
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
