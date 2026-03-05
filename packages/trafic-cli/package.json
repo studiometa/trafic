@@ -1,6 +1,6 @@
 {
   "name": "@studiometa/trafic-cli",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "CLI to deploy projects to DDEV servers — preview environments from CI",
   "keywords": [
     "ci",

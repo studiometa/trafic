@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.18] - 2026.03.05
+
+### Fixed
+
+- **Agent**: Fix Traefik forward-auth config — use Docker bridge gateway IP instead of `host.docker.internal`, which is not available on Linux and caused auth to be silently bypassed ([5e342d9], [#25])
+- **Agent**: Add migration `0005__traefik_gateway_ip` — rewrites existing `trafic.yaml` in-place with the correct gateway IP ([a703523], [#25])
+
 ## [0.1.17] - 2026.03.05
 
 ### Fixed
@@ -166,7 +173,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.17...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.18...HEAD
+[0.1.18]: https://github.com/studiometa/trafic/compare/0.1.17...0.1.18
 [0.1.17]: https://github.com/studiometa/trafic/compare/0.1.16...0.1.17
 [0.1.16]: https://github.com/studiometa/trafic/compare/0.1.15...0.1.16
 [0.1.15]: https://github.com/studiometa/trafic/compare/0.1.14...0.1.15
@@ -199,6 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#22]: https://github.com/studiometa/trafic/pull/22
 [#23]: https://github.com/studiometa/trafic/pull/23
 [#24]: https://github.com/studiometa/trafic/pull/24
+[#25]: https://github.com/studiometa/trafic/pull/25
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
@@ -223,6 +232,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [84a82cf]: https://github.com/studiometa/trafic/commit/84a82cf
 [02af8ff]: https://github.com/studiometa/trafic/commit/02af8ff
 [8d11700]: https://github.com/studiometa/trafic/commit/8d11700
+[5e342d9]: https://github.com/studiometa/trafic/commit/5e342d9
+[a703523]: https://github.com/studiometa/trafic/commit/a703523
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
