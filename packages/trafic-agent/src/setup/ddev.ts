@@ -143,16 +143,25 @@ bind-interfaces
 }
 
 /**
- * Get the Docker bridge gateway IP — the host address reachable from inside
- * Docker containers on Linux. Falls back to 172.17.0.1 (default bridge).
+ * Get the Docker gateway IP reachable from inside DDEV containers on Linux.
+ * DDEV runs containers on the `ddev_default` network — we inspect that first.
+ * Falls back to the default `bridge` network, then to 172.17.0.1.
  * `host.docker.internal` is not available on Linux without extra configuration.
  */
 export function getDockerGatewayIp(): string {
-  const ip = exec(
+  // Prefer the ddev_default network gateway — that's the network ddev-router is on
+  const ddevIp = exec(
+    "docker network inspect ddev_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null",
+    { silent: true },
+  )?.trim();
+  if (ddevIp) return ddevIp;
+
+  // Fall back to the default bridge network
+  const bridgeIp = exec(
     "docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null",
     { silent: true },
   )?.trim();
-  return ip || "172.17.0.1";
+  return bridgeIp || "172.17.0.1";
 }
 
 /**
