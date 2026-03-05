@@ -50,16 +50,22 @@ export function installLatestAgent(dryRun: boolean): void {
 /**
  * Read the actual installed version of @studiometa/trafic-agent from its
  * package.json on disk — not from __VERSION__ which is baked in at build time.
+ *
+ * Resolves the package root by walking up from the trafic-agent binary:
+ *   /usr/bin/trafic-agent -> /usr/lib/node_modules/@studiometa/trafic-agent/dist/cli.js
+ *   -> /usr/lib/node_modules/@studiometa/trafic-agent/package.json
+ *
  * Returns null if the file can't be read.
  */
 export function getInstalledVersion(): string | null {
   try {
-    const binary = execSync("which trafic-agent", { encoding: "utf-8", stdio: "pipe" }).trim();
-    // binary is e.g. /usr/bin/trafic-agent -> ../lib/node_modules/.../dist/cli.js
-    // resolve to the package root: two levels up from dist/cli.js
-    const pkgJson = execSync(`node -e "console.log(require.resolve('@studiometa/trafic-agent/package.json'))"`,
-      { encoding: "utf-8", stdio: "pipe" }
-    ).trim();
+    // Resolve the real path of the binary (follow symlinks)
+    const realBinary = execSync("readlink -f $(which trafic-agent)", {
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+    // dist/cli.js -> up two dirs -> package root
+    const pkgJson = `${realBinary.replace(/\/dist\/cli\.js$/, "")}/package.json`;
     const pkg = JSON.parse(readFileSync(pkgJson, "utf-8")) as { version: string };
     return pkg.version;
   } catch {
