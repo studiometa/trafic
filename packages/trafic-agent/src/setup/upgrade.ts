@@ -1,4 +1,5 @@
 import { execSync, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { step, success, info, warn, exec, isRoot } from "./steps.js";
 import { runPendingMigrations } from "./migrations/index.js";
 
@@ -39,9 +40,31 @@ export function isNewer(current: string, next: string): boolean {
 
 /**
  * Install the latest version of @studiometa/trafic-agent globally via npm.
+ * Uses --prefer-online to bypass the local npm cache and always fetch the
+ * latest published tarball.
  */
 export function installLatestAgent(dryRun: boolean): void {
-  exec("npm install -g @studiometa/trafic-agent@latest", { silent: !dryRun });
+  exec("npm install -g @studiometa/trafic-agent@latest --prefer-online", { silent: !dryRun });
+}
+
+/**
+ * Read the actual installed version of @studiometa/trafic-agent from its
+ * package.json on disk — not from __VERSION__ which is baked in at build time.
+ * Returns null if the file can't be read.
+ */
+export function getInstalledVersion(): string | null {
+  try {
+    const binary = execSync("which trafic-agent", { encoding: "utf-8", stdio: "pipe" }).trim();
+    // binary is e.g. /usr/bin/trafic-agent -> ../lib/node_modules/.../dist/cli.js
+    // resolve to the package root: two levels up from dist/cli.js
+    const pkgJson = execSync(`node -e "console.log(require.resolve('@studiometa/trafic-agent/package.json'))"`,
+      { encoding: "utf-8", stdio: "pipe" }
+    ).trim();
+    const pkg = JSON.parse(readFileSync(pkgJson, "utf-8")) as { version: string };
+    return pkg.version;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -51,7 +74,10 @@ export function installLatestAgent(dryRun: boolean): void {
  */
 export function reExecNewBinary(args: string[]): never {
   const binary = execSync("which trafic-agent", { encoding: "utf-8", stdio: "pipe" }).trim();
-  const result = spawnSync(binary, args, { stdio: "inherit" });
+  const result = spawnSync(binary, args, {
+    stdio: "inherit",
+    env: { ...process.env, TRAFIC_UPGRADE_REEXEC: "1" },
+  });
   process.exit(result.status ?? 0);
 }
 
@@ -77,6 +103,9 @@ export function runUpgrade(dryRun = false, reExecArgs?: string[]): void {
     process.exit(1);
   }
 
+  // Guard against infinite re-exec loops: only re-exec once per upgrade run.
+  const alreadyReExeced = process.env["TRAFIC_UPGRADE_REEXEC"] === "1";
+
   // ── Step 1: Check for updates ─────────────────────────────────────────────
   step("Check for updates");
 
@@ -93,12 +122,21 @@ export function runUpgrade(dryRun = false, reExecArgs?: string[]): void {
     // ── Step 2: Install ───────────────────────────────────────────────────
     step("Install latest version");
     installLatestAgent(dryRun);
+
     if (!dryRun) {
-      success(`Installed @studiometa/trafic-agent@${latest}`);
-      // Re-exec the newly installed binary so steps 3 and 4 run with the
-      // new migration registry — the current process only knows about
-      // migrations that existed at the time it was compiled.
-      reExecNewBinary(reExecArgs ?? ["upgrade"]);
+      // Verify the installed version actually changed before re-execing —
+      // npm can serve stale cache and leave the old binary in place.
+      const installedVersion = getInstalledVersion();
+
+      if (!alreadyReExeced && installedVersion && isNewer(current, installedVersion)) {
+        success(`Installed @studiometa/trafic-agent@${installedVersion}`);
+        // Re-exec the newly installed binary so steps 3 and 4 run with the
+        // new migration registry — the current process only knows about
+        // migrations that existed at the time it was compiled.
+        reExecNewBinary(reExecArgs ?? ["upgrade"]);
+      } else if (installedVersion) {
+        success(`Installed @studiometa/trafic-agent@${installedVersion}`);
+      }
     }
   } else {
     success(`Already up to date (${current})`);
