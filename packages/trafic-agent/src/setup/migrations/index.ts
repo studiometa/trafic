@@ -5,6 +5,7 @@ import { migration0002MkcertDdevUser } from "./0002__mkcert_ddev_user.js";
 import { migration0003DdevRouterBindAllInterfaces } from "./0003__ddev_router_bind_all_interfaces.js";
 import { migration0004DdevHostnameSudoers } from "./0004__ddev_hostname_sudoers.js";
 import { migration0005TraefikGatewayIp } from "./0005__traefik_gateway_ip.js";
+import { migration0006TraefikGatewayIpFix } from "./0006__traefik_gateway_ip_fix.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -16,6 +17,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0003DdevRouterBindAllInterfaces,
   migration0004DdevHostnameSudoers,
   migration0005TraefikGatewayIp,
+  migration0006TraefikGatewayIpFix,
 ];
 
 // ---------------------------------------------------------------------------

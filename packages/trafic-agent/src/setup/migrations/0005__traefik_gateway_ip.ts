@@ -28,13 +28,19 @@ export const migration0005TraefikGatewayIp: Migration = {
     }
 
     const content = readFileSync(TRAFIC_YAML, "utf-8");
+    const gatewayIp = getDockerGatewayIp();
 
-    if (!content.includes("host.docker.internal")) {
+    // Replace host.docker.internal (original broken value) or any previously
+    // written IP that no longer matches the current gateway (e.g. if the
+    // migration ran before ddev_default existed and wrote 172.17.0.1 instead).
+    const updated = content
+      .replaceAll("host.docker.internal", gatewayIp)
+      .replace(/http:\/\/\d+\.\d+\.\d+\.\d+:9876/g, `http://${gatewayIp}:9876`);
+
+    if (updated === content) {
       return;
     }
 
-    const gatewayIp = getDockerGatewayIp();
-    const updated = content.replaceAll("host.docker.internal", gatewayIp);
     writeFileSync(TRAFIC_YAML, updated, "utf-8");
   },
 };
