@@ -41,17 +41,23 @@ function buildDestination(options: SSHOptions): string {
 }
 
 /**
+ * Default timeout for a remote command (10 minutes).
+ */
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
  * Execute a command on a remote host via SSH.
  */
 export async function exec(
   options: SSHOptions,
   command: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<ExecResult> {
   const args = [...buildSSHArgs(options), buildDestination(options), command];
 
   info(`ssh ${options.user}@${options.host} ${truncate(command, 80)}`);
 
-  return run("ssh", args);
+  return run("ssh", args, timeoutMs);
 }
 
 /**
@@ -100,11 +106,15 @@ export async function rsync(
 /**
  * Execute a local command and return the result.
  */
-function run(command: string, args: string[]): Promise<ExecResult> {
+function run(
+  command: string,
+  args: string[],
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const execOptions: ExecFileOptions = {
       maxBuffer: 10 * 1024 * 1024, // 10 MB
-      timeout: 10 * 60 * 1000, // 10 minutes
+      timeout: timeoutMs,
     };
 
     execFile(command, args, execOptions, (err, stdoutBuf, stderrBuf) => {
