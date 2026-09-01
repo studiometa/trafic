@@ -34,7 +34,13 @@ flowchart TD
 ## Quick start
 
 ```bash
-# Setup a server (run on the server as root)
+# Setup a server over SSH (run from your machine or from CI)
+npx @studiometa/trafic-cli setup \
+  --host=server.example.com \
+  --tld=previews.example.com \
+  --email=admin@example.com
+
+# …or run it on the server itself, as root
 npx @studiometa/trafic-agent setup --tld=previews.example.com --email=admin@example.com
 
 # Deploy from CI
@@ -59,7 +65,7 @@ npx @studiometa/trafic-cli deploy \
 
 **Server:**
 - Ubuntu 24.04 LTS
-- Root access (for initial setup)
+- Root access, or a user with passwordless sudo (for initial setup)
 - Wildcard DNS (`*.previews.example.com` → server IP)
 
 **CI:**

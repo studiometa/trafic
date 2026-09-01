@@ -14,6 +14,42 @@ npx @studiometa/trafic-cli deploy ...
 
 ## Commands
 
+### `trafic setup`
+
+Setup a new server over SSH. Run it from any machine that can reach the server with SSH — the command bootstraps Node.js, installs [`@studiometa/trafic-agent`](../trafic-agent/) on the server, then runs `trafic-agent setup` there.
+
+```bash
+trafic setup \
+  --host server.example.com \
+  --tld previews.example.com \
+  --email admin@example.com
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | SSH host (required) | - |
+| `--tld` | TLD for DDEV projects (required) | - |
+| `--email` | Email for Let's Encrypt certificates | - |
+| `--user` | SSH user | `root` |
+| `--port` | SSH port | `22` |
+| `--agent-version` | Agent version to install | `latest` |
+| `--ssh-users` | SSH users to allow after hardening, comma-separated | `ddev` |
+| `--no-hardening` | Skip server hardening | `false` |
+| `--no-docker` | Skip Docker installation | `false` |
+| `--no-ddev` | Skip DDEV installation | `false` |
+| `--dry-run` | Print the remote commands without running them | `false` |
+| `--ssh-options` | Extra SSH options | - |
+
+**Requirements:**
+
+- Ubuntu 24.04 LTS on the target server
+- SSH access as `root`, or as a user with **passwordless** sudo — SSH runs in batch mode, so a password prompt cannot be answered
+- Wildcard DNS (`*.previews.example.com` → server IP)
+
+The command is safe to run again: each step is skipped when the server is already in the target state.
+
 ### `trafic deploy`
 
 Deploy a project to a DDEV server.
@@ -91,6 +127,14 @@ deploy_preview:
 ```
 
 ## How it works
+
+The setup command executes 5 steps over SSH:
+
+1. **Check the server** — Read the OS, resolve root or sudo privileges
+2. **Install Node.js** — Install Node.js 24 via fnm (skipped when already present)
+3. **Install the agent** — `npm install -g @studiometa/trafic-agent`, symlinked into `/usr/local/bin`
+4. **Setup the server** — Run `trafic-agent setup` (Docker, DDEV, Traefik, systemd, hardening)
+5. **Verify** — Check that the `trafic-agent` service is active
 
 The deploy command executes 7 steps over SSH:
 

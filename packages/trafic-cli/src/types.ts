@@ -13,6 +13,28 @@ export interface SSHOptions {
 }
 
 /**
+ * Setup command options.
+ */
+export interface SetupOptions extends SSHOptions {
+  /** TLD for DDEV projects (e.g. "previews.example.com") */
+  tld: string;
+  /** Email for Let's Encrypt certificates */
+  email?: string;
+  /** Version of @studiometa/trafic-agent to install (default: "latest") */
+  agentVersion: string;
+  /** Whether to skip server hardening */
+  noHardening: boolean;
+  /** Whether to skip Docker installation */
+  noDocker: boolean;
+  /** Whether to skip DDEV installation */
+  noDdev: boolean;
+  /** SSH users to allow after hardening (comma-separated) */
+  sshUsers?: string;
+  /** Whether to print the remote commands without running them */
+  dryRun: boolean;
+}
+
+/**
  * Deploy command options.
  */
 export interface DeployOptions extends SSHOptions {

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: Add `trafic setup` — setup a new server over SSH from any machine with SSH access to it. Bootstraps Node.js 24 via fnm (installing `curl` and `unzip` when missing), installs `@studiometa/trafic-agent`, symlinks its binary into `/usr/local/bin`, then runs `trafic-agent setup` on the server. Supports `--tld`, `--email`, `--agent-version`, `--ssh-users`, `--no-hardening`, `--no-docker`, `--no-ddev` and `--dry-run`. Connects as `root` by default, or prefixes privileged commands with `sudo -n` for any other user
+
+### Changed
+
+- **CLI**: `ssh.exec()` accepts an optional timeout — the server setup step uses 45 minutes instead of the 10-minute default, because Docker and DDEV installs are slow
+
 ## [0.1.22] - 2026.03.05
 
 ### Fixed
