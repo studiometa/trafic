@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.23] - 2026.09.01
+
 ### Added
 
-- **CLI**: Add `trafic setup` — setup a new server over SSH from any machine with SSH access to it. Bootstraps Node.js 24 via fnm (installing `curl` and `unzip` when missing), installs `@studiometa/trafic-agent`, symlinks its binary into `/usr/local/bin`, then runs `trafic-agent setup` on the server. Supports `--tld`, `--email`, `--agent-version`, `--ssh-users`, `--no-hardening`, `--no-docker`, `--no-ddev` and `--dry-run`. Connects as `root` by default, or prefixes privileged commands with `sudo -n` for any other user
+- **CLI**: Add `trafic setup` — setup a new server over SSH from any machine with SSH access to it. Bootstraps Node.js 24 via fnm (installing `curl` and `unzip` when missing), installs `@studiometa/trafic-agent`, symlinks its binary into `/usr/local/bin`, then runs `trafic-agent setup` on the server. Supports `--tld`, `--email`, `--agent-version`, `--ssh-users`, `--no-hardening`, `--no-docker`, `--no-ddev` and `--dry-run`. Connects as `root` by default, or prefixes privileged commands with `sudo -n` for any other user ([3c049db], [#28])
 
 ### Changed
 
-- **CLI**: `ssh.exec()` accepts an optional timeout — the server setup step uses 45 minutes instead of the 10-minute default, because Docker and DDEV installs are slow
+- **CLI**: `ssh.exec()` accepts an optional timeout — the server setup step uses 45 minutes instead of the 10-minute default, because Docker and DDEV installs are slow ([3c049db], [#28])
 
 ## [0.1.22] - 2026.03.05
 
@@ -211,7 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.22...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.23...HEAD
+[0.1.23]: https://github.com/studiometa/trafic/compare/0.1.22...0.1.23
 [0.1.22]: https://github.com/studiometa/trafic/compare/0.1.21...0.1.22
 [0.1.21]: https://github.com/studiometa/trafic/compare/0.1.20...0.1.21
 [0.1.20]: https://github.com/studiometa/trafic/compare/0.1.19...0.1.20
@@ -257,6 +260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [9c1adf5]: https://github.com/studiometa/trafic/commit/9c1adf5
 [b63e29b]: https://github.com/studiometa/trafic/commit/b63e29b
 [#27]: https://github.com/studiometa/trafic/pull/27
+[3c049db]: https://github.com/studiometa/trafic/commit/3c049db
+[#28]: https://github.com/studiometa/trafic/pull/28
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
