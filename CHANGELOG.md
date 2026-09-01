@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent**: Upgrade `smol-toml` 1.6 → 1.8 ([5097cbe], [#29])
+- **CI**: Upgrade GitHub Actions — `actions/checkout` v4 → v7 and `actions/setup-node` v4 → v7, which clears the Node 20 deprecation warning; `codecov/codecov-action` v5 → v7; pin `trufflesecurity/trufflehog` to v3.97.1 instead of tracking `@main` ([5097cbe], [#29])
+- **Dev**: Upgrade the toolchain — `vitest` and `@vitest/coverage-v8` 4.1.0-beta.5 → 4.1.11, `vite` 8.0.0-beta.16 → 8.2.2 (both off beta), `oxlint` 1.51 → 1.80, `lint-staged` 16 → 17, `@types/node` 22 → 24 to match `engines.node` ([5097cbe], [#29])
+- **Dev**: Replace `@typescript/native-preview` with `typescript` 7.0.2 — the native compiler now ships as a stable TypeScript release, so the dev preview is obsolete. Build and typecheck scripts call `tsc` instead of `tsgo` ([#29])
+- **Dev**: Set `types: ["node"]` in the shared tsconfig — TypeScript 7 no longer includes `@types` packages automatically ([#29])
+
 ## [0.1.23] - 2026.09.01
 
 ### Added
@@ -262,6 +270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#27]: https://github.com/studiometa/trafic/pull/27
 [3c049db]: https://github.com/studiometa/trafic/commit/3c049db
 [#28]: https://github.com/studiometa/trafic/pull/28
+[5097cbe]: https://github.com/studiometa/trafic/commit/5097cbe
+[#29]: https://github.com/studiometa/trafic/pull/29
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
