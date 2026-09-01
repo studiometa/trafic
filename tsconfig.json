@@ -3,6 +3,8 @@
     "target": "ES2024",
     "module": "Node16",
     "moduleResolution": "Node16",
+    // Explicit: tsgo does not auto-discover @types from the workspace root
+    "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

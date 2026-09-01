@@ -44,7 +44,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "smol-toml": "^1.6.0"
+    "smol-toml": "^1.8.0"
   },
   "engines": {
     "node": ">=24.0.0"
