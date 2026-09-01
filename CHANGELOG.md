@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Agent**: Upgrade `smol-toml` 1.6 → 1.8 ([5097cbe], [#29])
 - **CI**: Upgrade GitHub Actions — `actions/checkout` v4 → v7 and `actions/setup-node` v4 → v7, which clears the Node 20 deprecation warning; `codecov/codecov-action` v5 → v7; pin `trufflesecurity/trufflehog` to v3.97.1 instead of tracking `@main` ([5097cbe], [#29])
-- **Dev**: Upgrade the toolchain — `vitest` and `@vitest/coverage-v8` 4.1.0-beta.5 → 4.1.11, `vite` 8.0.0-beta.16 → 8.2.2 (both off beta), `oxlint` 1.51 → 1.80, `lint-staged` 16 → 17, `@types/node` 22 → 24 to match `engines.node`, `@typescript/native-preview` dev build 20260304.1 → 20260707.2 ([5097cbe], [#29])
-- **Dev**: Set `types: ["node"]` in the shared tsconfig — the newer `tsgo` build no longer auto-discovers `@types` from the workspace root ([5097cbe], [#29])
+- **Dev**: Upgrade the toolchain — `vitest` and `@vitest/coverage-v8` 4.1.0-beta.5 → 4.1.11, `vite` 8.0.0-beta.16 → 8.2.2 (both off beta), `oxlint` 1.51 → 1.80, `lint-staged` 16 → 17, `@types/node` 22 → 24 to match `engines.node` ([5097cbe], [#29])
+- **Dev**: Replace `@typescript/native-preview` with `typescript` 7.0.2 — the native compiler now ships as a stable TypeScript release, so the dev preview is obsolete. Build and typecheck scripts call `tsc` instead of `tsgo` ([#29])
+- **Dev**: Set `types: ["node"]` in the shared tsconfig — TypeScript 7 no longer includes `@types` packages automatically ([#29])
 
 ## [0.1.23] - 2026.09.01
 
