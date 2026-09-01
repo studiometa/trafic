@@ -10,8 +10,8 @@ vi.mock("../src/ssh.js", () => ({
 }));
 
 // Suppress console output
-vi.spyOn(console, "log").mockImplementation(() => {});
-vi.spyOn(console, "warn").mockImplementation(() => {});
+const mockedLog = vi.spyOn(console, "log").mockImplementation(() => {});
+const mockedWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 const mockedExec = vi.mocked(ssh.exec);
 const mockedTest = vi.mocked(ssh.test);
@@ -55,6 +55,11 @@ function mockServer(overrides: Record<string, string> = {}): void {
 /** All commands passed to ssh.exec. */
 function commands(): string[] {
   return mockedExec.mock.calls.map((call) => call[1]);
+}
+
+/** Everything printed to stdout, in dry-run mode the remote commands. */
+function logs(): string[] {
+  return mockedLog.mock.calls.map((call) => String(call[0]));
 }
 
 describe("setup", () => {
@@ -232,6 +237,47 @@ describe("setup", () => {
       (c) => c.includes("fnm") || c.includes("npm install") || c.includes(" setup "),
     );
     expect(mutating).toEqual([]);
+  });
+
+  it("warns when the agent service is not active after the setup", async () => {
+    mockedTest.mockImplementation(async (_options, command) =>
+      command !== "systemctl is-active --quiet trafic-agent",
+    );
+
+    await setup(baseOptions);
+
+    const warnings = mockedWarn.mock.calls.map((call) => String(call[0]));
+    expect(warnings.some((w) => w.includes("not active"))).toBe(true);
+  });
+
+  it("fails when npm is missing after installing Node.js", async () => {
+    mockServer({ "command -v npm || true": "" });
+
+    await expect(setup(baseOptions)).rejects.toThrow(/npm not found/);
+  });
+
+  it("keeps going in dry-run mode when npm is not installed yet", async () => {
+    mockServer({ "command -v npm || true": "" });
+    mockedTest.mockImplementation(async (_options, command) =>
+      command !== "command -v node",
+    );
+
+    await setup({ ...baseOptions, dryRun: true });
+
+    // The binary path cannot be resolved yet, so fall back to the bare name
+    expect(
+      logs().some((l) =>
+        l.includes("trafic-agent setup --tld=previews.example.com"),
+      ),
+    ).toBe(true);
+  });
+
+  it("continues when /etc/os-release has no PRETTY_NAME", async () => {
+    mockServer({ "cat /etc/os-release": "ID=ubuntu\n" });
+
+    await setup(baseOptions);
+
+    expect(commands().some((c) => c.includes(" setup "))).toBe(true);
   });
 
   it("warns on a non-Ubuntu server but continues", async () => {
