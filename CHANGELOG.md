@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.28] - 2026.09.02
+
 ### Added
 
-- **CLI**, **Agent**: `--no-root-ssh` on `setup` — writes `PermitRootLogin no` and drops root from `AllowUsers`, leaving the provider's rescue mode as the only recovery path. Nothing in Trafic needs root over SSH: the agent runs as `ddev` under systemd, `deploy` and `destroy` connect as `ddev`, and `upgrade` uses `sudo`. Opt-in, since the default keeps a root key as an emergency route. The CLI refuses the flag when connecting as `root`, and the agent warns when there is no `$SUDO_USER` to fall back on — both being the self-lockout that [#31] fixed ([#35])
+- **CLI**, **Agent**: `--no-root-ssh` on `setup` — writes `PermitRootLogin no` and drops root from `AllowUsers`, leaving the provider's rescue mode as the only recovery path. Nothing in Trafic needs root over SSH: the agent runs as `ddev` under systemd, `deploy` and `destroy` connect as `ddev`, and `upgrade` uses `sudo`. Opt-in, since the default keeps a root key as an emergency route. The CLI refuses the flag when connecting as `root`, and the agent warns when there is no `$SUDO_USER` to fall back on — both being the self-lockout that [#31] fixed ([a29913e], [#35])
 
 ## [0.1.27] - 2026.09.02
 
@@ -275,7 +277,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.27...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.28...HEAD
+[0.1.28]: https://github.com/studiometa/trafic/compare/0.1.27...0.1.28
 [0.1.27]: https://github.com/studiometa/trafic/compare/0.1.26...0.1.27
 [0.1.26]: https://github.com/studiometa/trafic/compare/0.1.25...0.1.26
 [0.1.25]: https://github.com/studiometa/trafic/compare/0.1.24...0.1.25
@@ -340,6 +343,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#33]: https://github.com/studiometa/trafic/pull/33
 [c7d62ed]: https://github.com/studiometa/trafic/commit/c7d62ed
 [#34]: https://github.com/studiometa/trafic/pull/34
+[a29913e]: https://github.com/studiometa/trafic/commit/a29913e
 [#35]: https://github.com/studiometa/trafic/pull/35
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
