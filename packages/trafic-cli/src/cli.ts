@@ -28,6 +28,7 @@ const HELP = `
     --email <email>            Email for Let's Encrypt certificates
     --agent-version <version>  Agent version to install (default: latest)
     --ssh-users <users>        SSH users to allow, comma-separated (default: ddev)
+                               --user is always added, so hardening cannot lock you out
     --no-hardening             Skip server hardening
     --no-docker                Skip Docker installation
     --no-ddev                  Skip DDEV installation

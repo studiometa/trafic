@@ -35,7 +35,7 @@ trafic setup \
 | `--user` | SSH user | `root` |
 | `--port` | SSH port | `22` |
 | `--agent-version` | Agent version to install | `latest` |
-| `--ssh-users` | SSH users to allow after hardening, comma-separated | `ddev` |
+| `--ssh-users` | SSH users to allow after hardening, comma-separated. The `--user` value is always added | `ddev` |
 | `--no-hardening` | Skip server hardening | `false` |
 | `--no-docker` | Skip Docker installation | `false` |
 | `--no-ddev` | Skip DDEV installation | `false` |
@@ -44,7 +44,7 @@ trafic setup \
 
 **Requirements:**
 
-- Ubuntu 24.04 LTS on the target server
+- Ubuntu 24.04 LTS on the target server (26.04 also verified)
 - SSH access as `root`, or as a user with **passwordless** sudo — SSH runs in batch mode, so a password prompt cannot be answered
 - Wildcard DNS (`*.previews.example.com` → server IP)
 

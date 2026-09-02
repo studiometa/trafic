@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CLI**: Always add the `--user` value to `--ssh-users`. Hardening writes an `AllowUsers` directive, so connecting as a user outside that list — `--user ubuntu` with the default `--ssh-users ddev`, for instance — locked that user out on their next connection. Nothing looked wrong at the time, because reloading sshd keeps the current session alive ([#31])
+- **Agent**: Always add `$SUDO_USER` to `AllowUsers` during hardening, closing the same lockout on the on-server path (`sudo trafic-agent setup`) ([#31])
+- **CLI**: Print the resulting SSH access list before making changes, so a `--dry-run` shows who keeps access ([#31])
+
 ## [0.1.25] - 2026.09.02
 
 ### Changed
@@ -290,6 +296,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#29]: https://github.com/studiometa/trafic/pull/29
 [9a6cec4]: https://github.com/studiometa/trafic/commit/9a6cec4
 [#30]: https://github.com/studiometa/trafic/pull/30
+[#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
