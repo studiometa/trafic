@@ -1,62 +1,65 @@
-import { writeFileSync } from "node:fs";
-import { step, success, info, exec, execSilent, warn } from "./steps.js";
+import { nodeIo, type SetupIo } from "./io.js";
+import { step, success, info, warn } from "./steps.js";
 
 /**
  * Write /etc/sudoers.d/trafic-ddev allowing the ddev user to run
  * ddev-hostname without a password. Idempotent — safe to call multiple times.
  */
-export function configureDdevSudoers(): void {
+export function configureDdevSudoers(io: SetupIo = nodeIo): void {
   const sudoersContent = `# Trafic: allow ddev user to run ddev-hostname without a password.
 # ddev-hostname manages /etc/hosts and always calls sudo internally.
 ddev ALL=(ALL) NOPASSWD: /usr/bin/ddev-hostname
 `;
-  writeFileSync("/etc/sudoers.d/trafic-ddev", sudoersContent);
-  exec("chmod 440 /etc/sudoers.d/trafic-ddev", { silent: true });
+  io.writeFile("/etc/sudoers.d/trafic-ddev", sudoersContent);
+  io.exec("chmod 440 /etc/sudoers.d/trafic-ddev", { silent: true });
   success("Configured passwordless sudo for ddev-hostname");
 }
 
 /**
  * Create the ddev user with proper permissions
  */
-export function createDdevUser(): void {
+export function createDdevUser(io: SetupIo = nodeIo): void {
   step("Create ddev user");
 
   // Check if user exists
-  const userExists = execSilent("id -u ddev 2>/dev/null");
+  const userExists = io.exec("id -u ddev 2>/dev/null", { silent: true });
   if (userExists) {
     info("User 'ddev' already exists");
   } else {
-    exec("useradd -m -s /bin/bash ddev");
+    io.exec("useradd -m -s /bin/bash ddev");
     success("Created user 'ddev'");
   }
 
   // Add to docker group (will be created by Docker install)
-  exec("usermod -aG docker ddev 2>/dev/null || true", { silent: true });
+  io.exec("usermod -aG docker ddev 2>/dev/null || true", { silent: true });
 
   // Create www directory
-  exec("mkdir -p /home/ddev/www");
-  exec("chown ddev:ddev /home/ddev/www");
-  exec("chmod 750 /home/ddev/www");
+  io.exec("mkdir -p /home/ddev/www");
+  io.exec("chown ddev:ddev /home/ddev/www");
+  io.exec("chmod 750 /home/ddev/www");
   success("Created /home/ddev/www");
 
   // Create .ssh directory if needed
-  exec("mkdir -p /home/ddev/.ssh");
-  exec("chmod 700 /home/ddev/.ssh");
-  exec("chown ddev:ddev /home/ddev/.ssh");
+  io.exec("mkdir -p /home/ddev/.ssh");
+  io.exec("chmod 700 /home/ddev/.ssh");
+  io.exec("chown ddev:ddev /home/ddev/.ssh");
 
   // Allow ddev user to run ddev-hostname without a password.
   // ddev-hostname manages /etc/hosts entries and always calls sudo internally,
   // even when DDEV_NONINTERACTIVE=true. Without this rule, any ddev command
   // that touches hostname resolution (start, restart, poweroff + start) will
   // fail with "sudo: a terminal is required to read the password".
-  configureDdevSudoers();
+  configureDdevSudoers(io);
   success("User ddev configured");
 }
 
 /**
  * Setup authorized_keys for ddev user
  */
-export function setupAuthorizedKeys(publicKey?: string): void {
+export function setupAuthorizedKeys(
+  publicKey?: string,
+  io: SetupIo = nodeIo,
+): void {
   if (!publicKey) {
     warn("No SSH public key provided, skipping authorized_keys setup");
     return;
@@ -65,16 +68,16 @@ export function setupAuthorizedKeys(publicKey?: string): void {
   step("Setup SSH authorized_keys");
 
   const authKeysPath = "/home/ddev/.ssh/authorized_keys";
-  exec(`touch ${authKeysPath}`);
-  exec(`chmod 600 ${authKeysPath}`);
-  exec(`chown ddev:ddev ${authKeysPath}`);
+  io.exec(`touch ${authKeysPath}`);
+  io.exec(`chmod 600 ${authKeysPath}`);
+  io.exec(`chown ddev:ddev ${authKeysPath}`);
 
   // Check if key already exists
-  const existing = execSilent(`cat ${authKeysPath}`);
+  const existing = io.exec(`cat ${authKeysPath}`, { silent: true });
   if (existing.includes(publicKey.trim())) {
     info("SSH key already authorized");
   } else {
-    exec(`echo '${publicKey}' >> ${authKeysPath}`);
+    io.exec(`echo '${publicKey}' >> ${authKeysPath}`);
     success("Added SSH public key");
   }
 }

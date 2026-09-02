@@ -5,6 +5,12 @@ import { defineConfig } from "vite";
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 
 export default defineConfig({
+  test: {
+    coverage: {
+      // Test helpers are not production code
+      exclude: ["test/**", "*.config.ts", "dist/**"],
+    },
+  },
   define: {
     __VERSION__: JSON.stringify(pkg.version),
   },

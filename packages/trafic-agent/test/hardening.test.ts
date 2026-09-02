@@ -1,37 +1,22 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  hardenSsh,
+  resolveAllowedUsers,
+  configureFirewall,
+  configureFail2ban,
+  configureUnattendedUpgrades,
+  configureSystemLimits,
+  configureFilePermissions,
+  hardenServer,
+} from "../src/setup/hardening.js";
+import { createFakeIo } from "./helpers/fake-io.js";
 
-// Mock the shell and filesystem layers so hardening can be inspected without
-// touching the machine running the tests
-vi.mock("../src/setup/steps.js", () => ({
-  step: vi.fn(),
-  success: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  exec: vi.fn(),
-  commandExists: vi.fn(),
-}));
+// The setup steps log their progress
+beforeEach(() => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+});
 
-vi.mock("node:fs", () => ({
-  writeFileSync: vi.fn(),
-  existsSync: vi.fn(() => false),
-}));
-
-const steps = await import("../src/setup/steps.js");
-const fs = await import("node:fs");
-const { hardenSsh, resolveAllowedUsers } = await import(
-  "../src/setup/hardening.js"
-);
-
-const mockedExec = vi.mocked(steps.exec);
-const mockedWrite = vi.mocked(fs.writeFileSync);
-
-/** Content written to the sshd drop-in config. */
-function sshdConfig(): string {
-  const call = mockedWrite.mock.calls.find((c) =>
-    String(c[0]).includes("sshd_config.d/trafic.conf"),
-  );
-  return String(call?.[1] ?? "");
-}
+const SSHD_CONFIG = "/etc/ssh/sshd_config.d/trafic.conf";
 
 describe("resolveAllowedUsers", () => {
   it("adds the sudo user so hardening cannot lock them out", () => {
@@ -63,76 +48,223 @@ describe("resolveAllowedUsers", () => {
 });
 
 describe("hardenSsh", () => {
-  const originalSudoUser = process.env.SUDO_USER;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // An empty result means `sshd -t` reported no error
-    mockedExec.mockReturnValue("");
-    delete process.env.SUDO_USER;
-  });
-
-  afterEach(() => {
-    if (originalSudoUser === undefined) {
-      delete process.env.SUDO_USER;
-    } else {
-      process.env.SUDO_USER = originalSudoUser;
-    }
-  });
-
   it("writes AllowUsers with root and the given users", () => {
-    hardenSsh(["ddev"]);
+    const io = createFakeIo();
 
-    expect(sshdConfig()).toContain("AllowUsers root ddev");
+    hardenSsh(["ddev"], io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev");
   });
 
   it("includes the sudo user in AllowUsers", () => {
-    process.env.SUDO_USER = "ubuntu";
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
 
-    hardenSsh(["ddev"]);
+    hardenSsh(["ddev"], io);
 
     // Without this the invoking user is refused on their next connection,
     // and reloading sshd keeps the current session alive so it looks fine
-    expect(sshdConfig()).toContain("AllowUsers root ddev ubuntu");
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev ubuntu");
   });
 
   it("does not list root twice when invoked through sudo as root", () => {
-    process.env.SUDO_USER = "root";
+    const io = createFakeIo({ env: { SUDO_USER: "root" } });
 
-    hardenSsh(["ddev"]);
+    hardenSsh(["ddev"], io);
 
-    expect(sshdConfig()).toContain("AllowUsers root ddev\n");
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev\n");
   });
 
   it("disables password authentication and keeps root on keys only", () => {
-    hardenSsh(["ddev"]);
+    const io = createFakeIo();
 
-    const config = sshdConfig();
+    hardenSsh(["ddev"], io);
+
+    const config = io.written(SSHD_CONFIG);
     expect(config).toContain("PasswordAuthentication no");
     expect(config).toContain("PermitRootLogin prohibit-password");
+    expect(config).toContain("PubkeyAuthentication yes");
   });
 
   it("reverts the drop-in when sshd rejects the config", () => {
-    mockedExec.mockImplementation((command) =>
-      String(command).includes("sshd -t") ? "error" : "",
-    );
+    const io = createFakeIo({ output: { "sshd -t": "error" } });
 
-    hardenSsh(["ddev"]);
+    hardenSsh(["ddev"], io);
 
-    expect(
-      commandsRun().some((c) => c.includes("rm /etc/ssh/sshd_config.d/trafic.conf")),
-    ).toBe(true);
-    expect(commandsRun().some((c) => c.includes("systemctl reload"))).toBe(false);
+    expect(io.ran(`rm ${SSHD_CONFIG}`)).toBe(true);
+    expect(io.ran("systemctl reload")).toBe(false);
   });
 
   it("reloads sshd once the config passes validation", () => {
-    hardenSsh(["ddev"]);
+    const io = createFakeIo();
 
-    expect(commandsRun().some((c) => c.includes("systemctl reload ssh"))).toBe(true);
+    hardenSsh(["ddev"], io);
+
+    expect(io.ran("systemctl reload ssh")).toBe(true);
   });
 });
 
-/** All shell commands passed to exec. */
-function commandsRun(): string[] {
-  return mockedExec.mock.calls.map((call) => String(call[0]));
-}
+describe("configureFirewall", () => {
+  it("denies incoming traffic by default", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    expect(io.ran("ufw default deny incoming")).toBe(true);
+    expect(io.ran("ufw default allow outgoing")).toBe(true);
+  });
+
+  it("allows only SSH, HTTP and HTTPS from anywhere", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    const allows = io.commands.filter((c) => c.startsWith("ufw allow"));
+    expect(allows).toHaveLength(4);
+    expect(io.ran("ufw allow 22/tcp")).toBe(true);
+    expect(io.ran("ufw allow 80/tcp")).toBe(true);
+    expect(io.ran("ufw allow 443/tcp")).toBe(true);
+  });
+
+  it("exposes the agent port to Docker subnets only", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    // ddev-router reaches forward auth from a Docker bridge; the port must
+    // not be reachable from the internet
+    const agentRule = io.commands.find((c) => c.includes("9876"))!;
+    expect(agentRule).toContain("from 172.16.0.0/12");
+  });
+
+  it("installs ufw when it is missing", () => {
+    const io = createFakeIo();
+
+    configureFirewall(io);
+
+    expect(io.ran("apt-get install -y ufw")).toBe(true);
+  });
+
+  it("enables the firewall last", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    expect(io.commands.at(-1)).toContain("ufw --force enable");
+  });
+});
+
+describe("configureFail2ban", () => {
+  it("enables the sshd jail", () => {
+    const io = createFakeIo({ present: ["fail2ban-client"] });
+
+    configureFail2ban(io);
+
+    const jail = io.written("/etc/fail2ban/jail.local");
+    expect(jail).toContain("[sshd]");
+    expect(jail).toContain("enabled = true");
+  });
+
+  it("bans an SSH brute force for longer than the default", () => {
+    const io = createFakeIo({ present: ["fail2ban-client"] });
+
+    configureFail2ban(io);
+
+    const jail = io.written("/etc/fail2ban/jail.local");
+    expect(jail).toContain("maxretry = 3");
+    expect(jail).toContain("bantime = 7200");
+  });
+
+  it("installs fail2ban when it is missing, then restarts it", () => {
+    const io = createFakeIo();
+
+    configureFail2ban(io);
+
+    expect(io.ran("apt-get install -y fail2ban")).toBe(true);
+    expect(io.ran("systemctl restart fail2ban")).toBe(true);
+  });
+});
+
+describe("configureUnattendedUpgrades", () => {
+  it("limits automatic upgrades to security origins", () => {
+    const io = createFakeIo();
+
+    configureUnattendedUpgrades(io);
+
+    const config = io.written("/etc/apt/apt.conf.d/50unattended-upgrades");
+    expect(config).toContain("${distro_id}:${distro_codename}-security");
+    expect(config).toContain('Unattended-Upgrade::Automatic-Reboot "false"');
+  });
+
+  it("turns on the periodic upgrade timer", () => {
+    const io = createFakeIo();
+
+    configureUnattendedUpgrades(io);
+
+    const periodic = io.written("/etc/apt/apt.conf.d/20auto-upgrades");
+    expect(periodic).toContain('APT::Periodic::Unattended-Upgrade "1"');
+    expect(io.ran("systemctl enable unattended-upgrades")).toBe(true);
+  });
+});
+
+describe("configureSystemLimits", () => {
+  it("raises the file descriptor limit for the ddev user", () => {
+    const io = createFakeIo();
+
+    configureSystemLimits(io);
+
+    const limits = io.written("/etc/security/limits.d/trafic.conf");
+    expect(limits).toContain("ddev soft nofile 65536");
+    expect(limits).toContain("ddev hard nofile 65536");
+  });
+});
+
+describe("configureFilePermissions", () => {
+  it("keeps the state directory private to the ddev user", () => {
+    const io = createFakeIo();
+
+    configureFilePermissions(io);
+
+    expect(io.ran("chmod 700 /var/lib/trafic")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/lib/trafic")).toBe(true);
+  });
+
+  it("makes the config readable by the agent but not the world", () => {
+    const io = createFakeIo({ files: { "/etc/trafic/config.toml": "" } });
+
+    configureFilePermissions(io);
+
+    // The config holds auth tokens and basic auth credentials
+    expect(io.ran("chmod 640 /etc/trafic/config.toml")).toBe(true);
+    expect(io.ran("chown root:ddev /etc/trafic/config.toml")).toBe(true);
+  });
+
+  it("skips the config permissions when no config exists yet", () => {
+    const io = createFakeIo();
+
+    configureFilePermissions(io);
+
+    expect(io.ran("chmod 640 /etc/trafic/config.toml")).toBe(false);
+  });
+});
+
+describe("hardenServer", () => {
+  it("runs every hardening step with the injected io", () => {
+    const io = createFakeIo({ present: ["ufw", "fail2ban-client"] });
+
+    hardenServer(["ddev"], io);
+
+    expect(io.written(SSHD_CONFIG)).not.toBe("");
+    expect(io.written("/etc/fail2ban/jail.local")).not.toBe("");
+    expect(io.written("/etc/security/limits.d/trafic.conf")).not.toBe("");
+    expect(io.ran("ufw --force enable")).toBe(true);
+    expect(io.ran("systemctl enable unattended-upgrades")).toBe(true);
+  });
+
+  it("passes the SSH users through to the sshd config", () => {
+    const io = createFakeIo({ present: ["ufw", "fail2ban-client"] });
+
+    hardenServer(["ddev", "deploy"], io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev deploy");
+  });
+});

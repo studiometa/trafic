@@ -1,5 +1,5 @@
-import { step, success, info, exec, commandExists } from "./steps.js";
-import { writeFileSync, existsSync } from "node:fs";
+import { nodeIo, type SetupIo } from "./io.js";
+import { step, success, info } from "./steps.js";
 
 /** Node.js major version required by the agent */
 const NODE_MAJOR = 24;
@@ -14,26 +14,26 @@ const NODESOURCE_KEYRING = "/etc/apt/keyrings/nodesource.gpg";
  * nodejs.org points at NodeSource for apt installs. The Ubuntu 24.04
  * `nodejs` package is 18.x, far below what the agent needs.
  */
-export function addNodeSourceAptRepo(): void {
-  exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
+export function addNodeSourceAptRepo(io: SetupIo = nodeIo): void {
+  io.exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
   // Download and dearmor as separate commands: piping curl into gpg into tee
   // would report only tee's exit code and hide a failed key download, which
   // then surfaces as a confusing GPG error on the next apt-get update
-  exec(
+  io.exec(
     "curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/trafic-nodesource.key",
     { silent: true },
   );
-  exec(
+  io.exec(
     "gpg --batch --yes --dearmor -o /tmp/trafic-nodesource.gpg /tmp/trafic-nodesource.key",
     { silent: true },
   );
-  exec(`install -m 0644 /tmp/trafic-nodesource.gpg ${NODESOURCE_KEYRING}`, {
+  io.exec(`install -m 0644 /tmp/trafic-nodesource.gpg ${NODESOURCE_KEYRING}`, {
     silent: true,
   });
-  exec("rm -f /tmp/trafic-nodesource.key /tmp/trafic-nodesource.gpg", {
+  io.exec("rm -f /tmp/trafic-nodesource.key /tmp/trafic-nodesource.gpg", {
     silent: true,
   });
-  exec(
+  io.exec(
     `echo "deb [signed-by=${NODESOURCE_KEYRING}] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null`,
     { silent: true },
   );
@@ -46,22 +46,22 @@ export function addNodeSourceAptRepo(): void {
  * trafic-agent` resolves for the systemd unit — and unattended-upgrades
  * patches them, which a version manager install never gets.
  */
-export function installNode(): void {
+export function installNode(io: SetupIo = nodeIo): void {
   step("Install Node.js");
 
   // Check if Node is already installed
-  if (commandExists("node")) {
-    const version = exec("node --version", { silent: true });
+  if (io.commandExists("node")) {
+    const version = io.exec("node --version", { silent: true });
     info(`Node.js already installed: ${version?.trim()}`);
     return;
   }
 
   info("Adding NodeSource apt repository...");
-  addNodeSourceAptRepo();
+  addNodeSourceAptRepo(io);
 
   info("Installing Node.js...");
-  exec("apt-get update -qq", { silent: true });
-  exec(
+  io.exec("apt-get update -qq", { silent: true });
+  io.exec(
     "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y nodejs",
     { silent: true },
   );
@@ -72,11 +72,11 @@ export function installNode(): void {
 /**
  * Install the Trafic agent
  */
-export function installAgent(): void {
+export function installAgent(io: SetupIo = nodeIo): void {
   step("Install Trafic agent");
 
   // Install the agent globally
-  exec("npm install -g @studiometa/trafic-agent");
+  io.exec("npm install -g @studiometa/trafic-agent");
 
   success("Trafic agent installed");
 }
@@ -84,17 +84,21 @@ export function installAgent(): void {
 /**
  * Create the agent configuration
  */
-export function createAgentConfig(tld: string, _email?: string): void {
+export function createAgentConfig(
+  tld: string,
+  _email?: string,
+  io: SetupIo = nodeIo,
+): void {
   step("Create agent configuration");
 
   // Create directories
-  exec("mkdir -p /etc/trafic");
-  exec("mkdir -p /var/lib/trafic");
-  exec("chown ddev:ddev /var/lib/trafic");
+  io.exec("mkdir -p /etc/trafic");
+  io.exec("mkdir -p /var/lib/trafic");
+  io.exec("chown ddev:ddev /var/lib/trafic");
 
   const configPath = "/etc/trafic/config.toml";
 
-  if (existsSync(configPath)) {
+  if (io.fileExists(configPath)) {
     info("Configuration already exists at /etc/trafic/config.toml — skipping");
     info("Edit this file to configure authentication");
     return;
@@ -127,9 +131,9 @@ basic_auth = []
 rules = []
 `;
 
-  writeFileSync(configPath, config);
-  exec("chmod 640 /etc/trafic/config.toml");
-  exec("chown root:ddev /etc/trafic/config.toml");
+  io.writeFile(configPath, config);
+  io.exec("chmod 640 /etc/trafic/config.toml");
+  io.exec("chown root:ddev /etc/trafic/config.toml");
 
   success("Configuration created at /etc/trafic/config.toml");
   info("Edit this file to configure authentication");
@@ -138,11 +142,11 @@ rules = []
 /**
  * Create systemd service for the agent
  */
-export function createSystemdService(): void {
+export function createSystemdService(io: SetupIo = nodeIo): void {
   step("Create systemd service");
 
   // Find the trafic-agent binary path
-  const agentPath = exec("which trafic-agent", { silent: true })?.trim() || "/usr/bin/trafic-agent";
+  const agentPath = io.exec("which trafic-agent", { silent: true })?.trim() || "/usr/bin/trafic-agent";
 
   const serviceContent = `[Unit]
 Description=Trafic Agent - DDEV preview environment manager
@@ -178,13 +182,13 @@ PrivateTmp=true
 WantedBy=multi-user.target
 `;
 
-  writeFileSync("/etc/systemd/system/trafic-agent.service", serviceContent);
-  exec("chmod 644 /etc/systemd/system/trafic-agent.service");
+  io.writeFile("/etc/systemd/system/trafic-agent.service", serviceContent);
+  io.exec("chmod 644 /etc/systemd/system/trafic-agent.service");
 
   // Reload systemd and enable service
-  exec("systemctl daemon-reload");
-  exec("systemctl enable trafic-agent");
-  exec("systemctl start trafic-agent");
+  io.exec("systemctl daemon-reload");
+  io.exec("systemctl enable trafic-agent");
+  io.exec("systemctl start trafic-agent");
 
   success("Trafic agent service started");
   info("View logs: journalctl -u trafic-agent -f");
