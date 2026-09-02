@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   addDdevAptRepo,
   installDdev,
+  configureDdev,
+  installDnsmasq,
   getDockerGatewayIp,
   configureTraefik,
 } from "../src/setup/ddev.js";
@@ -148,5 +150,99 @@ describe("configureTraefik", () => {
     configureTraefik(fake);
 
     expect(fake.ran(`chown ddev:ddev ${TRAEFIK_DIR}/trafic.yaml`)).toBe(true);
+  });
+});
+
+describe("configureDdev", () => {
+  it("sets the project TLD", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    expect(io.ran("--project-tld=previews.example.com")).toBe(true);
+  });
+
+  it("binds the router to all interfaces on the standard ports", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    const config = io.commands.find((c) => c.includes("ddev config global"))!;
+    // Without bind-all-interfaces, external traffic gets a 521
+    expect(config).toContain("--router-bind-all-interfaces=true");
+    expect(config).toContain("--router-http-port=80");
+    expect(config).toContain("--router-https-port=443");
+  });
+
+  it("enables Let's Encrypt only when given an email", () => {
+    const withEmail = createFakeIo();
+    configureDdev("previews.example.com", "admin@example.com", withEmail);
+    expect(withEmail.ran("--use-letsencrypt=true")).toBe(true);
+    expect(withEmail.ran("--letsencrypt-email=admin@example.com")).toBe(true);
+
+    const withoutEmail = createFakeIo();
+    configureDdev("previews.example.com", undefined, withoutEmail);
+    expect(withoutEmail.ran("--use-letsencrypt=false")).toBe(true);
+    expect(withoutEmail.ran("--letsencrypt-email")).toBe(false);
+  });
+
+  it("opts out of instrumentation", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    expect(io.ran("--instrumentation-opt-in=false")).toBe(true);
+  });
+
+  it("runs the configuration as the ddev user", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    // Global config lands in the invoking user's home directory
+    expect(io.commands.find((c) => c.includes("ddev config global"))).toContain(
+      "su - ddev -c",
+    );
+  });
+});
+
+describe("installDnsmasq", () => {
+  it("resolves the wildcard TLD to the detected server IP", () => {
+    const io = createFakeIo({ output: { "ifconfig.me": "203.0.113.10\n" } });
+
+    installDnsmasq("previews.example.com", io);
+
+    expect(io.written("/etc/dnsmasq.d/trafic.conf")).toContain(
+      "address=/previews.example.com/203.0.113.10",
+    );
+  });
+
+  it("falls back to localhost when the IP cannot be detected", () => {
+    const io = createFakeIo();
+
+    installDnsmasq("previews.example.com", io);
+
+    expect(io.written("/etc/dnsmasq.d/trafic.conf")).toContain(
+      "address=/previews.example.com/127.0.0.1",
+    );
+  });
+
+  it("listens on localhost only", () => {
+    const io = createFakeIo();
+
+    installDnsmasq("previews.example.com", io);
+
+    // An open resolver on a public server would be abused for amplification
+    const config = io.written("/etc/dnsmasq.d/trafic.conf");
+    expect(config).toContain("listen-address=127.0.0.1");
+    expect(config).toContain("bind-interfaces");
+  });
+
+  it("enables dnsmasq so it survives a reboot", () => {
+    const io = createFakeIo();
+
+    installDnsmasq("previews.example.com", io);
+
+    expect(io.ran("systemctl enable dnsmasq")).toBe(true);
   });
 });

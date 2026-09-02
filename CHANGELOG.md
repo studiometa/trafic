@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Agent**: Setup steps take an injected `SetupIo` — `exec`, `commandExists`, file I/O and `env` — with the real implementation as the default parameter. Tests drive the steps with a plain fake instead of mocking modules, and dry-run gets a single place to intercept writes ([#32])
-- **Dev**: Agent test coverage 32% → 63%. New tests for SSH hardening, UFW rules, the fail2ban jail, unattended-upgrades, system limits and file permissions, the Docker install and daemon config, the ddev user and its sudoers rule, the DDEV apt repo, Traefik forward auth, the agent config and systemd unit, and the dry-run behaviour of `steps.ts` ([#32])
+- **Dev**: Agent test coverage 32% → 65%. New tests for SSH hardening, UFW rules, the fail2ban jail, unattended-upgrades, system limits and file permissions, the Docker install and daemon config, the ddev user and its sudoers rule, the DDEV apt repo, Traefik forward auth, the agent config and systemd unit, and the dry-run behaviour of `steps.ts` ([#32])
 - **Dev**: Exclude `test/**` from coverage reports in both packages, so test helpers no longer count as production code ([#32])
 
 ### Fixed
