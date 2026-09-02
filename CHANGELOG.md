@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.29] - 2026.09.02
+
 ### Fixed
 
-- **Agent**: Fix `setup` failing at "Create ddev user" on every fresh server with `Command failed: id -u ddev`. The dependency-injection refactor in [#32] rewrote `execSilent(cmd)` as `io.exec(cmd, { silent: true })`, but `silent` only controls stdio — `exec` throws on a non-zero exit while `execSilent` returns `""`. `id -u ddev` exits non-zero precisely when the user does not exist yet, so the probe became a fatal error. Regression in 0.1.26 ([#36])
-- **Agent**: Fix `getDockerGatewayIp` throwing instead of falling back. `docker network inspect` exits non-zero for a missing network, and `ddev_default` does not exist until a project first starts, so the documented fallback to the bridge gateway and then `172.17.0.1` was unreachable ([#36])
+- **Agent**: Fix `setup` failing at "Create ddev user" on every fresh server with `Command failed: id -u ddev`. The dependency-injection refactor in [#32] rewrote `execSilent(cmd)` as `io.exec(cmd, { silent: true })`, but `silent` only controls stdio — `exec` throws on a non-zero exit while `execSilent` returns `""`. `id -u ddev` exits non-zero precisely when the user does not exist yet, so the probe became a fatal error. Regression in 0.1.26 ([983fcf4], [#36])
+- **Agent**: Fix `getDockerGatewayIp` throwing instead of falling back. `docker network inspect` exits non-zero for a missing network, and `ddev_default` does not exist until a project first starts, so the documented fallback to the bridge gateway and then `172.17.0.1` was unreachable ([983fcf4], [#36])
 
 ### Changed
 
-- **Agent**: `SetupIo` gains `execSilent` for probes where a non-zero exit is an answer rather than an error. The test fake now models the difference — its `exec` throws for commands marked as failing while `execSilent` returns `""` — which is what let the regression above pass a full suite ([#36])
+- **Agent**: `SetupIo` gains `execSilent` for probes where a non-zero exit is an answer rather than an error. The test fake now models the difference — its `exec` throws for commands marked as failing while `execSilent` returns `""` — which is what let the regression above pass a full suite ([983fcf4], [#36])
 
 ## [0.1.28] - 2026.09.02
 
@@ -286,7 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.28...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.29...HEAD
+[0.1.29]: https://github.com/studiometa/trafic/compare/0.1.28...0.1.29
 [0.1.28]: https://github.com/studiometa/trafic/compare/0.1.27...0.1.28
 [0.1.27]: https://github.com/studiometa/trafic/compare/0.1.26...0.1.27
 [0.1.26]: https://github.com/studiometa/trafic/compare/0.1.25...0.1.26
@@ -354,6 +357,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#34]: https://github.com/studiometa/trafic/pull/34
 [a29913e]: https://github.com/studiometa/trafic/commit/a29913e
 [#35]: https://github.com/studiometa/trafic/pull/35
+[983fcf4]: https://github.com/studiometa/trafic/commit/983fcf4
 [#36]: https://github.com/studiometa/trafic/pull/36
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
