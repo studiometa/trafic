@@ -131,8 +131,8 @@ deploy_preview:
 The setup command executes 5 steps over SSH:
 
 1. **Check the server** — Read the OS, resolve root or sudo privileges
-2. **Install Node.js** — Install Node.js 24 via fnm (skipped when already present)
-3. **Install the agent** — `npm install -g @studiometa/trafic-agent`, symlinked into `/usr/local/bin`
+2. **Install Node.js** — Install Node.js 24 from the NodeSource apt repository (skipped when already present)
+3. **Install the agent** — `npm install -g @studiometa/trafic-agent`
 4. **Setup the server** — Run `trafic-agent setup` (Docker, DDEV, Traefik, systemd, hardening)
 5. **Verify** — Check that the `trafic-agent` service is active
 

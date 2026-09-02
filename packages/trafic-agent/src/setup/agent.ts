@@ -1,8 +1,50 @@
 import { step, success, info, exec, commandExists } from "./steps.js";
 import { writeFileSync, existsSync } from "node:fs";
 
+/** Node.js major version required by the agent */
+const NODE_MAJOR = 24;
+
+/** NodeSource keyring path */
+const NODESOURCE_KEYRING = "/etc/apt/keyrings/nodesource.gpg";
+
 /**
- * Install Node.js using fnm
+ * Add the NodeSource apt repository and GPG key.
+ * Idempotent: safe to call even if the repository is already configured.
+ *
+ * nodejs.org points at NodeSource for apt installs. The Ubuntu 24.04
+ * `nodejs` package is 18.x, far below what the agent needs.
+ */
+export function addNodeSourceAptRepo(): void {
+  exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
+  // Download and dearmor as separate commands: piping curl into gpg into tee
+  // would report only tee's exit code and hide a failed key download, which
+  // then surfaces as a confusing GPG error on the next apt-get update
+  exec(
+    "curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/trafic-nodesource.key",
+    { silent: true },
+  );
+  exec(
+    "gpg --batch --yes --dearmor -o /tmp/trafic-nodesource.gpg /tmp/trafic-nodesource.key",
+    { silent: true },
+  );
+  exec(`install -m 0644 /tmp/trafic-nodesource.gpg ${NODESOURCE_KEYRING}`, {
+    silent: true,
+  });
+  exec("rm -f /tmp/trafic-nodesource.key /tmp/trafic-nodesource.gpg", {
+    silent: true,
+  });
+  exec(
+    `echo "deb [signed-by=${NODESOURCE_KEYRING}] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null`,
+    { silent: true },
+  );
+}
+
+/**
+ * Install Node.js from the NodeSource apt repository.
+ *
+ * apt keeps node and npm in /usr/bin — on root's PATH, so `which
+ * trafic-agent` resolves for the systemd unit — and unattended-upgrades
+ * patches them, which a version manager install never gets.
  */
 export function installNode(): void {
   step("Install Node.js");
@@ -14,33 +56,17 @@ export function installNode(): void {
     return;
   }
 
-  // Install fnm (Fast Node Manager)
+  info("Adding NodeSource apt repository...");
+  addNodeSourceAptRepo();
+
+  info("Installing Node.js...");
+  exec("apt-get update -qq", { silent: true });
   exec(
-    'curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir "/opt/fnm" --skip-shell',
+    "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y nodejs",
+    { silent: true },
   );
 
-  // Add fnm to system path
-  const profileContent = `# Trafic: fnm (Node.js version manager)
-export FNM_DIR="/opt/fnm"
-export PATH="/opt/fnm:$PATH"
-eval "$(fnm env)"
-`;
-
-  writeFileSync("/etc/profile.d/fnm.sh", profileContent);
-  exec("chmod 644 /etc/profile.d/fnm.sh");
-
-  // Install Node.js 24
-  exec("export FNM_DIR=/opt/fnm && /opt/fnm/fnm install 24");
-  exec("export FNM_DIR=/opt/fnm && /opt/fnm/fnm default 24");
-
-  // Create symlinks for system-wide access
-  exec(
-    "ln -sf /opt/fnm/aliases/default/bin/node /usr/local/bin/node || true",
-  );
-  exec("ln -sf /opt/fnm/aliases/default/bin/npm /usr/local/bin/npm || true");
-  exec("ln -sf /opt/fnm/aliases/default/bin/npx /usr/local/bin/npx || true");
-
-  success("Node.js 24 installed via fnm");
+  success(`Node.js ${NODE_MAJOR} installed from apt`);
 }
 
 /**

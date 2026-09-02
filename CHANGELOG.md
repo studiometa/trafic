@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CLI**, **Agent**: Install Node.js from the NodeSource apt repository instead of fnm. apt puts `node` and `npm` in `/usr/bin`, so `npm prefix -g` is `/usr` and the `trafic-agent` binary lands on root's `PATH` — the systemd unit resolves it with `which trafic-agent`, which needed a `/usr/local/bin` symlink before. More importantly, apt-managed Node.js receives security patches through the `unattended-upgrades` that the hardening step configures; an fnm install never did. Drops `/opt/fnm`, `/etc/profile.d/fnm.sh` and the `unzip` dependency ([#30])
+- **Agent**: `installSystemDeps` also installs `gnupg` and `ca-certificates` — both apt repositories (DDEV and NodeSource) need `gpg --dearmor`, and a minimal Ubuntu image ships with neither ([#30])
+
+### Fixed
+
+- **CLI**: Only symlink the agent binary into `/usr/local/bin` when the npm global prefix is not already on root's `PATH`, instead of for every prefix except `/usr/local` ([#30])
+
 ## [0.1.24] - 2026.09.01
 
 ### Changed
@@ -276,6 +285,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [5097cbe]: https://github.com/studiometa/trafic/commit/5097cbe
 [cb4784f]: https://github.com/studiometa/trafic/commit/cb4784f
 [#29]: https://github.com/studiometa/trafic/pull/29
+[#30]: https://github.com/studiometa/trafic/pull/30
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
 
