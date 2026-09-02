@@ -71,7 +71,10 @@ export async function setup(options: SetupOptions): Promise<void> {
 
     // Step 6: Install and configure agent
     installAgent();
-    createAgentConfig(options.tld, options.email);
+    createAgentConfig({
+      tld: options.tld,
+      trustedProxyHops: options.trustedProxyHops,
+    });
     createSystemdService();
 
     // Step 7: Server hardening

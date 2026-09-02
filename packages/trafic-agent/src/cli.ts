@@ -37,6 +37,8 @@ Setup options:
   --no-docker             Skip Docker installation
   --no-ddev               Skip DDEV installation
   --ssh-users <users>     Comma-separated list of SSH users to allow (default: ddev)
+  --trusted-proxy-hops <n> Proxies in front of the agent (default: 1; 2 behind a CDN).
+                          Written to the generated config; ignored if one exists
   --dry-run               Show what would be done without making changes
 
 Upgrade/update options:
@@ -50,6 +52,7 @@ Examples:
 
   # Setup a new server
   sudo trafic-agent setup --tld=previews.example.com
+  sudo trafic-agent setup --tld=previews.example.com --trusted-proxy-hops=2
   sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
 
@@ -138,6 +141,28 @@ function handleUpgrade(values: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Parse --trusted-proxy-hops, failing loudly rather than writing a config
+ * that would quietly break the IP allowlist.
+ */
+function parseTrustedProxyHops(raw?: string): number | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+
+  const hops = Number(raw);
+
+  if (!Number.isInteger(hops) || hops < 1) {
+    console.error(
+      `Error: --trusted-proxy-hops must be a whole number of 1 or more, got "${raw}"`,
+    );
+    console.error("  1 = ddev-router/Traefik alone, 2 = a CDN in front of it");
+    process.exit(1);
+  }
+
+  return hops;
+}
+
 async function runSetup(values: Record<string, unknown>): Promise<void> {
   // Load existing config to use as defaults on re-runs
   const existingConfig = loadConfig();
@@ -151,6 +176,7 @@ async function runSetup(values: Record<string, unknown>): Promise<void> {
 
   await setup({
     tld,
+    trustedProxyHops: parseTrustedProxyHops(values["trusted-proxy-hops"] as string | undefined),
     email: values.email as string | undefined,
     noHardening: values["no-hardening"] as boolean | undefined,
     noDocker: values["no-docker"] as boolean | undefined,
@@ -180,6 +206,7 @@ async function main(): Promise<void> {
       "no-docker": { type: "boolean" },
       "no-ddev": { type: "boolean" },
       "ssh-users": { type: "string" },
+      "trusted-proxy-hops": { type: "string" },
       "dry-run": { type: "boolean" },
 
       // Upgrade options

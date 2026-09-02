@@ -4,6 +4,9 @@ import { step, success, info } from "./steps.js";
 /** Node.js major version required by the agent */
 const NODE_MAJOR = 24;
 
+/** Proxies in front of the agent when --trusted-proxy-hops is not given */
+export const DEFAULT_TRUSTED_PROXY_HOPS = 1;
+
 /** NodeSource keyring path */
 const NODESOURCE_KEYRING = "/etc/apt/keyrings/nodesource.gpg";
 
@@ -85,10 +88,10 @@ export function installAgent(io: SetupIo = nodeIo): void {
  * Create the agent configuration
  */
 export function createAgentConfig(
-  tld: string,
-  _email?: string,
+  options: { tld: string; trustedProxyHops?: number },
   io: SetupIo = nodeIo,
 ): void {
+  const { tld, trustedProxyHops = DEFAULT_TRUSTED_PROXY_HOPS } = options;
   step("Create agent configuration");
 
   // Create directories
@@ -135,7 +138,7 @@ rules = []
 # every extra proxy — a CDN or load balancer ahead of Traefik makes it 2.
 # Too low and allowed_ips matches a proxy instead of the client; too high and
 # it can be spoofed by a client-supplied header.
-trusted_proxy_hops = 1
+trusted_proxy_hops = ${trustedProxyHops}
 `;
 
   io.writeFile(configPath, config);

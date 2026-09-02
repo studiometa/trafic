@@ -36,6 +36,7 @@ trafic setup \
 | `--port` | SSH port | `22` |
 | `--agent-version` | Agent version to install | `latest` |
 | `--ssh-users` | SSH users to allow after hardening, comma-separated. The `--user` value is always added | `ddev` |
+| `--trusted-proxy-hops` | Proxies in front of the agent — `2` behind a CDN. Fresh installs only | `1` |
 | `--no-hardening` | Skip server hardening | `false` |
 | `--no-docker` | Skip Docker installation | `false` |
 | `--no-ddev` | Skip DDEV installation | `false` |

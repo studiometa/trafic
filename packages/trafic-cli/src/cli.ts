@@ -29,6 +29,7 @@ const HELP = `
     --agent-version <version>  Agent version to install (default: latest)
     --ssh-users <users>        SSH users to allow, comma-separated (default: ddev)
                                --user is always added, so hardening cannot lock you out
+    --trusted-proxy-hops <n>   Proxies in front of the agent (default: 1; 2 behind a CDN)
     --no-hardening             Skip server hardening
     --no-docker                Skip Docker installation
     --no-ddev                  Skip DDEV installation
@@ -59,10 +60,23 @@ const HELP = `
   Examples:
     trafic setup --host server.example.com --tld previews.example.com
     trafic setup --host server.example.com --tld previews.example.com --email admin@example.com
+    trafic setup --host server.example.com --tld previews.example.com --trusted-proxy-hops 2
     trafic deploy --host server.example.com --name my-app --branch main
     trafic deploy --host server.example.com --name my-app --preview 42 --sync "dist/"
     trafic destroy --host server.example.com --name my-app --preview 42
 `;
+
+/**
+ * Report a parseArgs failure and exit.
+ *
+ * A value starting with a dash is the common case: parseArgs cannot tell
+ * `--trusted-proxy-hops -1` from a second flag, and suggests the `=` form.
+ */
+function exitOnParseError(err: unknown): never {
+  error((err as Error).message);
+  console.log(HELP);
+  process.exit(1);
+}
 
 /**
  * Detect the git repo URL from CI environment variables.
@@ -112,38 +126,50 @@ function main(): void {
     process.exit(0);
   }
 
-  // Parse arguments (skip the command name)
-  const { values } = parseArgs({
-    args: args.slice(1),
-    options: {
-      host: { type: "string" },
-      user: { type: "string" },
-      port: { type: "string", default: "22" },
-      "ssh-options": { type: "string", default: "" },
-      tld: { type: "string" },
-      email: { type: "string" },
-      "agent-version": { type: "string", default: "latest" },
-      "ssh-users": { type: "string" },
-      "no-hardening": { type: "boolean", default: false },
-      "no-docker": { type: "boolean", default: false },
-      "no-ddev": { type: "boolean", default: false },
-      "dry-run": { type: "boolean", default: false },
-      repo: { type: "string" },
-      branch: { type: "string" },
-      name: { type: "string" },
-      preview: { type: "string" },
-      sync: { type: "string" },
-      script: { type: "string" },
-      "before-script": { type: "string" },
-      "after-script": { type: "string" },
-      "projects-dir": { type: "string", default: "~/www" },
-      "no-start": { type: "boolean", default: false },
-      timeout: { type: "string", default: "10m" },
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "v" },
-    },
-    strict: true,
-  });
+  // Parse arguments (skip the command name).
+  // parseArgs throws on malformed input — a dash-leading value such as
+  // `--trusted-proxy-hops -1` reads as another flag — so report the message
+  // instead of letting a raw TypeError and stack trace reach the user.
+  let parsed;
+
+  try {
+    parsed = parseArgs({
+      args: args.slice(1),
+      options: {
+        host: { type: "string" },
+        user: { type: "string" },
+        port: { type: "string", default: "22" },
+        "ssh-options": { type: "string", default: "" },
+        tld: { type: "string" },
+        email: { type: "string" },
+        "agent-version": { type: "string", default: "latest" },
+        "ssh-users": { type: "string" },
+        "trusted-proxy-hops": { type: "string" },
+        "no-hardening": { type: "boolean", default: false },
+        "no-docker": { type: "boolean", default: false },
+        "no-ddev": { type: "boolean", default: false },
+        "dry-run": { type: "boolean", default: false },
+        repo: { type: "string" },
+        branch: { type: "string" },
+        name: { type: "string" },
+        preview: { type: "string" },
+        sync: { type: "string" },
+        script: { type: "string" },
+        "before-script": { type: "string" },
+        "after-script": { type: "string" },
+        "projects-dir": { type: "string", default: "~/www" },
+        "no-start": { type: "boolean", default: false },
+        timeout: { type: "string", default: "10m" },
+        help: { type: "boolean", short: "h" },
+        version: { type: "boolean", short: "v" },
+      },
+      strict: true,
+    });
+  } catch (err) {
+    exitOnParseError(err);
+  }
+
+  const { values } = parsed;
 
   if (values.help) {
     console.log(HELP);
@@ -181,6 +207,17 @@ function main(): void {
         process.exit(1);
       }
 
+      const hops = values["trusted-proxy-hops"];
+      if (hops !== undefined && !/^[1-9]\d*$/.test(hops)) {
+        error(
+          `--trusted-proxy-hops must be a whole number of 1 or more, got "${hops}"`,
+        );
+        console.log(
+          "  1 = ddev-router/Traefik alone, 2 = a CDN in front of it",
+        );
+        process.exit(1);
+      }
+
       const setupOptions: SetupOptions = {
         ...sshBase,
         tld: values.tld,
@@ -190,6 +227,7 @@ function main(): void {
         noDocker: values["no-docker"]!,
         noDdev: values["no-ddev"]!,
         sshUsers: values["ssh-users"],
+        trustedProxyHops: values["trusted-proxy-hops"],
         dryRun: values["dry-run"]!,
       };
 

@@ -42,6 +42,11 @@ export interface SetupOptions {
   noDdev?: boolean;
   /** Additional SSH users to allow */
   sshUsers?: string[];
+  /**
+   * Proxies in front of the agent, written to the generated config.
+   * Only applies to a fresh install — an existing config is never rewritten.
+   */
+  trustedProxyHops?: number;
   /** Run in dry-run mode (show what would be done) */
   dryRun?: boolean;
 }

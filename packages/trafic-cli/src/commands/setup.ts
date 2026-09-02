@@ -36,6 +36,10 @@ export async function setup(options: SetupOptions): Promise<void> {
   info(`TLD: ${options.tld}`);
   info(`Agent version: ${options.agentVersion}`);
 
+  if (options.trustedProxyHops) {
+    info(`Trusted proxy hops: ${options.trustedProxyHops}`);
+  }
+
   if (!options.noHardening) {
     const sshUsers = resolveSshUsers(options);
     info(`SSH access after hardening: root, ${sshUsers.join(", ")}`);
@@ -301,6 +305,10 @@ function buildAgentSetupArgs(options: SetupOptions): string[] {
 
   // Always explicit, so a dry-run shows exactly who will keep SSH access
   args.push(`--ssh-users=${resolveSshUsers(options).join(",")}`);
+
+  if (options.trustedProxyHops) {
+    args.push(`--trusted-proxy-hops=${options.trustedProxyHops}`);
+  }
 
   return args;
 }
