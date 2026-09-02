@@ -38,6 +38,7 @@ trafic setup \
 | `--ssh-users` | SSH users to allow after hardening, comma-separated. The `--user` value is always added | `ddev` |
 | `--trusted-proxy-hops` | Proxies in front of the agent — `2` behind a CDN. Fresh installs only | `1` |
 | `--no-hardening` | Skip server hardening | `false` |
+| `--no-root-ssh` | Disable root SSH login. Refused when connecting as `root` | `false` |
 | `--no-docker` | Skip Docker installation | `false` |
 | `--no-ddev` | Skip DDEV installation | `false` |
 | `--dry-run` | Print the remote commands without running them | `false` |
@@ -47,6 +48,7 @@ trafic setup \
 
 - Ubuntu 24.04 LTS on the target server (26.04 also verified)
 - SSH access as `root`, or as a user with **passwordless** sudo — SSH runs in batch mode, so a password prompt cannot be answered
+- With `--no-root-ssh`, connect as a sudo user: root is dropped from `AllowUsers` and `PermitRootLogin` becomes `no`, leaving the provider's rescue mode as the only recovery path
 - Wildcard DNS (`*.previews.example.com` → server IP)
 
 The command is safe to run again: each step is skipped when the server is already in the target state.

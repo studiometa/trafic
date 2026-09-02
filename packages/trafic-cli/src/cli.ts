@@ -31,6 +31,7 @@ const HELP = `
                                --user is always added, so hardening cannot lock you out
     --trusted-proxy-hops <n>   Proxies in front of the agent (default: 1; 2 behind a CDN)
     --no-hardening             Skip server hardening
+    --no-root-ssh              Disable root SSH login (recovery via rescue mode only)
     --no-docker                Skip Docker installation
     --no-ddev                  Skip DDEV installation
     --dry-run                  Print the remote commands without running them
@@ -146,6 +147,7 @@ function main(): void {
         "ssh-users": { type: "string" },
         "trusted-proxy-hops": { type: "string" },
         "no-hardening": { type: "boolean", default: false },
+        "no-root-ssh": { type: "boolean", default: false },
         "no-docker": { type: "boolean", default: false },
         "no-ddev": { type: "boolean", default: false },
         "dry-run": { type: "boolean", default: false },
@@ -207,6 +209,14 @@ function main(): void {
         process.exit(1);
       }
 
+      if (values["no-root-ssh"] && sshBase.user === "root") {
+        error(
+          "--no-root-ssh cannot be used while connecting as root — it would lock you out",
+        );
+        console.log("  Connect as another user with sudo: --user <name>");
+        process.exit(1);
+      }
+
       const hops = values["trusted-proxy-hops"];
       if (hops !== undefined && !/^[1-9]\d*$/.test(hops)) {
         error(
@@ -224,6 +234,7 @@ function main(): void {
         email: values.email,
         agentVersion: values["agent-version"]!,
         noHardening: values["no-hardening"]!,
+        noRootSsh: values["no-root-ssh"]!,
         noDocker: values["no-docker"]!,
         noDdev: values["no-ddev"]!,
         sshUsers: values["ssh-users"],

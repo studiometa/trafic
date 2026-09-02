@@ -24,6 +24,8 @@ export interface SetupOptions extends SSHOptions {
   agentVersion: string;
   /** Whether to skip server hardening */
   noHardening: boolean;
+  /** Whether to disable root SSH login entirely */
+  noRootSsh: boolean;
   /** Whether to skip Docker installation */
   noDocker: boolean;
   /** Whether to skip DDEV installation */

@@ -51,7 +51,7 @@ describe("hardenSsh", () => {
   it("writes AllowUsers with root and the given users", () => {
     const io = createFakeIo();
 
-    hardenSsh(["ddev"], io);
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev");
   });
@@ -59,7 +59,7 @@ describe("hardenSsh", () => {
   it("includes the sudo user in AllowUsers", () => {
     const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
 
-    hardenSsh(["ddev"], io);
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     // Without this the invoking user is refused on their next connection,
     // and reloading sshd keeps the current session alive so it looks fine
@@ -69,7 +69,7 @@ describe("hardenSsh", () => {
   it("does not list root twice when invoked through sudo as root", () => {
     const io = createFakeIo({ env: { SUDO_USER: "root" } });
 
-    hardenSsh(["ddev"], io);
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev\n");
   });
@@ -77,7 +77,7 @@ describe("hardenSsh", () => {
   it("disables password authentication and keeps root on keys only", () => {
     const io = createFakeIo();
 
-    hardenSsh(["ddev"], io);
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     const config = io.written(SSHD_CONFIG);
     expect(config).toContain("PasswordAuthentication no");
@@ -88,7 +88,7 @@ describe("hardenSsh", () => {
   it("reverts the drop-in when sshd rejects the config", () => {
     const io = createFakeIo({ output: { "sshd -t": "error" } });
 
-    hardenSsh(["ddev"], io);
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     expect(io.ran(`rm ${SSHD_CONFIG}`)).toBe(true);
     expect(io.ran("systemctl reload")).toBe(false);
@@ -97,7 +97,7 @@ describe("hardenSsh", () => {
   it("reloads sshd once the config passes validation", () => {
     const io = createFakeIo();
 
-    hardenSsh(["ddev"], io);
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     expect(io.ran("systemctl reload ssh")).toBe(true);
   });
@@ -251,7 +251,7 @@ describe("hardenServer", () => {
   it("runs every hardening step with the injected io", () => {
     const io = createFakeIo({ present: ["ufw", "fail2ban-client"] });
 
-    hardenServer(["ddev"], io);
+    hardenServer({ sshUsers: ["ddev"] }, io);
 
     expect(io.written(SSHD_CONFIG)).not.toBe("");
     expect(io.written("/etc/fail2ban/jail.local")).not.toBe("");
@@ -263,8 +263,68 @@ describe("hardenServer", () => {
   it("passes the SSH users through to the sshd config", () => {
     const io = createFakeIo({ present: ["ufw", "fail2ban-client"] });
 
-    hardenServer(["ddev", "deploy"], io);
+    hardenServer({ sshUsers: ["ddev", "deploy"] }, io);
 
     expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev deploy");
+  });
+});
+
+describe("hardenSsh --no-root-ssh", () => {
+  it("disables root login and drops it from AllowUsers", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"], noRootSsh: true }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).toContain("PermitRootLogin no");
+    expect(config).toContain("AllowUsers ddev ubuntu");
+    expect(config).not.toContain("PermitRootLogin prohibit-password");
+  });
+
+  it("keeps root by default", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).toContain("PermitRootLogin prohibit-password");
+    expect(config).toContain("AllowUsers root ddev ubuntu");
+  });
+
+  it("still keeps the sudo user, so hardening cannot lock them out", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"], noRootSsh: true }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("ubuntu");
+  });
+
+  it("warns when there is no sudo user to fall back on", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"], noRootSsh: true }, io);
+
+    // Running straight as root leaves only ddev, which may have no key
+    const warnings = vi.mocked(console.log).mock.calls.map((c) => String(c[0]));
+    expect(warnings.some((w) => w.includes("rescue mode"))).toBe(true);
+  });
+
+  it("refuses to leave nobody able to log in", () => {
+    const io = createFakeIo();
+
+    expect(() =>
+      hardenSsh({ allowedUsers: [], noRootSsh: true }, io),
+    ).toThrow(/nobody could log in/);
+  });
+
+  it("passes the option through hardenServer", () => {
+    const io = createFakeIo({
+      present: ["ufw", "fail2ban-client"],
+      env: { SUDO_USER: "ubuntu" },
+    });
+
+    hardenServer({ sshUsers: ["ddev"], noRootSsh: true }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("PermitRootLogin no");
   });
 });

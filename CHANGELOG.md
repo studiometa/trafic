@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**, **Agent**: `--no-root-ssh` on `setup` — writes `PermitRootLogin no` and drops root from `AllowUsers`, leaving the provider's rescue mode as the only recovery path. Nothing in Trafic needs root over SSH: the agent runs as `ddev` under systemd, `deploy` and `destroy` connect as `ddev`, and `upgrade` uses `sudo`. Opt-in, since the default keeps a root key as an emergency route. The CLI refuses the flag when connecting as `root`, and the agent warns when there is no `$SUDO_USER` to fall back on — both being the self-lockout that [#31] fixed ([#35])
+
 ## [0.1.27] - 2026.09.02
 
 ### Added
@@ -336,6 +340,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#33]: https://github.com/studiometa/trafic/pull/33
 [c7d62ed]: https://github.com/studiometa/trafic/commit/c7d62ed
 [#34]: https://github.com/studiometa/trafic/pull/34
+[#35]: https://github.com/studiometa/trafic/pull/35
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

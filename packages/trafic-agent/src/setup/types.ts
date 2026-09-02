@@ -42,6 +42,8 @@ export interface SetupOptions {
   noDdev?: boolean;
   /** Additional SSH users to allow */
   sshUsers?: string[];
+  /** Disable root SSH login entirely; recovery is via the provider's rescue mode */
+  noRootSsh?: boolean;
   /**
    * Proxies in front of the agent, written to the generated config.
    * Only applies to a fresh install — an existing config is never rewritten.
