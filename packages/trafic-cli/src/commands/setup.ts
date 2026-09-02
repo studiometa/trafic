@@ -92,7 +92,7 @@ export async function setup(options: SetupOptions): Promise<void> {
   if (options.dryRun) {
     info(setupCommand);
   } else {
-    await ssh.exec(options, setupCommand, SETUP_TIMEOUT_MS);
+    await ssh.exec(options, setupCommand, { timeoutMs: SETUP_TIMEOUT_MS });
   }
 
   // 5. Verify the agent service

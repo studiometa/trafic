@@ -115,3 +115,117 @@ describe("deploy", () => {
     expect(allCommands.some((cmd) => cmd.includes('ddev exec'))).toBe(true);
   });
 });
+
+describe("deploy container script", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    mockedTest.mockResolvedValue(true);
+  });
+
+  /** All commands passed to ssh.exec. */
+  function commands(): string[] {
+    return mockedExec.mock.calls.map((call) => call[1]);
+  }
+
+  /** The script decoded from the base64 payload written to the server. */
+  function writtenScript(): string {
+    const write = commands().find((c) => c.includes("base64 -d"))!;
+    const encoded = /printf %s (\S+) \|/.exec(write)![1];
+    return Buffer.from(encoded, "base64").toString("utf-8");
+  }
+
+  it("exports each env entry before the script", async () => {
+    await deploy({
+      ...baseOptions,
+      script: "composer install",
+      env: { COMPOSER_AUTH: '{"http-basic":{"x":{"username":"u"}}}', CI: "true" },
+    });
+
+    const script = writtenScript();
+    expect(script).toContain(
+      `export COMPOSER_AUTH='{"http-basic":{"x":{"username":"u"}}}'`,
+    );
+    expect(script).toContain("export CI='true'");
+    expect(script).toContain("composer install");
+  });
+
+  it("keeps env values out of the logged command", async () => {
+    await deploy({
+      ...baseOptions,
+      script: "composer install",
+      env: { COMPOSER_AUTH: "s3cr3t-token-value" },
+    });
+
+    const write = mockedExec.mock.calls.find((call) =>
+      call[1].includes("base64 -d"),
+    )!;
+    // The payload is logged through the override, never the command itself
+    expect(write[2]?.log).toBe("write .trafic-deploy.sh");
+  });
+
+  it("aborts the script on the first failing command", async () => {
+    await deploy({ ...baseOptions, script: "false\nnpm run build" });
+
+    // Without errexit a failed composer install would still report success
+    expect(writtenScript().startsWith("set -o errexit")).toBe(true);
+  });
+
+  it("survives a script containing quotes", async () => {
+    const script = `php -r 'echo "hi";'`;
+
+    await deploy({ ...baseOptions, script });
+
+    expect(writtenScript()).toContain(script);
+  });
+
+  it("escapes single quotes in env values", async () => {
+    await deploy({
+      ...baseOptions,
+      script: "true",
+      env: { TOKEN: "it's-quoted" },
+    });
+
+    expect(writtenScript()).toContain(`export TOKEN='it'\\''s-quoted'`);
+  });
+
+  it("runs the script through bash in the container", async () => {
+    await deploy({ ...baseOptions, script: "composer install" });
+
+    expect(
+      commands().some((c) => c.includes("ddev exec bash .trafic-deploy.sh")),
+    ).toBe(true);
+  });
+
+  it("removes the script afterwards", async () => {
+    await deploy({ ...baseOptions, script: "composer install" });
+
+    expect(commands().some((c) => c.includes("rm -f .trafic-deploy.sh"))).toBe(
+      true,
+    );
+  });
+
+  it("removes the script even when it fails", async () => {
+    mockedExec.mockImplementation(async (_o, command) => {
+      if (command.includes("ddev exec bash")) {
+        throw new Error("build failed");
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    await expect(
+      deploy({ ...baseOptions, script: "composer install", env: { T: "x" } }),
+    ).rejects.toThrow("build failed");
+
+    // Otherwise the env values stay on disk after a failed build
+    expect(commands().some((c) => c.includes("rm -f .trafic-deploy.sh"))).toBe(
+      true,
+    );
+  });
+
+  it("writes no script when none is given", async () => {
+    await deploy(baseOptions);
+
+    expect(commands().some((c) => c.includes(".trafic-deploy.sh"))).toBe(false);
+  });
+});

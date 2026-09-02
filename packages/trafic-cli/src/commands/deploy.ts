@@ -101,10 +101,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
   // 5. Script inside DDEV container
   if (options.script) {
     step("Run deploy script in DDEV container");
-    await ssh.exec(
-      options,
-      `cd ${projectDir} && ddev exec "${options.script}"`,
-    );
+    await runContainerScript(options, projectDir);
   }
 
   // 6. After script (on server, outside container)
@@ -123,4 +120,57 @@ export async function deploy(options: DeployOptions): Promise<void> {
   }
 
   success(`Deployed ${projectName} from ${options.branch}`);
+}
+
+/** Name of the generated script, written into the project directory. */
+const CONTAINER_SCRIPT = ".trafic-deploy.sh";
+
+/**
+ * Quote a value for a shell single-quoted string.
+ */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Run the deploy script inside the DDEV container.
+ *
+ * The script is written to a file and executed there rather than passed to
+ * `ddev exec` inline. Two reasons: the environment can be exported around it,
+ * and a script containing quotes no longer has to survive being nested inside
+ * the remote command. The file is transferred base64-encoded, so nothing in
+ * the script or the values is interpreted on the way.
+ */
+async function runContainerScript(
+  options: DeployOptions,
+  projectDir: string,
+): Promise<void> {
+  const env = Object.entries(options.env ?? {});
+
+  if (env.length > 0) {
+    info(`Environment: ${env.map(([key]) => key).join(", ")}`);
+  }
+
+  const script = [
+    "set -o errexit",
+    ...env.map(([key, value]) => `export ${key}=${shellQuote(value)}`),
+    options.script ?? "",
+    "",
+  ].join("\n");
+
+  const encoded = Buffer.from(script, "utf-8").toString("base64");
+
+  try {
+    await ssh.exec(
+      options,
+      `cd ${projectDir} && printf %s ${encoded} | base64 -d > ${CONTAINER_SCRIPT} && chmod 600 ${CONTAINER_SCRIPT}`,
+      // The payload holds the environment values
+      { log: `write ${CONTAINER_SCRIPT}` },
+    );
+
+    await ssh.exec(options, `cd ${projectDir} && ddev exec bash ${CONTAINER_SCRIPT}`);
+  } finally {
+    // Leaving it behind would leave the values on disk
+    await ssh.exec(options, `cd ${projectDir} && rm -f ${CONTAINER_SCRIPT}`);
+  }
 }
