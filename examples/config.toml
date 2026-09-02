@@ -27,6 +27,20 @@ idle_check_interval = "5m"
 # Default policy: "allow", "deny", or "basic" (default: basic)
 default_policy = "basic"
 
+# Number of proxies in front of the agent (default: 1)
+#
+# Each proxy appends the address it saw to X-Forwarded-For, so the client
+# address sits this many entries from the right. Anything further left was
+# sent by the client and is ignored.
+#
+#   1  ddev-router/Traefik only — the standard install
+#   2  a CDN or load balancer ahead of Traefik
+#
+# Set this correctly before using allowed_ips: too low and the allowlist
+# matches a proxy rather than the client, too high and a client can forge
+# the header to match it.
+trusted_proxy_hops = 1
+
 # IP whitelist - these IPs bypass auth entirely
 allowed_ips = [
   "192.168.1.0/24",

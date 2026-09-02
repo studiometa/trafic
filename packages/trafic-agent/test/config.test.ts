@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { parseDuration, validateConfig } from "../src/utils/config.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadConfig, parseDuration, validateConfig } from "../src/utils/config.js";
 import type { AgentConfig } from "../src/types.js";
 
 describe("parseDuration", () => {
@@ -83,5 +86,50 @@ describe("validateConfig", () => {
       auth: { ...validConfig.auth, defaultPolicy: "token" as const },
     };
     expect(validateConfig(config)).toEqual([]);
+  });
+});
+
+describe("loadConfig trusted_proxy_hops", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "trafic-config-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Write a config file holding just an [auth] section and load it. */
+  function loadAuth(authSection: string) {
+    const path = join(dir, "config.toml");
+    writeFileSync(path, `tld = "example.com"\n\n[auth]\n${authSection}\n`);
+    return loadConfig(path).auth;
+  }
+
+  it("defaults to a single trusted proxy", () => {
+    expect(loadAuth('default_policy = "basic"').trustedProxyHops).toBe(1);
+  });
+
+  it("reads an explicit hop count", () => {
+    expect(loadAuth("trusted_proxy_hops = 2").trustedProxyHops).toBe(2);
+  });
+
+  it.each([
+    ["0", "trusted_proxy_hops = 0"],
+    ["negative", "trusted_proxy_hops = -1"],
+    ["fractional", "trusted_proxy_hops = 1.5"],
+    ["a string", 'trusted_proxy_hops = "two"'],
+  ])("falls back to the default for %s", (_label, line) => {
+    // Zero would read the socket peer — always a proxy — so the IP
+    // allowlist would silently never match
+    expect(loadAuth(line).trustedProxyHops).toBe(1);
+  });
+
+  it("defaults when the config has no auth section at all", () => {
+    const path = join(dir, "config.toml");
+    writeFileSync(path, 'tld = "example.com"\n');
+
+    expect(loadConfig(path).auth.trustedProxyHops).toBe(1);
   });
 });

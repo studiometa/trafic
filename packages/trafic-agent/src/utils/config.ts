@@ -22,6 +22,7 @@ const DEFAULT_CONFIG: AgentConfig = {
     tokens: [],
     basicAuth: [],
     rules: [],
+    trustedProxyHops: 1,
   },
 };
 
@@ -114,7 +115,25 @@ function mergeAuthConfig(raw?: Record<string, unknown>): AuthConfig {
         allowedIps: r.allowed_ips as string[] | undefined,
       }),
     ),
+    trustedProxyHops: parseTrustedProxyHops(raw.trusted_proxy_hops),
   };
+}
+
+/**
+ * Parse trusted_proxy_hops, ignoring values that cannot be a hop count.
+ *
+ * A bad value falls back to the default rather than 0, because 0 would read
+ * the socket peer — always the proxy — and quietly stop the IP allowlist and
+ * per-hostname IP rules from ever matching.
+ */
+function parseTrustedProxyHops(raw: unknown): number {
+  const hops = typeof raw === "number" ? raw : Number(raw);
+
+  if (!Number.isInteger(hops) || hops < 1) {
+    return DEFAULT_CONFIG.auth.trustedProxyHops;
+  }
+
+  return hops;
 }
 
 /**

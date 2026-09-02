@@ -34,6 +34,18 @@ export interface AuthConfig {
   basicAuth: string[];
   /** Per-hostname rules */
   rules: AuthRule[];
+  /**
+   * Number of trusted proxies in front of the agent.
+   *
+   * Each proxy appends the peer it saw to X-Forwarded-For, so the client
+   * address is this many entries from the right. Anything further left is
+   * client-supplied and must not be trusted.
+   *
+   * 1 (default) matches a plain install, where only ddev-router/Traefik sits
+   * in front. Add one for every additional proxy — a CDN or load balancer
+   * ahead of Traefik makes it 2.
+   */
+  trustedProxyHops: number;
 }
 
 /**
@@ -99,7 +111,9 @@ export interface AuthResult {
  */
 export interface AuthRequest {
   hostname: string;
+  /** Address of the immediate peer, from the socket. Cannot be forged. */
   ip: string;
   authorization?: string;
+  /** Raw X-Forwarded-For header. Partly client-supplied — never trust it whole. */
   forwardedFor?: string;
 }

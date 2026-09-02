@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Agent**: Fix an IP allowlist bypass. The client address was read from the leftmost `X-Forwarded-For` entry, which is whatever the client sent — Traefik appends the true peer to the right of it. Anyone who guessed an entry in `allowed_ips` could send `X-Forwarded-For: <that-ip>` and be allowed, since an IP match grants access unconditionally. The address is now taken by counting trusted proxies from the right, and the unforgeable socket peer is no longer discarded on the way to `checkAuth` ([#33])
+
+### Added
+
+- **Agent**: `trusted_proxy_hops` in `[auth]` — how many proxies sit in front of the agent, defaulting to `1` for a plain install where only ddev-router/Traefik is ahead. Raise it by one per extra proxy; a CDN or load balancer in front of Traefik makes it `2`. An out-of-range or non-integer value falls back to the default rather than `0`, which would read the proxy's own address and stop the allowlist from ever matching ([#33])
+
 ## [0.1.26] - 2026.09.02
 
 ### Fixed
@@ -312,6 +320,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#31]: https://github.com/studiometa/trafic/pull/31
 [2f4fef6]: https://github.com/studiometa/trafic/commit/2f4fef6
 [#32]: https://github.com/studiometa/trafic/pull/32
+[#33]: https://github.com/studiometa/trafic/pull/33
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
