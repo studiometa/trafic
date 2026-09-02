@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Agent**: Attach forward auth to every entry point DDEV publishes, not just `http-80` and `http-443`. `ddev-router` publishes the Mailpit and xhgui ports on `0.0.0.0`, and **Docker bypasses UFW for published ports**, so the firewall rules written by `configureFirewall` never governed them — the middleware is the only thing that can. Observed on a live server: xhgui answered from the internet on 8142 and 8143 with no authentication. The ports are read from `ddev config global` rather than hardcoded, since they are configurable ([#38])
+
+### Fixed
+
+- **Agent**: Correct the Traefik forward auth address at agent startup when the Docker gateway has moved. `setup` runs `configureTraefik` before any DDEV project exists, so `ddev_default` is absent and the address falls back to the default bridge; once a project starts it is stale. Migration `0006` exists for servers provisioned earlier, but `markAllMigrationsApplied()` marks it applied on fresh ones, so nothing recomputed it. Traefik watches the dynamic config, so the rewrite needs no restart, and any failure is logged and ignored ([#38])
+
 ## [0.1.30] - 2026.09.02
 
 ### Added
@@ -373,6 +381,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#36]: https://github.com/studiometa/trafic/pull/36
 [18bc15d]: https://github.com/studiometa/trafic/commit/18bc15d
 [#37]: https://github.com/studiometa/trafic/pull/37
+[#38]: https://github.com/studiometa/trafic/pull/38
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
