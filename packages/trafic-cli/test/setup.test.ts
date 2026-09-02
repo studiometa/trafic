@@ -40,8 +40,8 @@ function mockServer(overrides: Record<string, string> = {}): void {
     "cat /etc/os-release": OS_RELEASE,
     "id -u": "0",
     "node --version": "v24.5.0",
-    "command -v npm || true": "/usr/local/bin/npm",
-    "/usr/local/bin/npm prefix -g": "/opt/fnm/aliases/default",
+    "command -v npm || true": "/usr/bin/npm",
+    "/usr/bin/npm prefix -g": "/usr",
     ...overrides,
   };
 
@@ -72,29 +72,57 @@ describe("setup", () => {
   it("skips the Node.js install when a recent Node.js is present", async () => {
     await setup(baseOptions);
 
-    expect(commands().some((c) => c.includes("fnm install"))).toBe(false);
-    expect(commands().some((c) => c.includes("fnm.vercel.app"))).toBe(false);
+    expect(commands().some((c) => c.includes("apt-get install -y nodejs"))).toBe(false);
+    expect(commands().some((c) => c.includes("nodesource"))).toBe(false);
   });
 
-  it("installs Node.js via fnm when Node.js is missing", async () => {
+  it("adds the NodeSource apt repository when Node.js is missing", async () => {
     mockedTest.mockImplementation(async (_options, command) =>
       command !== "command -v node",
     );
 
     await setup(baseOptions);
 
-    const fnmCommands = commands().filter((c) => c.includes("fnm"));
-    expect(fnmCommands.length).toBeGreaterThan(0);
-    expect(fnmCommands.some((c) => c.includes("fnm install 24"))).toBe(true);
+    const cmds = commands();
     expect(
-      commands().some((c) =>
-        c.includes("ln -sf /opt/fnm/aliases/default/bin/node /usr/local/bin/node"),
+      cmds.some((c) =>
+        c.includes("curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"),
       ),
     ).toBe(true);
+    expect(
+      cmds.some((c) => c.includes("/etc/apt/sources.list.d/nodesource.list")),
+    ).toBe(true);
+    expect(cmds.some((c) => c.includes("node_24.x nodistro main"))).toBe(true);
+    expect(cmds.some((c) => c.includes("apt-get install -y nodejs"))).toBe(true);
   });
 
-  it("installs curl and unzip when the fnm installer needs them", async () => {
-    const absent = ["command -v node", "command -v curl", "command -v unzip"];
+  it("signs the NodeSource repository with a keyring instead of apt-key", async () => {
+    mockedTest.mockImplementation(async (_options, command) =>
+      command !== "command -v node",
+    );
+
+    await setup(baseOptions);
+
+    const repoLine = commands().find((c) => c.includes("nodesource.list"))!;
+    expect(repoLine).toContain("signed-by=/etc/apt/keyrings/nodesource.gpg");
+    expect(commands().some((c) => c.includes("apt-key"))).toBe(false);
+  });
+
+  it("runs apt non-interactively so needrestart cannot hang the session", async () => {
+    mockedTest.mockImplementation(async (_options, command) =>
+      command !== "command -v node",
+    );
+
+    await setup(baseOptions);
+
+    for (const c of commands().filter((c) => c.includes("apt-get install"))) {
+      expect(c).toContain("DEBIAN_FRONTEND=noninteractive");
+      expect(c).toContain("NEEDRESTART_MODE=a");
+    }
+  });
+
+  it("installs curl and gnupg when the apt repo setup needs them", async () => {
+    const absent = ["command -v node", "command -v curl", "command -v gpg"];
     mockedTest.mockImplementation(async (_options, command) =>
       !absent.includes(command),
     );
@@ -103,34 +131,36 @@ describe("setup", () => {
 
     const apt = commands().find((c) => c.includes("apt-get install"))!;
     expect(apt).toContain("curl");
-    expect(apt).toContain("unzip");
+    expect(apt).toContain("gnupg");
     expect(apt).toContain("ca-certificates");
   });
 
-  it("skips the apt install when curl and unzip are present", async () => {
+  it("skips the dependency install when curl and gnupg are present", async () => {
     mockedTest.mockImplementation(async (_options, command) =>
       command !== "command -v node",
     );
 
     await setup(baseOptions);
 
-    expect(commands().some((c) => c.includes("apt-get"))).toBe(false);
+    expect(
+      commands().some((c) => c.includes("apt-get install") && c.includes("gnupg")),
+    ).toBe(false);
   });
 
-  it("downloads the fnm installer instead of piping it into sudo bash", async () => {
+  it("never pipes a remote script into a shell", async () => {
     mockedTest.mockImplementation(async (_options, command) =>
       command !== "command -v node",
     );
 
     await setup(baseOptions);
 
-    // A pipe would report the exit code of bash and hide a curl failure
-    expect(commands().some((c) => c.includes("fnm.vercel.app") && c.includes("|"))).toBe(
-      false,
-    );
-    expect(
-      commands().some((c) => c.includes("curl -fsSL https://fnm.vercel.app/install -o")),
-    ).toBe(true);
+    // A pipeline only reports the exit code of its last command, so piping
+    // curl into anything hides a failed download
+    for (const c of commands()) {
+      if (c.includes("curl")) {
+        expect(c).not.toContain("|");
+      }
+    }
   });
 
   it("installs Node.js when the installed version is too old", async () => {
@@ -138,7 +168,7 @@ describe("setup", () => {
 
     await setup(baseOptions);
 
-    expect(commands().some((c) => c.includes("fnm install 24"))).toBe(true);
+    expect(commands().some((c) => c.includes("apt-get install -y nodejs"))).toBe(true);
   });
 
   it("installs the agent and runs its setup with the TLD", async () => {
@@ -152,7 +182,7 @@ describe("setup", () => {
 
     const setupCommand = commands().find((c) => c.includes(" setup "));
     expect(setupCommand).toBe(
-      "/opt/fnm/aliases/default/bin/trafic-agent setup --tld=previews.example.com",
+      "/usr/bin/trafic-agent setup --tld=previews.example.com",
     );
   });
 
@@ -166,26 +196,44 @@ describe("setup", () => {
     ).toBe(true);
   });
 
-  it("symlinks the agent binary into /usr/local/bin", async () => {
+  it("does not symlink the agent when the npm prefix is on root's PATH", async () => {
+    // An apt Node.js has prefix /usr, so the binary is in /usr/bin already
+    await setup(baseOptions);
+
+    expect(
+      commands().some((c) => c.includes("ln -sf") && c.includes("trafic-agent")),
+    ).toBe(false);
+  });
+
+  it.each(["/usr", "/usr/local"])(
+    "does not symlink the agent onto itself for prefix %s",
+    async (prefix) => {
+      mockServer({ "/usr/bin/npm prefix -g": prefix });
+
+      await setup(baseOptions);
+
+      expect(
+        commands().some((c) => c.includes("ln -sf") && c.includes("trafic-agent")),
+      ).toBe(false);
+    },
+  );
+
+  it("symlinks the agent when the npm prefix is not on root's PATH", async () => {
+    // A leftover version-manager install: `which trafic-agent` would fail for
+    // the systemd unit without the link
+    mockServer({
+      "/usr/bin/npm prefix -g": "/opt/fnm/node-versions/v24.20.0/installation",
+    });
+
     await setup(baseOptions);
 
     expect(
       commands().some((c) =>
         c.includes(
-          "ln -sf /opt/fnm/aliases/default/bin/trafic-agent /usr/local/bin/trafic-agent",
+          "ln -sf /opt/fnm/node-versions/v24.20.0/installation/bin/trafic-agent /usr/local/bin/trafic-agent",
         ),
       ),
     ).toBe(true);
-  });
-
-  it("does not symlink the agent onto itself", async () => {
-    mockServer({ "/usr/local/bin/npm prefix -g": "/usr/local" });
-
-    await setup(baseOptions);
-
-    expect(commands().some((c) => c.includes("ln -sf") && c.includes("trafic-agent"))).toBe(
-      false,
-    );
   });
 
   it("forwards the optional agent setup flags", async () => {
@@ -234,7 +282,11 @@ describe("setup", () => {
     await setup({ ...baseOptions, dryRun: true });
 
     const mutating = commands().filter(
-      (c) => c.includes("fnm") || c.includes("npm install") || c.includes(" setup "),
+      (c) =>
+        c.includes("apt-get install") ||
+        c.includes("nodesource") ||
+        c.includes("npm install") ||
+        c.includes(" setup "),
     );
     expect(mutating).toEqual([]);
   });

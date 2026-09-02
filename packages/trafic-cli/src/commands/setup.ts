@@ -8,13 +8,12 @@ const SETUP_TIMEOUT_MS = 45 * 60 * 1000;
 /** Node.js major version required by the agent. */
 const NODE_MAJOR = 24;
 
-/** Content of the fnm profile script, written to /etc/profile.d/fnm.sh. */
-const FNM_PROFILE = [
-  "# Trafic: fnm (Node.js version manager)",
-  'export FNM_DIR="/opt/fnm"',
-  'export PATH="/opt/fnm:$PATH"',
-  'eval "$(fnm env)"',
-].join("\\n");
+/** NodeSource apt repository — nodejs.org points here for apt installs. */
+const NODESOURCE_REPO_URL = "https://deb.nodesource.com";
+const NODESOURCE_KEY_URL = `${NODESOURCE_REPO_URL}/gpgkey/nodesource-repo.gpg.key`;
+const NODESOURCE_KEYRING = "/etc/apt/keyrings/nodesource.gpg";
+const KEY_TMP = "/tmp/trafic-nodesource.key";
+const KEYRING_TMP = "/tmp/trafic-nodesource.gpg";
 
 /**
  * Setup a new server: bootstrap Node.js, install the Trafic agent,
@@ -141,8 +140,11 @@ async function resolveSudo(options: SetupOptions): Promise<string> {
 }
 
 /**
- * Install Node.js via fnm, the same way the agent setup does.
- * Skipped when a recent enough Node.js is already installed.
+ * Install Node.js from the NodeSource apt repository, the same way the agent
+ * setup does. Skipped when a recent enough Node.js is already installed.
+ *
+ * apt puts node and npm in /usr/bin and keeps them patched through
+ * unattended-upgrades, which the hardening step configures.
  */
 async function installNode(
   options: SetupOptions,
@@ -160,16 +162,16 @@ async function installNode(
     }
 
     warn(
-      `Node.js ${version} is older than v${NODE_MAJOR} — installing v${NODE_MAJOR} via fnm`,
+      `Node.js ${version} is older than v${NODE_MAJOR} — installing v${NODE_MAJOR} from apt`,
     );
   }
 
-  // The fnm installer needs curl and unzip — a minimal Ubuntu image has neither
+  // A minimal Ubuntu image ships with none of these
   const missing: string[] = [];
 
-  for (const tool of ["curl", "unzip"]) {
+  for (const tool of ["curl", "gpg"]) {
     if (!(await ssh.test(options, `command -v ${tool}`))) {
-      missing.push(tool);
+      missing.push(tool === "gpg" ? "gnupg" : tool);
     }
   }
 
@@ -177,26 +179,26 @@ async function installNode(
     info(`Missing dependencies: ${missing.join(", ")}`);
   }
 
+  // NEEDRESTART_MODE=a: needrestart otherwise prompts, and SSH runs in batch
+  // mode, so an interactive prompt would hang the whole setup
+  const apt = `${sudo}env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get`;
+
   const commands = [
+    `${sudo}apt-get update -qq`,
     ...(missing.length > 0
-      ? [
-          `${sudo}apt-get update -qq`,
-          `${sudo}env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${["ca-certificates", ...missing].join(" ")}`,
-        ]
+      ? [`${apt} install -y -qq ${["ca-certificates", ...missing].join(" ")}`]
       : []),
-    // Download first: piping into `sudo bash` would hide a curl failure,
-    // because the pipeline only reports the exit code of bash
-    `curl -fsSL https://fnm.vercel.app/install -o /tmp/trafic-fnm-install.sh`,
-    `${sudo}bash /tmp/trafic-fnm-install.sh --install-dir /opt/fnm --skip-shell`,
-    `rm -f /tmp/trafic-fnm-install.sh`,
-    `printf '${FNM_PROFILE}\\n' | ${sudo}tee /etc/profile.d/fnm.sh > /dev/null`,
-    `${sudo}chmod 644 /etc/profile.d/fnm.sh`,
-    `${sudo}env FNM_DIR=/opt/fnm /opt/fnm/fnm install ${NODE_MAJOR}`,
-    `${sudo}env FNM_DIR=/opt/fnm /opt/fnm/fnm default ${NODE_MAJOR}`,
-    ...["node", "npm", "npx"].map(
-      (bin) =>
-        `${sudo}ln -sf /opt/fnm/aliases/default/bin/${bin} /usr/local/bin/${bin}`,
-    ),
+    `${sudo}install -m 0755 -d /etc/apt/keyrings`,
+    // Download and dearmor as separate commands: piping curl into gpg into
+    // tee would report only tee's exit code and hide a failed key download,
+    // which then surfaces as a confusing GPG error on the next apt-get update
+    `curl -fsSL ${NODESOURCE_KEY_URL} -o ${KEY_TMP}`,
+    `gpg --batch --yes --dearmor -o ${KEYRING_TMP} ${KEY_TMP}`,
+    `${sudo}install -m 0644 ${KEYRING_TMP} ${NODESOURCE_KEYRING}`,
+    `rm -f ${KEY_TMP} ${KEYRING_TMP}`,
+    `echo "deb [signed-by=${NODESOURCE_KEYRING}] ${NODESOURCE_REPO_URL}/node_${NODE_MAJOR}.x nodistro main" | ${sudo}tee /etc/apt/sources.list.d/nodesource.list > /dev/null`,
+    `${sudo}apt-get update -qq`,
+    `${apt} install -y nodejs`,
   ];
 
   for (const command of commands) {
@@ -213,11 +215,15 @@ async function installNode(
   }
 }
 
+/** npm global prefixes whose bin directory is already on root's PATH. */
+const ROOT_PATH_PREFIXES = ["/usr", "/usr/local"];
+
 /**
  * Install @studiometa/trafic-agent globally and return the path to its binary.
  *
- * The binary is symlinked into /usr/local/bin so that it stays on root's PATH —
- * the agent setup resolves it with `which trafic-agent` for the systemd unit.
+ * The agent setup resolves the binary with `which trafic-agent` for the systemd
+ * unit, so it has to sit on root's PATH. An apt Node.js puts it in /usr/bin
+ * already; a version manager prefix does not, so link it into /usr/local/bin.
  */
 async function installAgent(
   options: SetupOptions,
@@ -246,7 +252,8 @@ async function installAgent(
   const prefix = (await ssh.exec(options, `${npm} prefix -g`)).stdout.trim();
   const agentBin = `${prefix}/bin/trafic-agent`;
 
-  if (prefix !== "/usr/local") {
+  if (!ROOT_PATH_PREFIXES.includes(prefix)) {
+    info(`npm prefix ${prefix} is not on root's PATH — linking the binary`);
     await ssh.exec(
       options,
       `${sudo}ln -sf ${agentBin} /usr/local/bin/trafic-agent`,

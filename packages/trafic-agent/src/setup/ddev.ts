@@ -8,9 +8,14 @@ export function installSystemDeps(): void {
   step("Install system dependencies");
 
   exec("apt-get update -qq", { silent: true });
-  exec("DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y jq curl rsync", { silent: true });
+  // gnupg and ca-certificates are needed to add the DDEV and NodeSource
+  // apt repositories — a minimal Ubuntu image ships with neither
+  exec(
+    "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y jq curl rsync gnupg ca-certificates",
+    { silent: true },
+  );
 
-  success("System dependencies installed: jq, curl, rsync");
+  success("System dependencies installed: jq, curl, rsync, gnupg, ca-certificates");
 }
 
 /**
