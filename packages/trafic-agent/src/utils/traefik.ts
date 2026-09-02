@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getDockerGatewayIp } from "../setup/ddev.js";
+import { nodeIo, type SetupIo } from "../setup/io.js";
 
 /**
  * Files DDEV reads the dynamic Traefik configuration from, relative to the
@@ -47,27 +47,30 @@ export function rewriteForwardAuthAddress(
  * restart. Any failure is logged and ignored: a stale address is survivable,
  * an agent that will not start is not.
  */
-export function syncForwardAuthAddress(projectListPath: string): void {
+export function syncForwardAuthAddress(
+  projectListPath: string,
+  io: SetupIo = nodeIo,
+): void {
   try {
     const ddevDir = dirname(projectListPath);
-    const gatewayIp = getDockerGatewayIp();
+    const gatewayIp = getDockerGatewayIp(io);
     const changed: string[] = [];
 
     for (const relative of DYNAMIC_CONFIGS) {
       const path = join(ddevDir, relative);
 
-      if (!existsSync(path)) {
+      if (!io.fileExists(path)) {
         continue;
       }
 
-      const content = readFileSync(path, "utf-8");
+      const content = io.readFile(path);
       const current = readForwardAuthAddress(content);
 
       if (!current || current === gatewayIp) {
         continue;
       }
 
-      writeFileSync(path, rewriteForwardAuthAddress(content, gatewayIp));
+      io.writeFile(path, rewriteForwardAuthAddress(content, gatewayIp));
       changed.push(path);
     }
 
