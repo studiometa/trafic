@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentConfig, AuthConfig } from "./types.js";
-import { checkAuth } from "./utils/auth.js";
+import { checkAuth, resolveClientIp } from "./utils/auth.js";
 import {
   loadProjectList,
   buildHostnameIndex,
@@ -63,7 +63,10 @@ function getEffectiveAuthConfig(projectName: string | undefined): AuthConfig {
  */
 function handleAuth(req: IncomingMessage, res: ServerResponse): void {
   const hostname = req.headers["x-forwarded-host"] as string ?? "";
-  const ip = req.headers["x-forwarded-for"] as string ?? req.socket.remoteAddress ?? "";
+  // Keep the two apart: the socket peer cannot be forged, X-Forwarded-For
+  // partly can. checkAuth decides which entry to trust.
+  const socketIp = req.socket.remoteAddress ?? "";
+  const forwardedFor = req.headers["x-forwarded-for"] as string | undefined;
   const authorization = req.headers["authorization"];
   const path = req.headers["x-forwarded-uri"] as string ?? "/";
 
@@ -73,12 +76,18 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
   // Get effective auth config (global + per-project overrides)
   const authConfig = getEffectiveAuthConfig(projectName);
 
+  const clientIp = resolveClientIp(
+    socketIp,
+    forwardedFor,
+    authConfig.trustedProxyHops,
+  );
+
   const result = checkAuth(
     {
       hostname,
-      ip: ip.split(",")[0].trim(),
+      ip: socketIp,
       authorization,
-      forwardedFor: ip,
+      forwardedFor,
     },
     authConfig,
   );
@@ -90,7 +99,7 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
       logAccess({
         project: projectName,
         timestamp: Date.now(),
-        ip: ip.split(",")[0].trim(),
+        ip: clientIp,
         userAgent: req.headers["user-agent"] ?? "",
         path,
       });

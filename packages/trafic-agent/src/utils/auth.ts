@@ -106,13 +106,50 @@ export function parseBearerToken(header: string): string | null {
 }
 
 /**
+ * Resolve the client address from the socket peer and X-Forwarded-For.
+ *
+ * Every proxy appends the address it saw, so the entries grow left to right
+ * and the rightmost ones were added by the proxies closest to us. Counting
+ * `trustedHops` from the right therefore lands on the client, while anything
+ * further left is whatever the client sent and must be ignored.
+ *
+ * Reading the leftmost entry instead — as this used to — let a client set
+ * `X-Forwarded-For: <allowed-ip>` and match the IP allowlist, which grants
+ * access unconditionally.
+ *
+ * Falls back to the socket peer whenever the header cannot be trusted to
+ * hold that many entries.
+ */
+export function resolveClientIp(
+  socketIp: string,
+  forwardedFor: string | undefined,
+  trustedHops = 1,
+): string {
+  if (!forwardedFor || trustedHops < 1) {
+    return socketIp;
+  }
+
+  const entries = forwardedFor
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  // Fewer entries than trusted proxies means the chain is shorter than
+  // configured — the socket peer is the only address we can rely on.
+  if (entries.length < trustedHops) {
+    return socketIp;
+  }
+
+  return entries[entries.length - trustedHops] ?? socketIp;
+}
+
+/**
  * Check authentication for a request
  */
 export function checkAuth(request: AuthRequest, config: AuthConfig): AuthResult {
   const { hostname, ip, authorization } = request;
 
-  // Get real IP (handle X-Forwarded-For)
-  const realIp = request.forwardedFor?.split(",")[0].trim() ?? ip;
+  const realIp = resolveClientIp(ip, request.forwardedFor, config.trustedProxyHops);
 
   // Check IP whitelist first (always allows)
   for (const pattern of config.allowedIps) {

@@ -92,6 +92,12 @@ idle_timeout = "4h"
 [auth]
 default_policy = "basic"  # allow, deny, basic, or token
 
+# Proxies in front of the agent (default: 1 = ddev-router/Traefik alone).
+# Raise by one for each extra proxy: a CDN or load balancer ahead of
+# Traefik makes it 2. Set this before using allowed_ips — it decides which
+# X-Forwarded-For entry is treated as the client address.
+trusted_proxy_hops = 1
+
 # IP whitelist (bypasses auth)
 allowed_ips = ["192.168.1.0/24", "10.0.0.0/8"]
 

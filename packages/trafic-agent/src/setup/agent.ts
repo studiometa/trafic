@@ -129,6 +129,13 @@ allowed_ips = []
 tokens = []
 basic_auth = []
 rules = []
+
+# Proxies in front of the agent, counted so the client address can be read
+# from X-Forwarded-For. 1 is ddev-router/Traefik alone. Raise it by one for
+# every extra proxy — a CDN or load balancer ahead of Traefik makes it 2.
+# Too low and allowed_ips matches a proxy instead of the client; too high and
+# it can be spoofed by a client-supplied header.
+trusted_proxy_hops = 1
 `;
 
   io.writeFile(configPath, config);

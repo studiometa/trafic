@@ -5,6 +5,7 @@ import {
   parseBasicAuth,
   parseBearerToken,
   checkAuth,
+  resolveClientIp,
 } from "../src/utils/auth.js";
 import type { AuthConfig } from "../src/types.js";
 
@@ -82,6 +83,7 @@ describe("checkAuth", () => {
     tokens: [],
     basicAuth: [],
     rules: [],
+    trustedProxyHops: 1,
   };
 
   it("allows whitelisted IPs", () => {
@@ -185,5 +187,117 @@ describe("checkAuth", () => {
         config,
       ).allowed,
     ).toBe(true);
+  });
+});
+
+describe("resolveClientIp", () => {
+  it("uses the socket peer when there is no forwarded header", () => {
+    expect(resolveClientIp("10.0.0.9", undefined, 1)).toBe("10.0.0.9");
+  });
+
+  it("reads the address the single trusted proxy appended", () => {
+    expect(resolveClientIp("172.18.0.5", "203.0.113.5", 1)).toBe("203.0.113.5");
+  });
+
+  it("ignores entries a client put in front of the trusted one", () => {
+    // Traefik appends the true peer, so the forged value sits to its left
+    expect(resolveClientIp("172.18.0.5", "9.9.9.9, 203.0.113.5", 1)).toBe(
+      "203.0.113.5",
+    );
+  });
+
+  it("skips the extra hop when a second proxy is in front", () => {
+    expect(
+      resolveClientIp("172.18.0.5", "9.9.9.9, 203.0.113.5, 198.51.100.7", 2),
+    ).toBe("203.0.113.5");
+  });
+
+  it("falls back to the socket peer when the chain is shorter than configured", () => {
+    // Misconfigured hop count must not read a client-supplied entry
+    expect(resolveClientIp("172.18.0.5", "203.0.113.5", 3)).toBe("172.18.0.5");
+  });
+
+  it("trims whitespace and drops empty entries", () => {
+    expect(resolveClientIp("172.18.0.5", " 9.9.9.9 ,  203.0.113.5 , ", 1)).toBe(
+      "203.0.113.5",
+    );
+  });
+
+  it("uses the socket peer for a hop count below one", () => {
+    expect(resolveClientIp("172.18.0.5", "203.0.113.5", 0)).toBe("172.18.0.5");
+  });
+
+  it("defaults to a single trusted proxy", () => {
+    expect(resolveClientIp("172.18.0.5", "9.9.9.9, 203.0.113.5")).toBe(
+      "203.0.113.5",
+    );
+  });
+});
+
+describe("checkAuth IP allowlist spoofing", () => {
+  const config: AuthConfig = {
+    defaultPolicy: "deny",
+    allowedIps: ["203.0.113.5"],
+    tokens: [],
+    basicAuth: [],
+    rules: [],
+    trustedProxyHops: 1,
+  };
+
+  it("allows the genuine client address", () => {
+    const result = checkAuth(
+      {
+        hostname: "app.example.com",
+        ip: "172.18.0.5",
+        forwardedFor: "203.0.113.5",
+      },
+      config,
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toBe("ip");
+  });
+
+  it("denies a forged X-Forwarded-For claiming an allowlisted address", () => {
+    const result = checkAuth(
+      {
+        hostname: "app.example.com",
+        ip: "172.18.0.5",
+        // What a client gets by sending "X-Forwarded-For: 203.0.113.5"
+        forwardedFor: "203.0.113.5, 198.51.100.7",
+      },
+      config,
+    );
+
+    // An IP match allows unconditionally, so reading the leftmost entry
+    // handed out full access to anyone who guessed an allowlisted address
+    expect(result.allowed).toBe(false);
+  });
+
+  it("denies a forged header even with several fake entries", () => {
+    const result = checkAuth(
+      {
+        hostname: "app.example.com",
+        ip: "172.18.0.5",
+        forwardedFor: "203.0.113.5, 203.0.113.5, 198.51.100.7",
+      },
+      config,
+    );
+
+    expect(result.allowed).toBe(false);
+  });
+
+  it("reads past an extra proxy when configured for one", () => {
+    const result = checkAuth(
+      {
+        hostname: "app.example.com",
+        ip: "172.18.0.5",
+        forwardedFor: "203.0.113.5, 198.51.100.7",
+      },
+      { ...config, trustedProxyHops: 2 },
+    );
+
+    // With two proxies the client address is the second entry from the right
+    expect(result.allowed).toBe(true);
   });
 });
