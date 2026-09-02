@@ -22,7 +22,7 @@ export function createDdevUser(io: SetupIo = nodeIo): void {
   step("Create ddev user");
 
   // Check if user exists
-  const userExists = io.exec("id -u ddev 2>/dev/null", { silent: true });
+  const userExists = io.execSilent("id -u ddev");
   if (userExists) {
     info("User 'ddev' already exists");
   } else {
@@ -73,7 +73,7 @@ export function setupAuthorizedKeys(
   io.exec(`chown ddev:ddev ${authKeysPath}`);
 
   // Check if key already exists
-  const existing = io.exec(`cat ${authKeysPath}`, { silent: true });
+  const existing = io.execSilent(`cat ${authKeysPath}`);
   if (existing.includes(publicKey.trim())) {
     info("SSH key already authorized");
   } else {

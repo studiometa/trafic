@@ -52,6 +52,16 @@ describe("createDdevUser", () => {
     expect(io.ran("useradd")).toBe(false);
   });
 
+  it("treats a failing id lookup as 'user absent', not an error", () => {
+    // `id -u ddev` exits non-zero on a server without that user, which is
+    // every fresh install. Probing with exec instead of execSilent turned
+    // that into a thrown error and broke setup at step 2.
+    const io = createFakeIo({ fails: ["id -u ddev"] });
+
+    expect(() => createDdevUser(io)).not.toThrow();
+    expect(io.ran("useradd -m -s /bin/bash ddev")).toBe(true);
+  });
+
   it("creates the projects directory owned by ddev", () => {
     const io = createFakeIo();
 
@@ -109,6 +119,14 @@ describe("setupAuthorizedKeys", () => {
     expect(io.ran(`chmod 600 ${AUTH_KEYS}`)).toBe(true);
     expect(io.ran(`chown ddev:ddev ${AUTH_KEYS}`)).toBe(true);
     expect(io.ran("ssh-ed25519 AAAA test@example.com")).toBe(true);
+  });
+
+  it("handles an unreadable authorized_keys as empty", () => {
+    const key = "ssh-ed25519 AAAA test@example.com";
+    const io = createFakeIo({ fails: ["cat "] });
+
+    expect(() => setupAuthorizedKeys(key, io)).not.toThrow();
+    expect(io.ran(`echo '${key}' >>`)).toBe(true);
   });
 
   it("does not append a key that is already authorized", () => {

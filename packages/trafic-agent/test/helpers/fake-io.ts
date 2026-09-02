@@ -22,6 +22,14 @@ export interface FakeIo extends SetupIo {
 export interface FakeIoOptions {
   /** Output per command, matched by substring. */
   output?: Record<string, string>;
+  /**
+   * Command fragments that exit non-zero.
+   *
+   * exec throws for these, execSilent returns "". Modelling that difference
+   * is the point: a probe rewritten from execSilent to exec looks fine until
+   * the command actually fails on a real server.
+   */
+  fails?: string[];
   /** Commands reported as present on the PATH. */
   present?: string[];
   /** Paths reported as existing. */
@@ -35,6 +43,19 @@ export function createFakeIo(options: FakeIoOptions = {}): FakeIo {
   const writes = new Map<string, string>();
   const files = { ...options.files };
 
+  const fails = (command: string): boolean =>
+    (options.fails ?? []).some((fragment) => command.includes(fragment));
+
+  const output = (command: string): string => {
+    for (const [fragment, value] of Object.entries(options.output ?? {})) {
+      if (command.includes(fragment)) {
+        return value;
+      }
+    }
+
+    return "";
+  };
+
   const io: FakeIo = {
     commands,
     writes,
@@ -42,13 +63,18 @@ export function createFakeIo(options: FakeIoOptions = {}): FakeIo {
     exec: vi.fn((command: string) => {
       commands.push(command);
 
-      for (const [fragment, output] of Object.entries(options.output ?? {})) {
-        if (command.includes(fragment)) {
-          return output;
-        }
+      if (fails(command)) {
+        throw new Error(`Command failed: ${command}`);
       }
 
-      return "";
+      return output(command);
+    }),
+
+    execSilent: vi.fn((command: string) => {
+      commands.push(command);
+
+      // A failing probe is an answer, not an error
+      return fails(command) ? "" : output(command).trim();
     }),
 
     commandExists: vi.fn((command: string) =>

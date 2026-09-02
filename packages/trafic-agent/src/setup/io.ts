@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { commandExists, exec, writeFile } from "./steps.js";
+import { commandExists, exec, execSilent, writeFile } from "./steps.js";
 
 /**
  * The effectful operations the setup steps need.
@@ -9,8 +9,15 @@ import { commandExists, exec, writeFile } from "./steps.js";
  * writes instead of each module reaching for `node:fs` itself.
  */
 export interface SetupIo {
-  /** Run a shell command. Returns its stdout when silent. */
+  /** Run a shell command. Throws when it exits non-zero. */
   exec(command: string, options?: { silent?: boolean }): string;
+  /**
+   * Run a probe. Returns trimmed stdout, or "" when the command fails.
+   *
+   * Use this wherever a non-zero exit is an answer rather than an error —
+   * `id -u ddev` on a server without that user, for instance.
+   */
+  execSilent(command: string): string;
   /** Whether a command is on the PATH. */
   commandExists(command: string): boolean;
   /** Write a file. Honours dry-run. */
@@ -31,6 +38,7 @@ export interface SetupIo {
  */
 export const nodeIo: SetupIo = {
   exec,
+  execSilent,
   commandExists,
   writeFile,
   fileExists: existsSync,
