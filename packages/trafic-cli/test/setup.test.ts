@@ -282,6 +282,20 @@ describe("setup", () => {
     expect(setupCommand).toContain("--ssh-users=deploy,ci,ubuntu");
   });
 
+  it("forwards the trusted proxy hop count when given", async () => {
+    await setup({ ...baseOptions, trustedProxyHops: "2" });
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--trusted-proxy-hops=2");
+  });
+
+  it("omits the flag when not given, letting the agent default apply", async () => {
+    await setup(baseOptions);
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).not.toContain("--trusted-proxy-hops");
+  });
+
   it("forwards the optional agent setup flags", async () => {
     await setup({
       ...baseOptions,

@@ -27,7 +27,7 @@ describe("createAgentConfig", () => {
   it("writes the TLD it was given", () => {
     const io = createFakeIo();
 
-    createAgentConfig("previews.example.com", undefined, io);
+    createAgentConfig({ tld: "previews.example.com" }, io);
 
     expect(io.written(CONFIG_PATH)).toContain('tld = "previews.example.com"');
   });
@@ -35,7 +35,7 @@ describe("createAgentConfig", () => {
   it("defaults to requiring basic auth", () => {
     const io = createFakeIo();
 
-    createAgentConfig("previews.example.com", undefined, io);
+    createAgentConfig({ tld: "previews.example.com" }, io);
 
     // A default of anything open would expose every preview
     expect(io.written(CONFIG_PATH)).toContain('default_policy = "basic"');
@@ -44,7 +44,7 @@ describe("createAgentConfig", () => {
   it("restricts the config to root and the agent group", () => {
     const io = createFakeIo();
 
-    createAgentConfig("previews.example.com", undefined, io);
+    createAgentConfig({ tld: "previews.example.com" }, io);
 
     // The file holds auth tokens and basic auth credentials
     expect(io.ran(`chmod 640 ${CONFIG_PATH}`)).toBe(true);
@@ -56,16 +56,33 @@ describe("createAgentConfig", () => {
       files: { [CONFIG_PATH]: 'tld = "existing.example.com"\n' },
     });
 
-    createAgentConfig("new.example.com", undefined, io);
+    createAgentConfig({ tld: "new.example.com" }, io);
 
     // Overwriting would wipe the operator's auth rules on a re-run
     expect(io.writes.has(CONFIG_PATH)).toBe(false);
   });
 
+  it("defaults to a single trusted proxy", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    expect(io.written(CONFIG_PATH)).toContain("trusted_proxy_hops = 1");
+  });
+
+  it("writes the trusted proxy hop count it was given", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com", trustedProxyHops: 2 }, io);
+
+    // 2 is a CDN or load balancer in front of ddev-router/Traefik
+    expect(io.written(CONFIG_PATH)).toContain("trusted_proxy_hops = 2");
+  });
+
   it("creates the state directory owned by the agent user", () => {
     const io = createFakeIo();
 
-    createAgentConfig("previews.example.com", undefined, io);
+    createAgentConfig({ tld: "previews.example.com" }, io);
 
     expect(io.ran("mkdir -p /var/lib/trafic")).toBe(true);
     expect(io.ran("chown ddev:ddev /var/lib/trafic")).toBe(true);

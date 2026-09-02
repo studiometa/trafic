@@ -30,6 +30,8 @@ export interface SetupOptions extends SSHOptions {
   noDdev: boolean;
   /** SSH users to allow after hardening (comma-separated) */
   sshUsers?: string;
+  /** Proxies in front of the agent, written to the generated config */
+  trustedProxyHops?: string;
   /** Whether to print the remote commands without running them */
   dryRun: boolean;
 }
