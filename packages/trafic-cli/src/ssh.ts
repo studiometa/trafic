@@ -51,13 +51,26 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 export async function exec(
   options: SSHOptions,
   command: string,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  execOptions: ExecOptions = {},
 ): Promise<ExecResult> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, log } = execOptions;
   const args = [...buildSSHArgs(options), buildDestination(options), command];
 
-  info(`ssh ${options.user}@${options.host} ${truncate(command, 80)}`);
+  // `log` stands in for commands carrying secrets, so nothing sensitive
+  // reaches the job output
+  info(`ssh ${options.user}@${options.host} ${truncate(log ?? command, 80)}`);
 
   return run("ssh", args, timeoutMs);
+}
+
+/**
+ * Options for a single remote command.
+ */
+export interface ExecOptions {
+  /** Timeout in milliseconds (default: 10 minutes) */
+  timeoutMs?: number;
+  /** Printed instead of the command itself, for commands holding secrets */
+  log?: string;
 }
 
 /**

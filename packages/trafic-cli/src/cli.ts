@@ -43,6 +43,8 @@ const HELP = `
     --preview <iid>            MR/PR number → creates preview-<iid>--<name>
     --sync <paths>             Paths to rsync, comma-separated
     --script <cmd>             Script to run inside the DDEV container
+    --env <KEY=VALUE|KEY>      Environment for --script, repeatable. Bare KEY takes
+                               the runner's value, so secrets stay out of the command
     --before-script <cmd>      Script to run before deploy (on server)
     --after-script <cmd>       Script to run after deploy (on server)
     --projects-dir <path>      Projects directory (default: ~/www)
@@ -64,8 +66,52 @@ const HELP = `
     trafic setup --host server.example.com --tld previews.example.com --trusted-proxy-hops 2
     trafic deploy --host server.example.com --name my-app --branch main
     trafic deploy --host server.example.com --name my-app --preview 42 --sync "dist/"
+    trafic deploy --host server.example.com --name my-app --env COMPOSER_AUTH --env CI=true
     trafic destroy --host server.example.com --name my-app --preview 42
 `;
+
+/**
+ * Parse --env entries into a map.
+ *
+ * `KEY=VALUE` takes the value literally. A bare `KEY` reads the runner's
+ * environment, which is how a CI secret reaches the container without ever
+ * appearing in the command line.
+ */
+function parseEnv(entries?: string[]): Record<string, string> | undefined {
+  if (!entries || entries.length === 0) {
+    return undefined;
+  }
+
+  const env: Record<string, string> = {};
+
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+    const key = separator === -1 ? entry : entry.slice(0, separator);
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      error(`Invalid --env name: "${key}"`);
+      console.log("  Expected KEY=VALUE or KEY, where KEY is a shell identifier");
+      process.exit(1);
+    }
+
+    if (separator === -1) {
+      const value = process.env[key];
+
+      if (value === undefined) {
+        // Silently skipping would surface later as an unexplained build failure
+        error(`--env ${key} is not set in the environment`);
+        console.log(`  Pass a value with --env ${key}=<value>, or export it first`);
+        process.exit(1);
+      }
+
+      env[key] = value;
+    } else {
+      env[key] = entry.slice(separator + 1);
+    }
+  }
+
+  return env;
+}
 
 /**
  * Report a parseArgs failure and exit.
@@ -157,6 +203,7 @@ function main(): void {
         preview: { type: "string" },
         sync: { type: "string" },
         script: { type: "string" },
+        env: { type: "string", multiple: true },
         "before-script": { type: "string" },
         "after-script": { type: "string" },
         "projects-dir": { type: "string", default: "~/www" },
@@ -275,6 +322,7 @@ function main(): void {
         preview: values.preview,
         sync: values.sync,
         script: values.script,
+        env: parseEnv(values.env),
         beforeScript: values["before-script"],
         afterScript: values["after-script"],
         projectsDir: values["projects-dir"]!,

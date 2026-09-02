@@ -54,6 +54,13 @@ export interface DeployOptions extends SSHOptions {
   sync?: string;
   /** Script to run inside the DDEV container */
   script?: string;
+  /**
+   * Environment for the container script, as KEY=VALUE pairs.
+   *
+   * Only the container script sees these — before- and after-scripts run on
+   * the server, outside the container, as they always have.
+   */
+  env?: Record<string, string>;
   /** Script to run before deploy (on server, outside container) */
   beforeScript?: string;
   /** Script to run after deploy (on server, outside container) */

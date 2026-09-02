@@ -75,6 +75,7 @@ trafic deploy \
 | `--port` | SSH port | `22` |
 | `--sync` | Local path to sync | `.` |
 | `--script` | Post-sync script to run in DDEV | - |
+| `--env` | Environment for `--script`, repeatable. `KEY=VALUE`, or bare `KEY` to take the runner's value | - |
 | `--branch` | Git branch name | auto-detected from CI |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--repo` | Repository URL | auto-detected from CI |
