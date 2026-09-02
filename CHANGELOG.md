@@ -7,15 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26] - 2026.09.02
+
 ### Fixed
 
-- **Agent**: `setup --dry-run` no longer writes files. Every setup module imported `writeFileSync` from `node:fs` directly, bypassing the dry-run aware `writeFile` in `steps.ts` — which nothing used. A dry-run attempted real writes while announcing "no changes will be made", starting with `/etc/sudoers.d/trafic-ddev` and continuing through the sshd config, systemd unit, fail2ban jail and agent config ([#32])
+- **Agent**: `setup --dry-run` no longer writes files. Every setup module imported `writeFileSync` from `node:fs` directly, bypassing the dry-run aware `writeFile` in `steps.ts` — which nothing used. A dry-run attempted real writes while announcing "no changes will be made", starting with `/etc/sudoers.d/trafic-ddev` and continuing through the sshd config, systemd unit, fail2ban jail and agent config ([2f4fef6], [#32])
 
 ### Changed
 
-- **Agent**: Setup steps take an injected `SetupIo` — `exec`, `commandExists`, file I/O and `env` — with the real implementation as the default parameter. Tests drive the steps with a plain fake instead of mocking modules, and dry-run gets a single place to intercept writes ([#32])
-- **Dev**: Agent test coverage 32% → 65%. New tests for SSH hardening, UFW rules, the fail2ban jail, unattended-upgrades, system limits and file permissions, the Docker install and daemon config, the ddev user and its sudoers rule, the DDEV apt repo, Traefik forward auth, the agent config and systemd unit, and the dry-run behaviour of `steps.ts` ([#32])
-- **Dev**: Exclude `test/**` from coverage reports in both packages, so test helpers no longer count as production code ([#32])
+- **Agent**: Setup steps take an injected `SetupIo` — `exec`, `commandExists`, file I/O and `env` — with the real implementation as the default parameter. Tests drive the steps with a plain fake instead of mocking modules, and dry-run gets a single place to intercept writes ([2f4fef6], [#32])
+- **Dev**: Agent test coverage 32% → 65%. New tests for SSH hardening, UFW rules, the fail2ban jail, unattended-upgrades, system limits and file permissions, the Docker install and daemon config, the ddev user and its sudoers rule, the DDEV apt repo, Traefik forward auth, the agent config and systemd unit, and the dry-run behaviour of `steps.ts` ([2f4fef6], [#32])
+- **Dev**: Exclude `test/**` from coverage reports in both packages, so test helpers no longer count as production code ([2f4fef6], [#32])
 
 ### Fixed
 
@@ -250,7 +252,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.25...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.26...HEAD
+[0.1.26]: https://github.com/studiometa/trafic/compare/0.1.25...0.1.26
 [0.1.25]: https://github.com/studiometa/trafic/compare/0.1.24...0.1.25
 [0.1.24]: https://github.com/studiometa/trafic/compare/0.1.23...0.1.24
 [0.1.23]: https://github.com/studiometa/trafic/compare/0.1.22...0.1.23
@@ -307,6 +310,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [9a6cec4]: https://github.com/studiometa/trafic/commit/9a6cec4
 [#30]: https://github.com/studiometa/trafic/pull/30
 [#31]: https://github.com/studiometa/trafic/pull/31
+[2f4fef6]: https://github.com/studiometa/trafic/commit/2f4fef6
 [#32]: https://github.com/studiometa/trafic/pull/32
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc

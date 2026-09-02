@@ -1,6 +1,6 @@
 {
   "name": "@studiometa/trafic",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "private": true,
   "description": "DDEV preview environments on any Linux server",
   "keywords": [
