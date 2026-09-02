@@ -182,7 +182,7 @@ describe("setup", () => {
 
     const setupCommand = commands().find((c) => c.includes(" setup "));
     expect(setupCommand).toBe(
-      "/usr/bin/trafic-agent setup --tld=previews.example.com",
+      "/usr/bin/trafic-agent setup --tld=previews.example.com --ssh-users=ddev",
     );
   });
 
@@ -234,6 +234,52 @@ describe("setup", () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it("adds the connecting user to --ssh-users", async () => {
+    mockServer({ "id -u": "1000" });
+
+    await setup({ ...baseOptions, user: "ubuntu" });
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    // Hardening writes AllowUsers; without this the connecting user is
+    // locked out on their next connection
+    expect(setupCommand).toContain("--ssh-users=ddev,ubuntu");
+  });
+
+  it("adds the connecting user alongside an explicit --ssh-users list", async () => {
+    mockServer({ "id -u": "1000" });
+
+    await setup({ ...baseOptions, user: "ubuntu", sshUsers: "deploy" });
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--ssh-users=deploy,ubuntu");
+  });
+
+  it("does not duplicate the connecting user when already listed", async () => {
+    mockServer({ "id -u": "1000" });
+
+    await setup({ ...baseOptions, user: "ubuntu", sshUsers: "ubuntu,ddev" });
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--ssh-users=ubuntu,ddev");
+  });
+
+  it("does not add root to --ssh-users, the agent always allows it", async () => {
+    await setup(baseOptions);
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--ssh-users=ddev");
+    expect(setupCommand).not.toContain("root");
+  });
+
+  it("trims whitespace in an explicit --ssh-users list", async () => {
+    mockServer({ "id -u": "1000" });
+
+    await setup({ ...baseOptions, user: "ubuntu", sshUsers: " deploy , ci " });
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--ssh-users=deploy,ci,ubuntu");
   });
 
   it("forwards the optional agent setup flags", async () => {

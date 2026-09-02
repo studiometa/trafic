@@ -8,6 +8,9 @@ const SETUP_TIMEOUT_MS = 45 * 60 * 1000;
 /** Node.js major version required by the agent. */
 const NODE_MAJOR = 24;
 
+/** SSH user allowed after hardening when --ssh-users is not given. */
+const DEFAULT_SSH_USER = "ddev";
+
 /** NodeSource apt repository — nodejs.org points here for apt installs. */
 const NODESOURCE_REPO_URL = "https://deb.nodesource.com";
 const NODESOURCE_KEY_URL = `${NODESOURCE_REPO_URL}/gpgkey/nodesource-repo.gpg.key`;
@@ -32,6 +35,15 @@ export async function setup(options: SetupOptions): Promise<void> {
   info(`Server: ${options.user}@${options.host}:${options.port}`);
   info(`TLD: ${options.tld}`);
   info(`Agent version: ${options.agentVersion}`);
+
+  if (!options.noHardening) {
+    const sshUsers = resolveSshUsers(options);
+    info(`SSH access after hardening: root, ${sshUsers.join(", ")}`);
+
+    if (!options.sshUsers && options.user !== "root") {
+      info(`  ${options.user} added automatically — it is the user you connect as`);
+    }
+  }
 
   if (options.dryRun) {
     warn("Dry-run mode: no changes will be made on the server");
@@ -287,9 +299,29 @@ function buildAgentSetupArgs(options: SetupOptions): string[] {
     args.push("--no-ddev");
   }
 
-  if (options.sshUsers) {
-    args.push(`--ssh-users=${options.sshUsers}`);
-  }
+  // Always explicit, so a dry-run shows exactly who will keep SSH access
+  args.push(`--ssh-users=${resolveSshUsers(options).join(",")}`);
 
   return args;
+}
+
+/**
+ * Resolve the SSH users allowed after hardening.
+ *
+ * The user running the setup is always included. Hardening writes an
+ * `AllowUsers` directive, so leaving that user out locks them out on their
+ * next connection — with no warning, because reloading sshd keeps the
+ * current session alive. root needs no entry: the agent always allows it.
+ */
+export function resolveSshUsers(options: SetupOptions): string[] {
+  const users = (options.sshUsers ?? DEFAULT_SSH_USER)
+    .split(",")
+    .map((user) => user.trim())
+    .filter(Boolean);
+
+  if (options.user !== "root" && !users.includes(options.user)) {
+    users.push(options.user);
+  }
+
+  return users;
 }
