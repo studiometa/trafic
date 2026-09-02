@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent**: `setup --dry-run` no longer writes files. Every setup module imported `writeFileSync` from `node:fs` directly, bypassing the dry-run aware `writeFile` in `steps.ts` — which nothing used. A dry-run attempted real writes while announcing "no changes will be made", starting with `/etc/sudoers.d/trafic-ddev` and continuing through the sshd config, systemd unit, fail2ban jail and agent config ([#32])
+
+### Changed
+
+- **Agent**: Setup steps take an injected `SetupIo` — `exec`, `commandExists`, file I/O and `env` — with the real implementation as the default parameter. Tests drive the steps with a plain fake instead of mocking modules, and dry-run gets a single place to intercept writes ([#32])
+- **Dev**: Agent test coverage 32% → 63%. New tests for SSH hardening, UFW rules, the fail2ban jail, unattended-upgrades, system limits and file permissions, the Docker install and daemon config, the ddev user and its sudoers rule, the DDEV apt repo, Traefik forward auth, the agent config and systemd unit, and the dry-run behaviour of `steps.ts` ([#32])
+- **Dev**: Exclude `test/**` from coverage reports in both packages, so test helpers no longer count as production code ([#32])
+
+### Fixed
+
 - **CLI**: Always add the `--user` value to `--ssh-users`. Hardening writes an `AllowUsers` directive, so connecting as a user outside that list — `--user ubuntu` with the default `--ssh-users ddev`, for instance — locked that user out on their next connection. Nothing looked wrong at the time, because reloading sshd keeps the current session alive ([#31])
 - **Agent**: Always add `$SUDO_USER` to `AllowUsers` during hardening, closing the same lockout on the on-server path (`sudo trafic-agent setup`) ([#31])
 - **CLI**: Print the resulting SSH access list before making changes, so a `--dry-run` shows who keeps access ([#31])
@@ -296,6 +306,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#29]: https://github.com/studiometa/trafic/pull/29
 [9a6cec4]: https://github.com/studiometa/trafic/commit/9a6cec4
 [#30]: https://github.com/studiometa/trafic/pull/30
+[#31]: https://github.com/studiometa/trafic/pull/31
+[#32]: https://github.com/studiometa/trafic/pull/32
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

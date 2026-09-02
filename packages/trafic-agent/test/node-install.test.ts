@@ -1,136 +1,127 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { installNode, addNodeSourceAptRepo } from "../src/setup/agent.js";
+import { installSystemDeps } from "../src/setup/ddev.js";
+import { createFakeIo } from "./helpers/fake-io.js";
 
-// Mock the shell layer so the setup functions can be inspected without
-// touching the machine running the tests
-vi.mock("../src/setup/steps.js", () => ({
-  step: vi.fn(),
-  success: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  exec: vi.fn(),
-  commandExists: vi.fn(),
-}));
+beforeEach(() => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+});
 
-const steps = await import("../src/setup/steps.js");
-const { installNode, addNodeSourceAptRepo } = await import(
-  "../src/setup/agent.js"
-);
-const { installSystemDeps } = await import("../src/setup/ddev.js");
-
-const mockedExec = vi.mocked(steps.exec);
-const mockedCommandExists = vi.mocked(steps.commandExists);
-
-/** All shell commands passed to exec. */
-function commands(): string[] {
-  return mockedExec.mock.calls.map((call) => String(call[0]));
-}
+const REPO_LIST = "/etc/apt/sources.list.d/nodesource.list";
 
 describe("addNodeSourceAptRepo", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockReturnValue("");
-  });
-
   it("writes the keyring and a signed-by repository line", () => {
-    addNodeSourceAptRepo();
+    const io = createFakeIo();
 
-    const cmds = commands();
-    expect(cmds.some((c) => c.includes("install -m 0755 -d /etc/apt/keyrings"))).toBe(
-      true,
-    );
+    addNodeSourceAptRepo(io);
+
+    expect(io.ran("install -m 0755 -d /etc/apt/keyrings")).toBe(true);
     expect(
-      cmds.some((c) =>
-        c.includes("https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"),
-      ),
+      io.ran("https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"),
     ).toBe(true);
 
-    const repoLine = cmds.find((c) => c.includes("sources.list.d/nodesource.list"))!;
+    const repoLine = io.commands.find((c) => c.includes(REPO_LIST))!;
     expect(repoLine).toContain("signed-by=/etc/apt/keyrings/nodesource.gpg");
     expect(repoLine).toContain("node_24.x nodistro main");
   });
 
   it("does not use the deprecated apt-key", () => {
-    addNodeSourceAptRepo();
+    const io = createFakeIo();
 
-    expect(commands().some((c) => c.includes("apt-key"))).toBe(false);
+    addNodeSourceAptRepo(io);
+
+    expect(io.ran("apt-key")).toBe(false);
   });
 
   it("does not pipe the key download into another command", () => {
-    addNodeSourceAptRepo();
+    const io = createFakeIo();
+
+    addNodeSourceAptRepo(io);
 
     // A pipeline only reports the exit code of its last command, so piping
     // curl into gpg into tee would hide a failed key download
-    for (const c of commands()) {
-      if (c.includes("curl")) {
-        expect(c).not.toContain("|");
+    for (const command of io.commands) {
+      if (command.includes("curl")) {
+        expect(command).not.toContain("|");
       }
     }
+  });
+
+  it("cleans up the temporary key files", () => {
+    const io = createFakeIo();
+
+    addNodeSourceAptRepo(io);
+
+    expect(io.ran("rm -f /tmp/trafic-nodesource.key")).toBe(true);
   });
 });
 
 describe("installNode", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockReturnValue("");
-  });
-
   it("skips the install when Node.js is already present", () => {
-    mockedCommandExists.mockReturnValue(true);
-    mockedExec.mockReturnValue("v24.20.0\n");
+    const io = createFakeIo({
+      present: ["node"],
+      output: { "node --version": "v24.20.0\n" },
+    });
 
-    installNode();
+    installNode(io);
 
-    expect(commands().some((c) => c.includes("apt-get install"))).toBe(false);
-    expect(commands().some((c) => c.includes("nodesource"))).toBe(false);
+    expect(io.ran("apt-get install")).toBe(false);
+    expect(io.ran("nodesource")).toBe(false);
   });
 
   it("adds the apt repository and installs nodejs when Node.js is missing", () => {
-    mockedCommandExists.mockReturnValue(false);
+    const io = createFakeIo();
 
-    installNode();
+    installNode(io);
 
-    const cmds = commands();
-    expect(cmds.some((c) => c.includes("sources.list.d/nodesource.list"))).toBe(true);
-    expect(cmds.some((c) => c.includes("apt-get update -qq"))).toBe(true);
-    expect(cmds.some((c) => c.includes("apt-get install -y nodejs"))).toBe(true);
+    expect(io.ran(REPO_LIST)).toBe(true);
+    expect(io.ran("apt-get update -qq")).toBe(true);
+    expect(io.ran("apt-get install -y nodejs")).toBe(true);
   });
 
   it("installs nodejs non-interactively", () => {
-    mockedCommandExists.mockReturnValue(false);
+    const io = createFakeIo();
 
-    installNode();
+    installNode(io);
 
-    const install = commands().find((c) => c.includes("apt-get install -y nodejs"))!;
+    const install = io.commands.find((c) => c.includes("install -y nodejs"))!;
     expect(install).toContain("DEBIAN_FRONTEND=noninteractive");
     expect(install).toContain("NEEDRESTART_MODE=a");
   });
 
   it("no longer installs a Node.js version manager", () => {
-    mockedCommandExists.mockReturnValue(false);
+    const io = createFakeIo();
 
-    installNode();
+    installNode(io);
 
-    for (const c of commands()) {
-      expect(c).not.toContain("fnm");
-      expect(c).not.toContain("/opt/fnm");
+    for (const command of io.commands) {
+      expect(command).not.toContain("fnm");
+      expect(command).not.toContain("/opt/fnm");
     }
   });
 });
 
 describe("installSystemDeps", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockReturnValue("");
-  });
-
   it("installs the tools needed to add an apt repository", () => {
-    installSystemDeps();
+    const io = createFakeIo();
 
-    const install = commands().find((c) => c.includes("apt-get install"))!;
+    installSystemDeps(io);
+
+    const install = io.commands.find((c) => c.includes("apt-get install"))!;
     // gpg --dearmor and https repositories need these, and the DDEV repo is
     // added before Node.js is installed
     expect(install).toContain("gnupg");
     expect(install).toContain("ca-certificates");
     expect(install).toContain("curl");
+    expect(install).toContain("jq");
+    expect(install).toContain("rsync");
+  });
+
+  it("updates the package lists first", () => {
+    const io = createFakeIo();
+
+    installSystemDeps(io);
+
+    expect(io.commands[0]).toContain("apt-get update");
   });
 });

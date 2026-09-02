@@ -1,39 +1,39 @@
-import { writeFileSync, existsSync, readFileSync } from "node:fs";
-import { step, success, info, exec, commandExists, warn } from "./steps.js";
+import { nodeIo, type SetupIo } from "./io.js";
+import { step, success, info, warn } from "./steps.js";
 
 /**
  * Install Docker using the official script
  */
-export function installDocker(): void {
+export function installDocker(io: SetupIo = nodeIo): void {
   step("Install Docker");
 
-  if (commandExists("docker")) {
-    const version = exec("docker --version", { silent: true });
+  if (io.commandExists("docker")) {
+    const version = io.exec("docker --version", { silent: true });
     info(`Docker already installed: ${version?.trim() ?? "unknown version"}`);
     return;
   }
 
   // Install Docker using official script
   info("Downloading and running Docker install script...");
-  exec("curl -fsSL https://get.docker.com -o /tmp/get-docker.sh");
-  exec("sh /tmp/get-docker.sh", { silent: true });
-  exec("rm /tmp/get-docker.sh");
+  io.exec("curl -fsSL https://get.docker.com -o /tmp/get-docker.sh");
+  io.exec("sh /tmp/get-docker.sh", { silent: true });
+  io.exec("rm /tmp/get-docker.sh");
 
   // Enable and start Docker
-  exec("systemctl enable docker", { silent: true });
-  exec("systemctl start docker", { silent: true });
+  io.exec("systemctl enable docker", { silent: true });
+  io.exec("systemctl start docker", { silent: true });
 
   success("Docker installed and started");
 
   // Add ddev user to docker group
-  exec("usermod -aG docker ddev", { silent: true });
+  io.exec("usermod -aG docker ddev", { silent: true });
   success("Added ddev user to docker group");
 }
 
 /**
  * Configure Docker for production use
  */
-export function configureDocker(): void {
+export function configureDocker(io: SetupIo = nodeIo): void {
   step("Configure Docker");
 
   // Create daemon.json with production settings
@@ -47,43 +47,43 @@ export function configureDocker(): void {
     "live-restore": true,
   };
 
-  exec("mkdir -p /etc/docker");
+  io.exec("mkdir -p /etc/docker");
 
   const configPath = "/etc/docker/daemon.json";
 
   // Check if config already exists
-  if (existsSync(configPath)) {
+  if (io.fileExists(configPath)) {
     try {
-      const existing = JSON.parse(readFileSync(configPath, "utf-8"));
+      const existing = JSON.parse(io.readFile(configPath));
       // Merge with existing config
       const merged = { ...existing, ...daemonConfig };
-      writeFileSync(configPath, JSON.stringify(merged, null, 2));
+      io.writeFile(configPath, JSON.stringify(merged, null, 2));
       info("Merged with existing Docker config");
     } catch {
       warn("Could not parse existing Docker config, skipping");
       return;
     }
   } else {
-    writeFileSync(configPath, JSON.stringify(daemonConfig, null, 2));
+    io.writeFile(configPath, JSON.stringify(daemonConfig, null, 2));
   }
 
   // Reload Docker to apply config
-  exec("systemctl reload docker || systemctl restart docker");
+  io.exec("systemctl reload docker || systemctl restart docker");
   success("Docker configured with production settings");
 }
 
 /**
  * Setup Docker system prune cron job
  */
-export function setupDockerPrune(): void {
+export function setupDockerPrune(io: SetupIo = nodeIo): void {
   step("Setup Docker cleanup cron");
 
   const cronContent = `# Trafic: Clean up Docker resources weekly
 0 3 * * 0 root docker system prune -af --volumes 2>&1 | logger -t docker-prune
 `;
 
-  writeFileSync("/etc/cron.d/trafic-docker-prune", cronContent);
-  exec("chmod 644 /etc/cron.d/trafic-docker-prune");
+  io.writeFile("/etc/cron.d/trafic-docker-prune", cronContent);
+  io.exec("chmod 644 /etc/cron.d/trafic-docker-prune");
 
   success("Docker prune scheduled weekly at 3am on Sundays");
 }
