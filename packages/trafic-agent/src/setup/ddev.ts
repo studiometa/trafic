@@ -171,6 +171,59 @@ export function getDockerGatewayIp(io: SetupIo = nodeIo): string {
   return bridgeIp || "172.17.0.1";
 }
 
+/** DDEV tool ports, used when the global config does not say otherwise */
+const DEFAULT_TOOL_PORTS = {
+  "mailpit-http-port": "8025",
+  "mailpit-https-port": "8026",
+  "xhgui-http-port": "8143",
+  "xhgui-https-port": "8142",
+} as const;
+
+/**
+ * Read the ports DDEV publishes its tools on.
+ *
+ * ddev-router publishes these on 0.0.0.0, and Docker bypasses UFW for
+ * published ports, so a firewall rule cannot protect them — the forward auth
+ * middleware is the only thing that can. Read them rather than hardcode: they
+ * are configurable, and an entry point Traefik does not know about is ignored.
+ */
+export function readToolPorts(io: SetupIo = nodeIo): string[] {
+  const output = io.execSilent("su - ddev -c 'ddev config global'");
+  const ports: string[] = [];
+
+  for (const [key, fallback] of Object.entries(DEFAULT_TOOL_PORTS)) {
+    const match = new RegExp(`^${key}=(\\d+)$`, "m").exec(output);
+    ports.push(match?.[1] ?? fallback);
+  }
+
+  return [...new Set(ports)];
+}
+
+/**
+ * Build the static config attaching forward auth to every entry point.
+ *
+ * The error page middleware stays on the web entry points only: a 502 from a
+ * stopped project should show the waiting page, while a tool port has nothing
+ * to wait for.
+ */
+export function buildStaticConfig(toolPorts: string[]): string {
+  const webEntryPoint = (name: string) => `  ${name}:
+    http:
+      middlewares:
+        - trafic-auth@file
+        - trafic-errors@file
+`;
+
+  const toolEntryPoint = (port: string) => `  http-${port}:
+    http:
+      middlewares:
+        - trafic-auth@file
+`;
+
+  return `entryPoints:
+${webEntryPoint("http-80")}${webEntryPoint("http-443")}${toolPorts.map(toolEntryPoint).join("")}`;
+}
+
 /**
  * Configure Traefik for forward auth
  */
@@ -223,18 +276,7 @@ http:
   // http-80 and http-443 entry points so every request goes through auth —
   // regardless of which project router handles it.
   // DDEV merges all static_config.*.yaml files into .static_config.yaml on start.
-  const staticConfig = `entryPoints:
-  http-80:
-    http:
-      middlewares:
-        - trafic-auth@file
-        - trafic-errors@file
-  http-443:
-    http:
-      middlewares:
-        - trafic-auth@file
-        - trafic-errors@file
-`;
+  const staticConfig = buildStaticConfig(readToolPorts(io));
 
   io.writeFile("/home/ddev/.ddev/traefik/static_config.trafic.yaml", staticConfig);
   io.exec("chown ddev:ddev /home/ddev/.ddev/traefik/static_config.trafic.yaml", { silent: true });

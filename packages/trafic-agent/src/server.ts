@@ -19,6 +19,7 @@ import {
   getProject,
 } from "./utils/db.js";
 import { loadProjectConfig } from "./utils/project-config.js";
+import { syncForwardAuthAddress } from "./utils/traefik.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -257,6 +258,10 @@ export function startServer(agentConfig: AgentConfig): void {
 
   // Initialize database
   initDb(config.dbPath);
+
+  // setup wrote the forward auth address before any DDEV network existed, so
+  // correct it now that one may have appeared
+  syncForwardAuthAddress(config.projectListPath);
 
   // Load projects
   reloadProjects();
