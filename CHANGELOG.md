@@ -7,14 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.30] - 2026.09.02
+
 ### Added
 
-- **CLI**: `--env` on `deploy`, repeatable, passing environment to the `--script` that runs inside the DDEV container. `--env KEY=VALUE` takes the value literally; a bare `--env KEY` reads the runner's environment, which is how a CI secret such as `COMPOSER_AUTH` reaches a build without appearing in the command line. Missing or malformed names fail immediately rather than surfacing later as an unexplained build error ([#37])
+- **CLI**: `--env` on `deploy`, repeatable, passing environment to the `--script` that runs inside the DDEV container. `--env KEY=VALUE` takes the value literally; a bare `--env KEY` reads the runner's environment, which is how a CI secret such as `COMPOSER_AUTH` reaches a build without appearing in the command line. Missing or malformed names fail immediately rather than surfacing later as an unexplained build error ([18bc15d], [#37])
 
 ### Changed
 
-- **CLI**: `deploy --script` now runs from a file inside the container instead of being passed inline to `ddev exec`. The script is transferred base64-encoded and executed with `bash`, so a script containing quotes no longer has to survive nesting inside the remote command, and it runs under `set -o errexit` so a failing step stops the deploy instead of reporting success. The file is removed afterwards, including when the script fails ([#37])
-- **CLI**: `ssh.exec` accepts a `log` override so commands carrying secrets are described in the output rather than printed ([#37])
+- **CLI**: `deploy --script` now runs from a file inside the container instead of being passed inline to `ddev exec`. The script is transferred base64-encoded and executed with `bash`, so a script containing quotes no longer has to survive nesting inside the remote command, and it runs under `set -o errexit` so a failing step stops the deploy instead of reporting success. The file is removed afterwards, including when the script fails ([18bc15d], [#37])
+- **CLI**: `ssh.exec` accepts a `log` override so commands carrying secrets are described in the output rather than printed ([18bc15d], [#37])
 
 ## [0.1.29] - 2026.09.02
 
@@ -297,7 +299,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.29...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.30...HEAD
+[0.1.30]: https://github.com/studiometa/trafic/compare/0.1.29...0.1.30
 [0.1.29]: https://github.com/studiometa/trafic/compare/0.1.28...0.1.29
 [0.1.28]: https://github.com/studiometa/trafic/compare/0.1.27...0.1.28
 [0.1.27]: https://github.com/studiometa/trafic/compare/0.1.26...0.1.27
@@ -368,6 +371,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#35]: https://github.com/studiometa/trafic/pull/35
 [983fcf4]: https://github.com/studiometa/trafic/commit/983fcf4
 [#36]: https://github.com/studiometa/trafic/pull/36
+[18bc15d]: https://github.com/studiometa/trafic/commit/18bc15d
 [#37]: https://github.com/studiometa/trafic/pull/37
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
