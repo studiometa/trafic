@@ -24,6 +24,7 @@ const baseOptions: SetupOptions = {
   tld: "previews.example.com",
   agentVersion: "latest",
   noHardening: false,
+  noRootSsh: false,
   noDocker: false,
   noDdev: false,
   dryRun: false,
@@ -280,6 +281,24 @@ describe("setup", () => {
 
     const setupCommand = commands().find((c) => c.includes(" setup "))!;
     expect(setupCommand).toContain("--ssh-users=deploy,ci,ubuntu");
+  });
+
+  it("forwards --no-root-ssh when set", async () => {
+    mockServer({ "id -u": "1000" });
+
+    await setup({ ...baseOptions, user: "ubuntu", noRootSsh: true });
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--no-root-ssh");
+    // The connecting user must survive, or nobody can log in at all
+    expect(setupCommand).toContain("--ssh-users=ddev,ubuntu");
+  });
+
+  it("omits --no-root-ssh by default", async () => {
+    await setup(baseOptions);
+
+    const setupCommand = commands().find((c) => c.includes(" setup "))!;
+    expect(setupCommand).not.toContain("--no-root-ssh");
   });
 
   it("forwards the trusted proxy hop count when given", async () => {

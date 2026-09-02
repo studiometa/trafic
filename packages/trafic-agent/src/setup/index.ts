@@ -38,6 +38,9 @@ export async function setup(options: SetupOptions): Promise<void> {
   if (options.noHardening) {
     info("Hardening: disabled");
   }
+  if (options.noRootSsh) {
+    info("Root SSH login: disabled");
+  }
 
   try {
     // Step 1: Install system dependencies
@@ -79,8 +82,10 @@ export async function setup(options: SetupOptions): Promise<void> {
 
     // Step 7: Server hardening
     if (!options.noHardening) {
-      const sshUsers = options.sshUsers ?? ["ddev"];
-      hardenServer(sshUsers);
+      hardenServer({
+        sshUsers: options.sshUsers ?? ["ddev"],
+        noRootSsh: options.noRootSsh,
+      });
     } else {
       step("Server hardening");
       info("Skipped (--no-hardening)");

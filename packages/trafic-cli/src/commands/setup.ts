@@ -42,7 +42,12 @@ export async function setup(options: SetupOptions): Promise<void> {
 
   if (!options.noHardening) {
     const sshUsers = resolveSshUsers(options);
-    info(`SSH access after hardening: root, ${sshUsers.join(", ")}`);
+    const withRoot = options.noRootSsh ? "" : "root, ";
+    info(`SSH access after hardening: ${withRoot}${sshUsers.join(", ")}`);
+
+    if (options.noRootSsh) {
+      info("  root login disabled — recovery is via the provider's rescue mode");
+    }
 
     if (!options.sshUsers && options.user !== "root") {
       info(`  ${options.user} added automatically — it is the user you connect as`);
@@ -293,6 +298,10 @@ function buildAgentSetupArgs(options: SetupOptions): string[] {
 
   if (options.noHardening) {
     args.push("--no-hardening");
+  }
+
+  if (options.noRootSsh) {
+    args.push("--no-root-ssh");
   }
 
   if (options.noDocker) {

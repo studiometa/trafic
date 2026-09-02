@@ -34,6 +34,7 @@ Setup options:
   --tld <domain>          TLD for DDEV projects (required on first run, reused from config on re-runs)
   --email <email>         Email for Let's Encrypt certificates
   --no-hardening          Skip server hardening steps
+  --no-root-ssh           Disable root SSH login (recovery via rescue mode only)
   --no-docker             Skip Docker installation
   --no-ddev               Skip DDEV installation
   --ssh-users <users>     Comma-separated list of SSH users to allow (default: ddev)
@@ -179,6 +180,7 @@ async function runSetup(values: Record<string, unknown>): Promise<void> {
     trustedProxyHops: parseTrustedProxyHops(values["trusted-proxy-hops"] as string | undefined),
     email: values.email as string | undefined,
     noHardening: values["no-hardening"] as boolean | undefined,
+    noRootSsh: values["no-root-ssh"] as boolean | undefined,
     noDocker: values["no-docker"] as boolean | undefined,
     noDdev: values["no-ddev"] as boolean | undefined,
     sshUsers: values["ssh-users"]
@@ -203,6 +205,7 @@ async function main(): Promise<void> {
       tld: { type: "string" },
       email: { type: "string" },
       "no-hardening": { type: "boolean" },
+      "no-root-ssh": { type: "boolean" },
       "no-docker": { type: "boolean" },
       "no-ddev": { type: "boolean" },
       "ssh-users": { type: "string" },
