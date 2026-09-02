@@ -159,17 +159,15 @@ bind-interfaces
  */
 export function getDockerGatewayIp(io: SetupIo = nodeIo): string {
   // Prefer the ddev_default network gateway — that's the network ddev-router is on
-  const ddevIp = io.exec(
-    "docker network inspect ddev_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null",
-    { silent: true },
-  )?.trim();
+  const ddevIp = io.execSilent(
+    "docker network inspect ddev_default --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'",
+  );
   if (ddevIp) return ddevIp;
 
   // Fall back to the default bridge network
-  const bridgeIp = io.exec(
-    "docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null",
-    { silent: true },
-  )?.trim();
+  const bridgeIp = io.execSilent(
+    "docker network inspect bridge --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'",
+  );
   return bridgeIp || "172.17.0.1";
 }
 

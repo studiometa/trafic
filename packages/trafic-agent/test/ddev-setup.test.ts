@@ -86,6 +86,25 @@ describe("getDockerGatewayIp", () => {
 
     expect(getDockerGatewayIp(io)).toBe("172.17.0.1");
   });
+
+  it("falls back when the networks do not exist yet", () => {
+    // On a fresh server ddev_default appears only once a project starts, and
+    // `docker network inspect` exits non-zero for a missing network — the
+    // documented fallback chain has to survive that
+    const io = createFakeIo({ fails: ["docker network inspect"] });
+
+    expect(() => getDockerGatewayIp(io)).not.toThrow();
+    expect(getDockerGatewayIp(io)).toBe("172.17.0.1");
+  });
+
+  it("uses the bridge gateway when only ddev_default is missing", () => {
+    const io = createFakeIo({
+      fails: [DDEV_NETWORK],
+      output: { [BRIDGE_NETWORK]: "172.19.0.1\n" },
+    });
+
+    expect(getDockerGatewayIp(io)).toBe("172.19.0.1");
+  });
 });
 
 describe("configureTraefik", () => {
