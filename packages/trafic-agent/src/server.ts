@@ -176,6 +176,39 @@ async function handleErrors(
 }
 
 /**
+ * Decide whether Caddy may obtain a certificate for a hostname.
+ *
+ * Caddy's on-demand TLS asks before issuing for a name it has not seen.
+ * Without a check, anyone pointing a DNS record at this server would make it
+ * request a certificate, and Let's Encrypt quota is per registered domain —
+ * a handful of strangers could exhaust it for every preview.
+ */
+export function allowTlsFor(
+  domain: string,
+  index: Map<string, string>,
+): boolean {
+  return index.has(domain.toLowerCase());
+}
+
+/**
+ * Handle Caddy's on-demand TLS ask. 2xx allows issuance, anything else denies.
+ */
+function handleTlsAsk(req: IncomingMessage, res: ServerResponse): void {
+  const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+  const domain = url.searchParams.get("domain") ?? "";
+
+  if (allowTlsFor(domain, hostnameIndex)) {
+    res.writeHead(200);
+    res.end("ok");
+    return;
+  }
+
+  console.log(`TLS ask denied for unknown hostname: ${domain || "(none)"}`);
+  res.writeHead(404, { "Content-Type": "text/plain" });
+  res.end("Unknown project");
+}
+
+/**
  * Handle status polling requests
  */
 function handleStatus(req: IncomingMessage, res: ServerResponse): void {
@@ -216,6 +249,8 @@ async function handleRequest(
       handleAuth(req, res);
     } else if (url === "/__status__" || url.startsWith("/__status__/")) {
       handleStatus(req, res);
+    } else if (url === "/__tls__" || url.startsWith("/__tls__?")) {
+      handleTlsAsk(req, res);
     } else if (url === "/__health__") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", version: "__VERSION__" }));
