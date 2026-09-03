@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: `--create-script` on `deploy`, running on the server only for the deploy that created the project. A preview environment starts with an empty database, and the natural way to seed one is a `ddev pull` provider — but `ddev pull` overwrites the database it imports into, so running it on every deploy would discard the environment's content each time. Runs after the sync, so the code is in place, and before the container script, so that script can rely on what was seeded. A failure stops the deploy, since a half-imported database is worse than a failed pipeline ([#42])
+
 ### Fixed
 
 - **Agent**: Fix scale-to-zero, which could not have worked in any released version. Two independent faults. First, the waiting page never appeared: `ddev stop` removes the project's Traefik router, so nothing matched and Traefik answered 404 — and an entry point middleware does not run without a router match, so `trafic-errors` (which lists only 502 and 503) never saw those requests. Migration [#27] removed the catch-all router to close an auth bypass, correctly, but it was also the only thing catching them. A catch-all at priority 1 is safe now that auth lives on the entry point, since a project router always outranks it. Two routers are needed, because one carrying `tls` matches HTTPS entry points only and would leave plain HTTP answering 404 ([#39])
@@ -14,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: Add migration `0009__scale_to_zero_fixes` applying both to existing servers. It restarts DDEV rather than only the router: Traefik reads its config from the `ddev-global-cache` volume, and DDEV copies `~/.ddev/traefik` into it on project start, so a router restart alone leaves the old config in place ([#39])
 - **CLI**: `deploy --sync` now accepts single files, not only directories. The local path was always given a trailing slash, so a file made rsync fail with `change_dir … failed: Not a directory (20)`. Files are build artifacts as much as directories are: a Composer `post-install-cmd` scaffold writes `web/wp-config.php` and `web/.htaccess`, and neither could be shipped. Directories keep `--delete` so a build no longer producing a file removes it from the server; files are copied as themselves, since `--delete` means nothing for a transfer that is not a directory. A path that does not exist now fails with a clear message instead of an rsync error, because a silent skip would report a successful deploy with a missing artifact ([#41])
 - **Agent**: Correct the Traefik forward auth address at agent startup when the Docker gateway has moved. `setup` runs `configureTraefik` before any DDEV project exists, so `ddev_default` is absent and the address falls back to the default bridge; once a project starts it is stale. Migration `0006` exists for servers provisioned earlier, but `markAllMigrationsApplied()` marks it applied on fresh ones, so nothing recomputed it. Traefik watches the dynamic config, so the rewrite needs no restart, and any failure is logged and ignored ([#38])
+- **CLI**: `--timeout` now does something. It was parsed and stored but never read, so every remote command used the hardcoded 10-minute default. Seeding a large database is the case that needs longer, and a timeout partway through an import leaves the environment half-built. Accepts `10m`, `90s`, `1h` or a bare number read as minutes, and an unparseable value is rejected rather than quietly replaced by the default — ignoring it would time out at exactly the step the flag was raised for ([#42])
+- **Docs**: Correct the deploy step list in the CLI readme. It described steps that do not exist (`Create directory`, `Configure DDEV — create .ddev/config.yaml if missing`) and put the rsync before the container start, which is the reverse of what happens ([#42])
 
 ### Security
 

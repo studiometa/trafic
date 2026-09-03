@@ -292,3 +292,83 @@ describe("deploy router ports", () => {
     expect(localConfigWrite()).toBe("");
   });
 });
+
+describe("deploy --create-script", () => {
+  const createOptions: DeployOptions = {
+    ...baseOptions,
+    createScript: "ddev pull prod-db -y",
+  };
+
+  function commands(): string[] {
+    return mockedExec.mock.calls.map((call) => call[1]);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    mockedRsync.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+  });
+
+  it("runs on the deploy that creates the project", async () => {
+    mockedTest.mockResolvedValue(false);
+
+    await deploy(createOptions);
+
+    expect(commands().some((c) => c.includes("ddev pull prod-db -y"))).toBe(true);
+  });
+
+  it("does not run for an existing project", async () => {
+    mockedTest.mockResolvedValue(true);
+
+    await deploy(createOptions);
+
+    // Seeding is destructive — `ddev pull` overwrites the database, so
+    // repeating it would discard the environment's content on every deploy
+    expect(commands().some((c) => c.includes("ddev pull prod-db -y"))).toBe(false);
+  });
+
+  it("runs in the project directory", async () => {
+    mockedTest.mockResolvedValue(false);
+
+    await deploy(createOptions);
+
+    const call = commands().find((c) => c.includes("ddev pull prod-db -y"))!;
+    expect(call).toContain("cd ~/www/my-app");
+  });
+
+  it("runs before the container script", async () => {
+    mockedTest.mockResolvedValue(false);
+
+    await deploy({ ...createOptions, script: "wp cache flush" });
+
+    const all = commands();
+    const seed = all.findIndex((c) => c.includes("ddev pull prod-db -y"));
+    const script = all.findIndex((c) => c.includes(".trafic-deploy.sh"));
+
+    // So a container script can rely on what the seed put in place
+    expect(seed).toBeGreaterThanOrEqual(0);
+    expect(script).toBeGreaterThan(seed);
+  });
+
+  it("uses the preview project directory", async () => {
+    mockedTest.mockResolvedValue(false);
+
+    await deploy({ ...createOptions, preview: "42" });
+
+    const call = commands().find((c) => c.includes("ddev pull prod-db -y"))!;
+    expect(call).toContain("cd ~/www/preview-42--my-app");
+  });
+
+  it("stops the deploy when seeding fails", async () => {
+    mockedTest.mockResolvedValue(false);
+    mockedExec.mockImplementation(async (_o, command) => {
+      if (command.includes("ddev pull")) {
+        throw new Error("pull failed");
+      }
+      return { stdout: "", stderr: "", exitCode: 0 };
+    });
+
+    // A half-imported database is worse than a failed pipeline
+    await expect(deploy(createOptions)).rejects.toThrow("pull failed");
+  });
+});

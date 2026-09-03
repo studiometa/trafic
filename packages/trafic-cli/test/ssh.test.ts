@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
-import { exec, test, rsync, classifyPath } from "../src/ssh.js";
+import { exec, test, rsync, classifyPath, parseDuration } from "../src/ssh.js";
 import type { SSHOptions } from "../src/types.js";
 
 // Mock child_process
@@ -107,6 +107,69 @@ describe("ssh.test", () => {
     mockExecFileFailure(1);
     const result = await test(defaultOptions, "test -d /nonexistent");
     expect(result).toBe(false);
+  });
+});
+
+describe("ssh.parseDuration", () => {
+  it("reads second, minute and hour suffixes", () => {
+    expect(parseDuration("90s")).toBe(90_000);
+    expect(parseDuration("10m")).toBe(600_000);
+    expect(parseDuration("1h")).toBe(3_600_000);
+  });
+
+  it("reads a bare number as minutes", () => {
+    // The default is documented as "10m", so minutes is the intuitive unit
+    expect(parseDuration("30")).toBe(1_800_000);
+  });
+
+  it("ignores surrounding whitespace", () => {
+    expect(parseDuration("  5m  ")).toBe(300_000);
+  });
+
+  it("returns undefined for an unusable value", () => {
+    expect(parseDuration(undefined)).toBeUndefined();
+    expect(parseDuration("")).toBeUndefined();
+    expect(parseDuration("soon")).toBeUndefined();
+    expect(parseDuration("10 minutes")).toBeUndefined();
+    expect(parseDuration("-5m")).toBeUndefined();
+    expect(parseDuration("10d")).toBeUndefined();
+    // Zero would make every command time out immediately
+    expect(parseDuration("0m")).toBeUndefined();
+  });
+});
+
+describe("ssh.exec timeout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("honours the timeout from the options", async () => {
+    mockExecFileSuccess();
+
+    await exec({ ...defaultOptions, timeout: "45m" }, "echo hi");
+
+    const [, , execOptions] = mockedExecFile.mock.calls[0]!;
+    expect(execOptions).toMatchObject({ timeout: 2_700_000 });
+  });
+
+  it("falls back to ten minutes without a timeout", async () => {
+    mockExecFileSuccess();
+
+    await exec(defaultOptions, "echo hi");
+
+    const [, , execOptions] = mockedExecFile.mock.calls[0]!;
+    expect(execOptions).toMatchObject({ timeout: 600_000 });
+  });
+
+  it("lets an explicit per-command timeout win", async () => {
+    mockExecFileSuccess();
+
+    await exec({ ...defaultOptions, timeout: "45m" }, "echo hi", {
+      timeoutMs: 5_000,
+    });
+
+    const [, , execOptions] = mockedExecFile.mock.calls[0]!;
+    expect(execOptions).toMatchObject({ timeout: 5_000 });
   });
 });
 

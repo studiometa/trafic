@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { deploy } from "./commands/deploy.js";
 import { destroy } from "./commands/destroy.js";
 import { setup } from "./commands/setup.js";
+import { parseDuration } from "./ssh.js";
 import { error } from "./steps.js";
 import type { DeployOptions, DestroyOptions, SetupOptions } from "./types.js";
 
@@ -47,6 +48,8 @@ const HELP = `
                                the runner's value, so secrets stay out of the command
     --before-script <cmd>      Script to run before deploy (on server)
     --after-script <cmd>       Script to run after deploy (on server)
+    --create-script <cmd>      Script to run on the deploy that creates the project
+                               only (on server). For seeding a database once
     --projects-dir <path>      Projects directory (default: ~/www)
     --no-start                 Skip starting the DDEV container
     --timeout <duration>       Timeout (default: 10m)
@@ -206,6 +209,7 @@ function main(): void {
         env: { type: "string", multiple: true },
         "before-script": { type: "string" },
         "after-script": { type: "string" },
+        "create-script": { type: "string" },
         "projects-dir": { type: "string", default: "~/www" },
         "no-start": { type: "boolean", default: false },
         timeout: { type: "string", default: "10m" },
@@ -246,6 +250,16 @@ function main(): void {
 
   if (command !== "setup" && !values.name) {
     error("Missing required option: --name");
+    process.exit(1);
+  }
+
+  // Reject a bad duration rather than quietly using the default: the flag
+  // exists to raise the limit for a slow step, so ignoring it would time out
+  // exactly where the value was meant to help
+  if (values.timeout && parseDuration(values.timeout) === undefined) {
+    error(
+      `Invalid --timeout: "${values.timeout}". Expected a duration such as "10m", "90s" or "1h"`,
+    );
     process.exit(1);
   }
 
@@ -325,6 +339,7 @@ function main(): void {
         env: parseEnv(values.env),
         beforeScript: values["before-script"],
         afterScript: values["after-script"],
+        createScript: values["create-script"],
         projectsDir: values["projects-dir"]!,
         noStart: values["no-start"]!,
         timeout: values.timeout!,
