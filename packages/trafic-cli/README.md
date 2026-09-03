@@ -76,6 +76,10 @@ trafic deploy \
 | `--sync` | Comma-separated local paths to sync. Directories and files both work | `.` |
 | `--script` | Post-sync script to run in DDEV | - |
 | `--env` | Environment for `--script`, repeatable. `KEY=VALUE`, or bare `KEY` to take the runner's value | - |
+| `--before-script` | Script to run before deploy (on server, outside the container) | - |
+| `--after-script` | Script to run after deploy (on server, outside the container) | - |
+| `--create-script` | Script to run only on the deploy that creates the project (on server) | - |
+| `--timeout` | Per-command timeout, e.g. `10m`, `90s`, `1h` | `10m` |
 | `--branch` | Git branch name | auto-detected from CI |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--repo` | Repository URL | auto-detected from CI |
@@ -140,15 +144,32 @@ The setup command executes 5 steps over SSH:
 4. **Setup the server** — Run `trafic-agent setup` (Docker, DDEV, Traefik, systemd, hardening)
 5. **Verify** — Check that the `trafic-agent` service is active
 
-The deploy command executes 7 steps over SSH:
+The deploy command executes 8 steps over SSH:
 
-1. **Check DDEV** — Verify DDEV is installed
-2. **Create directory** — Create project directory if needed
-3. **Rsync files** — Sync local paths to the server. A directory is mirrored with `--delete`, so a file the build stops producing is removed from the server too; a single file is copied as itself. A path that does not exist stops the deploy
-4. **Configure DDEV** — Create `.ddev/config.yaml` if missing
-5. **Start DDEV** — Run `ddev start`
-6. **Run script** — Execute post-deploy script (optional)
-7. **Get URL** — Return the project URL
+1. **Update source code** — Clone the repository, or fetch and check out the branch when it is already there. A clone also writes `.ddev/config.local.yaml` with the project name and the server's router ports, read from `ddev config global`
+2. **Start DDEV** — Run `ddev start` unless the project is already running
+3. **Before-script** — Optional, on the server, outside the container
+4. **Rsync files** — Sync local paths to the server. A directory is mirrored with `--delete`, so a file the build stops producing is removed from the server too; a single file is copied as itself. A path that does not exist stops the deploy
+5. **Create-script** — Optional, on the server, and **only on the deploy that created the project**. For one-time seeding such as `ddev pull`, which overwrites the database and so must not repeat
+6. **Run script** — Optional, inside the container, with `--env` values available to it
+7. **After-script** — Optional, on the server, outside the container
+8. **Verify** — Run `ddev describe` and return the project URL
+
+### Seeding a database once
+
+A preview environment starts with an empty database. `--create-script` runs on the deploy that created the project and never again, which is what a `ddev pull` provider needs — it overwrites the database it imports into, so repeating it on every deploy would discard the environment's content:
+
+```bash
+trafic deploy \
+  --host server.example.com \
+  --name my-app \
+  --preview 42 \
+  --sync "vendor,dist" \
+  --create-script "ddev pull prod-db -y" \
+  --timeout 30m
+```
+
+Raise `--timeout` when the pull is slow: it applies per remote command, and a timeout partway through an import leaves the environment half-built.
 
 ## Zero dependencies
 

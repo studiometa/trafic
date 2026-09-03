@@ -105,19 +105,34 @@ export async function deploy(options: DeployOptions): Promise<void> {
     }
   }
 
-  // 5. Script inside DDEV container
+  // 5. Create script (on server, only on the deploy that created the project)
+  //
+  // Runs after the sync so the code is in place, and before the container
+  // script so that script can rely on whatever this seeded. Skipped for an
+  // existing project: seeding is not idempotent — `ddev pull` overwrites the
+  // database, which would discard the environment's content on every deploy.
+  if (options.createScript) {
+    if (exists) {
+      info("Project already existed — skipping create-script");
+    } else {
+      step("Run create-script");
+      await ssh.exec(options, `cd ${projectDir} && ${options.createScript}`);
+    }
+  }
+
+  // 6. Script inside DDEV container
   if (options.script) {
     step("Run deploy script in DDEV container");
     await runContainerScript(options, projectDir);
   }
 
-  // 6. After script (on server, outside container)
+  // 7. After script (on server, outside container)
   if (options.afterScript) {
     step("Run after-script");
     await ssh.exec(options, `cd ${projectDir} && ${options.afterScript}`);
   }
 
-  // 7. Verify
+  // 8. Verify
   step("Verify deployment");
 
   try {

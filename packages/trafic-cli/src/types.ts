@@ -10,6 +10,14 @@ export interface SSHOptions {
   port: number;
   /** Extra SSH options (e.g. "-J jump@host") */
   sshOptions: string;
+  /**
+   * Per-command timeout, as a duration such as "10m" or "90s".
+   *
+   * Applies to each remote command, not to the deploy as a whole. Raise it
+   * for a step that is legitimately slow — seeding a large database, for
+   * instance — since a timeout mid-import leaves the environment half-built.
+   */
+  timeout?: string;
 }
 
 /**
@@ -65,6 +73,15 @@ export interface DeployOptions extends SSHOptions {
   beforeScript?: string;
   /** Script to run after deploy (on server, outside container) */
   afterScript?: string;
+  /**
+   * Script to run only on the deploy that creates the project (on server,
+   * outside container).
+   *
+   * For one-time setup that must not repeat: seeding a database, for
+   * instance. `ddev pull` overwrites the database it imports into, so running
+   * it on every deploy would discard the environment's content each time.
+   */
+  createScript?: string;
   /** Projects directory on the server (default: "~/www") */
   projectsDir: string;
   /** Whether to skip starting the DDEV container */

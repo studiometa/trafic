@@ -46,6 +46,40 @@ function buildDestination(options: SSHOptions): string {
  */
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
+/** Duration suffixes accepted in a timeout, in milliseconds. */
+const DURATION_UNITS: Record<string, number> = {
+  s: 1000,
+  m: 60 * 1000,
+  h: 60 * 60 * 1000,
+};
+
+/**
+ * Parse a duration such as "10m", "90s" or "1h" into milliseconds.
+ *
+ * A bare number is read as minutes, matching the "10m" form the default is
+ * documented in. Returns undefined for anything unparseable so the caller
+ * decides between rejecting the value and falling back.
+ */
+export function parseDuration(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = /^(\d+)([smh])?$/.exec(value.trim());
+
+  if (!match) {
+    return undefined;
+  }
+
+  const amount = Number(match[1]);
+
+  if (amount <= 0) {
+    return undefined;
+  }
+
+  return amount * DURATION_UNITS[match[2] ?? "m"]!;
+}
+
 /**
  * Execute a command on a remote host via SSH.
  */
@@ -54,7 +88,10 @@ export async function exec(
   command: string,
   execOptions: ExecOptions = {},
 ): Promise<ExecResult> {
-  const { timeoutMs = DEFAULT_TIMEOUT_MS, log } = execOptions;
+  const {
+    timeoutMs = parseDuration(options.timeout) ?? DEFAULT_TIMEOUT_MS,
+    log,
+  } = execOptions;
   const args = [...buildSSHArgs(options), buildDestination(options), command];
 
   // `log` stands in for commands carrying secrets, so nothing sensitive
