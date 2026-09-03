@@ -67,6 +67,49 @@ export function installDdev(io: SetupIo = nodeIo): void {
   success(`DDEV installed: ${version?.trim() ?? "unknown version"}`);
 }
 
+/** The Docker volume Traefik keeps its state in. */
+const GLOBAL_CACHE_VOLUME = "ddev-global-cache";
+
+/**
+ * Delete Traefik's ACME storage.
+ *
+ * Turning `use_letsencrypt` off stops DDEV asking for new certificates, but
+ * it does not discard the ones already issued: Traefik keeps them in
+ * acme.json inside the ddev-global-cache volume and serves them again after a
+ * restart. On a server where a host ingress terminates TLS and verifies the
+ * hop against the mkcert root, that resurrected certificate fails validation
+ * and every request answers 502 — seen on a live server.
+ *
+ * The volume's mountpoint is resolved rather than reached through a
+ * container, so this works whether or not ddev-router is running and needs no
+ * extra image. Setup and migrations already run as root, which is what
+ * reading a Docker volume from the host needs.
+ *
+ * Returns true when something was removed.
+ */
+export function purgeTraefikAcmeStorage(io: SetupIo = nodeIo): boolean {
+  const mountpoint = io
+    .execSilent(`docker volume inspect ${GLOBAL_CACHE_VOLUME} --format '{{.Mountpoint}}'`)
+    .trim();
+
+  if (!mountpoint) {
+    // No volume yet — a fresh server has nothing to purge
+    return false;
+  }
+
+  const acmeDir = `${mountpoint}/traefik`;
+
+  // acme.json.* covers the copies a hand-fix or an upgrade may have left
+  const found = io.execSilent(`ls ${acmeDir}/acme.json ${acmeDir}/acme.json.* 2>/dev/null`).trim();
+
+  if (!found) {
+    return false;
+  }
+
+  io.exec(`rm -f ${acmeDir}/acme.json ${acmeDir}/acme.json.*`, { silent: true });
+  return true;
+}
+
 /**
  * Configure DDEV global settings for production
  *
@@ -101,6 +144,10 @@ export function configureDdev(
 
   if (email) {
     success(`Let's Encrypt enabled with email: ${email}`);
+  } else if (purgeTraefikAcmeStorage(io)) {
+    // Otherwise a certificate issued before it was turned off comes back on
+    // the next router restart, and a proxy verifying against mkcert rejects it
+    success("Removed Traefik's Let's Encrypt storage");
   }
 
   success("DDEV global settings configured");
