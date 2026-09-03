@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { execFile } from "node:child_process";
-import { exec, test, rsync } from "../src/ssh.js";
+import { join } from "node:path";
+import { exec, test, rsync, classifyPath } from "../src/ssh.js";
 import type { SSHOptions } from "../src/types.js";
 
 // Mock child_process
@@ -114,10 +115,14 @@ describe("ssh.rsync", () => {
     vi.clearAllMocks();
   });
 
+  const asDirectory = () => "directory" as const;
+  const asFile = () => "file" as const;
+  const asMissing = () => "missing" as const;
+
   it("calls rsync with correct arguments", async () => {
     mockExecFileSuccess();
 
-    await rsync("dist/", "/home/ddev/www/my-app/dist/", defaultOptions);
+    await rsync("dist/", "/home/ddev/www/my-app/dist/", defaultOptions, asDirectory);
 
     expect(mockedExecFile).toHaveBeenCalledOnce();
     const [cmd, args] = mockedExecFile.mock.calls[0]!;
@@ -128,13 +133,58 @@ describe("ssh.rsync", () => {
     expect(args).toContain("ddev@server.example.com:/home/ddev/www/my-app/dist/");
   });
 
-  it("appends trailing slash to local path", async () => {
+  it("appends trailing slash to a directory", async () => {
     mockExecFileSuccess();
 
-    await rsync("dist", "/home/ddev/www/my-app/dist", defaultOptions);
+    await rsync("dist", "/home/ddev/www/my-app/dist", defaultOptions, asDirectory);
 
     const [, args] = mockedExecFile.mock.calls[0]!;
     // localPath should have trailing slash
     expect(args).toContain("dist/");
+  });
+
+  it("syncs a single file without a trailing slash", async () => {
+    mockExecFileSuccess();
+
+    await rsync(
+      "web/wp-config.php",
+      "/home/ddev/www/my-app/web/wp-config.php",
+      defaultOptions,
+      asFile,
+    );
+
+    const [, args] = mockedExecFile.mock.calls[0]!;
+    // A trailing slash would make rsync fail with "not a directory"
+    expect(args).toContain("web/wp-config.php");
+    expect(args).not.toContain("web/wp-config.php/");
+  });
+
+  it("omits --delete for a single file", async () => {
+    mockExecFileSuccess();
+
+    await rsync("web/.htaccess", "/home/ddev/www/my-app/web/.htaccess", defaultOptions, asFile);
+
+    const [, args] = mockedExecFile.mock.calls[0]!;
+    expect(args).not.toContain("--delete");
+  });
+
+  it("throws when the local path does not exist", async () => {
+    mockExecFileSuccess();
+
+    await expect(
+      rsync("vendor", "/home/ddev/www/my-app/vendor", defaultOptions, asMissing),
+    ).rejects.toThrow(/Cannot sync "vendor"/);
+
+    // A silent skip would report a successful deploy with a missing artifact
+    expect(mockedExecFile).not.toHaveBeenCalled();
+  });
+
+  it("classifies a real directory, file and absent path", () => {
+    // Anchored to this file so the result does not depend on the cwd
+    const src = join(import.meta.dirname, "..", "src");
+
+    expect(classifyPath(src)).toBe("directory");
+    expect(classifyPath(join(src, "ssh.ts"))).toBe("file");
+    expect(classifyPath(join(src, "does-not-exist"))).toBe("missing");
   });
 });

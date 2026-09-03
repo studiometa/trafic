@@ -1,4 +1,5 @@
 import { execFile, type ExecFileOptions } from "node:child_process";
+import { statSync } from "node:fs";
 import { info } from "./steps.js";
 import type { SSHOptions } from "./types.js";
 
@@ -89,14 +90,51 @@ export async function test(
   }
 }
 
+/** What a local sync path turned out to be. */
+export type PathKind = "directory" | "file" | "missing";
+
+/**
+ * Tell whether a local path is a directory, a file, or absent.
+ */
+export function classifyPath(path: string): PathKind {
+  try {
+    return statSync(path).isDirectory() ? "directory" : "file";
+  } catch {
+    return "missing";
+  }
+}
+
 /**
  * Rsync a local path to the remote server.
+ *
+ * Directories and files need different flags. A directory is synced by its
+ * contents, so it takes a trailing slash and `--delete` to drop files the
+ * build no longer produces. A single file is copied as itself: a trailing
+ * slash makes rsync fail with "not a directory", and `--delete` means nothing
+ * for a transfer that is not a directory.
+ *
+ * Files matter because build steps produce them — a Composer scaffold writing
+ * `web/wp-config.php`, for instance — and they are as much a build artifact as
+ * `vendor/`.
  */
 export async function rsync(
   localPath: string,
   remotePath: string,
   options: SSHOptions,
+  classify: (path: string) => PathKind = classifyPath,
 ): Promise<ExecResult> {
+  const kind = classify(localPath);
+
+  // Fail loudly: a silent skip would leave the server missing a build
+  // artifact and the deployment would look like it succeeded.
+  if (kind === "missing") {
+    throw new Error(
+      `Cannot sync "${localPath}": no such file or directory. Did the build produce it?`,
+    );
+  }
+
+  const isDirectory = kind === "directory";
+
   const sshCmd = [
     "ssh",
     ...buildSSHArgs(options),
@@ -104,10 +142,10 @@ export async function rsync(
 
   const args = [
     "-azv",
-    "--delete",
+    ...(isDirectory ? ["--delete"] : []),
     "-e",
     sshCmd,
-    localPath.endsWith("/") ? localPath : `${localPath}/`,
+    isDirectory && !localPath.endsWith("/") ? `${localPath}/` : localPath,
     `${buildDestination(options)}:${remotePath}`,
   ];
 
