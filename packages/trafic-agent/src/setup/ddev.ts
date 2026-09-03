@@ -260,6 +260,27 @@ http:
         service: trafic-service
         query: "/"
 
+  routers:
+    # Lowest priority, so a DDEV project router always wins. It only matches
+    # when none does - which is what a stopped project produces, because DDEV
+    # removes that project's router and Traefik would otherwise answer 404.
+    # Without this the waiting page never appears and scale-to-zero never
+    # restarts anything. Auth is unaffected: it is attached at the entry
+    # point, not here, so this cannot reintroduce the bypass that #27 fixed.
+    #
+    # Two of them, because a router carrying tls only matches HTTPS entry
+    # points: one alone would leave plain HTTP answering 404.
+    trafic-catchall:
+      rule: "PathPrefix(\`/\`)"
+      priority: 1
+      service: trafic-service
+
+    trafic-catchall-tls:
+      rule: "PathPrefix(\`/\`)"
+      priority: 1
+      service: trafic-service
+      tls: {}
+
   services:
     trafic-service:
       loadBalancer:
