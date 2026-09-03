@@ -168,11 +168,20 @@ async function handleErrors(
       .replace(/\{\{hostname\}\}/g, hostname),
   );
 
-  // Start project in background
-  setTimeout(() => {
-    const success = startProject(projectName);
-    setProjectStatus(projectName, success ? "running" : "stopped");
-  }, 100);
+  // Start the project without waiting for it. The response is already sent,
+  // and `startProject` no longer blocks the event loop, so the agent keeps
+  // serving forward auth for every other project while this runs. The status
+  // is recorded when it settles, which is what stops a second request from
+  // starting the same project again.
+  void startProject(projectName)
+    .then((success) => {
+      setProjectStatus(projectName, success ? "running" : "stopped");
+    })
+    .catch((error: unknown) => {
+      // Leaving it "starting" forever would wedge the waiting page
+      setProjectStatus(projectName, "stopped");
+      console.error(`Could not start ${projectName}:`, error);
+    });
 }
 
 /**
@@ -211,7 +220,10 @@ function handleTlsAsk(req: IncomingMessage, res: ServerResponse): void {
 /**
  * Handle status polling requests
  */
-function handleStatus(req: IncomingMessage, res: ServerResponse): void {
+async function handleStatus(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const projectName = url.searchParams.get("project");
 
@@ -221,7 +233,7 @@ function handleStatus(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
 
-  const info = getProjectInfo(projectName);
+  const info = await getProjectInfo(projectName);
   const record = getProject(projectName);
 
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -275,7 +287,7 @@ async function handleRequest(
     if (path === "/__auth__" || path.startsWith("/__auth__/")) {
       handleAuth(req, res);
     } else if (path === "/__status__" || path.startsWith("/__status__/")) {
-      handleStatus(req, res);
+      await handleStatus(req, res);
     } else if (path === "/__tls__") {
       handleTlsAsk(req, res);
     } else if (path === "/__health__") {

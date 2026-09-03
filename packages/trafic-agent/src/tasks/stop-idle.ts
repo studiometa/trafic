@@ -8,7 +8,7 @@ import type { AgentConfig } from "../types.js";
  * Stop idle projects that haven't been accessed recently
  * Respects per-project idle_timeout settings from .ddev/config.trafic.yaml
  */
-export function stopIdleProjects(config: AgentConfig): void {
+export async function stopIdleProjects(config: AgentConfig): Promise<void> {
   const globalThresholdMs = parseDuration(config.idleTimeout);
 
   // Get all projects to check their individual configs
@@ -41,7 +41,7 @@ export function stopIdleProjects(config: AgentConfig): void {
     }
 
     // Double-check project is actually running via DDEV
-    const info = getProjectInfo(project.name);
+    const info = await getProjectInfo(project.name);
     if (info?.status !== "running") {
       // Already stopped, just update our record
       setProjectStatus(project.name, "stopped");
@@ -49,7 +49,7 @@ export function stopIdleProjects(config: AgentConfig): void {
     }
 
     console.log(`Stopping idle project: ${project.name}`);
-    const success = stopProject(project.name);
+    const success = await stopProject(project.name);
 
     if (success) {
       setProjectStatus(project.name, "stopped");
@@ -63,6 +63,11 @@ export function stopIdleProjects(config: AgentConfig): void {
 /**
  * Start the idle check scheduler
  */
+/** An idle sweep that throws must not take the scheduler down with it. */
+function reportSweepError(error: unknown): void {
+  console.error("Idle sweep failed:", error);
+}
+
 export function startIdleScheduler(config: AgentConfig): NodeJS.Timeout {
   const intervalMs = parseDuration(config.idleCheckInterval);
 
@@ -71,10 +76,10 @@ export function startIdleScheduler(config: AgentConfig): NodeJS.Timeout {
   );
 
   // Run immediately on start
-  stopIdleProjects(config);
+  void stopIdleProjects(config).catch(reportSweepError);
 
   // Then run on interval
   return setInterval(() => {
-    stopIdleProjects(config);
+    void stopIdleProjects(config).catch(reportSweepError);
   }, intervalMs);
 }

@@ -42,7 +42,7 @@ trafic setup \
 | `--no-docker` | Skip Docker installation | `false` |
 | `--no-ddev` | Skip DDEV installation | `false` |
 | `--dry-run` | Print the remote commands without running them | `false` |
-| `--ssh-options` | Extra SSH options | - |
+| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"` | - |
 
 **Requirements:**
 
@@ -83,7 +83,7 @@ trafic deploy \
 | `--branch` | Git branch name | auto-detected from CI |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--repo` | Repository URL | auto-detected from CI |
-| `--ssh-options` | Extra SSH options | - |
+| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"` | - |
 
 ### `trafic destroy`
 
@@ -100,22 +100,30 @@ trafic destroy \
 
 ### GitLab CI
 
+`SSH_PRIVATE_KEY` is a file-type CI variable, so ssh can read the key directly:
+
 ```yaml
 deploy_preview:
   stage: deploy
   image: node:24
   before_script:
-    - eval $(ssh-agent -s)
-    - ssh-add "$SSH_PRIVATE_KEY"
+    - chmod 600 "$SSH_PRIVATE_KEY"
   script:
     - npx @studiometa/trafic-cli deploy
         --host $SSH_HOST
         --name $CI_PROJECT_PATH_SLUG
         --preview $CI_MERGE_REQUEST_IID
+        --ssh-options="-i $SSH_PRIVATE_KEY -o IdentitiesOnly=yes"
         --sync "dist/"
   rules:
     - if: $CI_MERGE_REQUEST_ID
 ```
+
+Two things worth copying exactly:
+
+**No `ssh-agent`.** GitLab runs `after_script` in a separate shell from `before_script`, so `SSH_AGENT_PID` is not set there and `ssh-agent -k` kills nothing. The surviving agent holds the job's output file descriptors, and the runner waits on them — jobs sat `running` for up to an hour after their script had finished. Pointing ssh at the key avoids the daemon entirely. `IdentitiesOnly=yes` stops any other key on the runner from being offered first.
+
+**`--ssh-options=` with an equals sign.** The value starts with a dash, and `--ssh-options "-i …"` makes the parser read it as another option: `Option '--ssh-options' argument is ambiguous`.
 
 ### GitHub Actions
 

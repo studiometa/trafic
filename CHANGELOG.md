@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Agent**: `ddev start`, `ddev stop` and `ddev describe` no longer block the event loop. The agent is single-threaded and serves forward auth for every project, so an `execSync` stopped the whole server for the duration — up to two minutes for a start, which froze auth for unrelated projects and produced request timeouts on a live server. Starting the project from a `setTimeout` did not help: the timer callback runs on the same thread. `handleErrors` now responds with the waiting page and lets the start settle afterwards, recording the outcome so a second request does not start it again, and marking the project stopped if it fails rather than leaving it "starting" forever. The idle sweep is async for the same reason, and a sweep that throws no longer takes the scheduler down ([#46])
+- **Docs**: The CLI readme's GitLab CI example used `ssh-agent`. GitLab runs `after_script` in a shell where `SSH_AGENT_PID` is unset, so `ssh-agent -k` kills nothing and the surviving process holds the job's output file descriptors — jobs stayed `running` for up to an hour after finishing. The example now points ssh at the key with `--ssh-options=`, and both option tables note that a dash-leading value needs the `=` form, which the previous `"-J jump@host"` example would have failed on ([#46])
+
 ## [0.1.34] - 2026.09.03
 
 ### Added
@@ -429,6 +436,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#43]: https://github.com/studiometa/trafic/pull/43
 [#44]: https://github.com/studiometa/trafic/pull/44
 [#45]: https://github.com/studiometa/trafic/pull/45
+[#46]: https://github.com/studiometa/trafic/pull/46
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
