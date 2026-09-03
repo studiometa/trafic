@@ -73,7 +73,7 @@ trafic deploy \
 | `--name` | Project name (required) | - |
 | `--user` | SSH user | `ddev` |
 | `--port` | SSH port | `22` |
-| `--sync` | Local path to sync | `.` |
+| `--sync` | Comma-separated local paths to sync. Directories and files both work | `.` |
 | `--script` | Post-sync script to run in DDEV | - |
 | `--env` | Environment for `--script`, repeatable. `KEY=VALUE`, or bare `KEY` to take the runner's value | - |
 | `--branch` | Git branch name | auto-detected from CI |
@@ -144,7 +144,7 @@ The deploy command executes 7 steps over SSH:
 
 1. **Check DDEV** — Verify DDEV is installed
 2. **Create directory** — Create project directory if needed
-3. **Rsync files** — Sync local files to server
+3. **Rsync files** — Sync local paths to the server. A directory is mirrored with `--delete`, so a file the build stops producing is removed from the server too; a single file is copied as itself. A path that does not exist stops the deploy
 4. **Configure DDEV** — Create `.ddev/config.yaml` if missing
 5. **Start DDEV** — Run `ddev start`
 6. **Run script** — Execute post-deploy script (optional)
