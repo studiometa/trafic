@@ -2,39 +2,41 @@ import { readFileSync, existsSync, watch } from "node:fs";
 import { execSync } from "node:child_process";
 import type { DdevProject } from "../types.js";
 
-// Simple YAML parser for project_list.yaml (avoid dependencies)
-// The file format is simple: key: value pairs with quoted strings
-function parseSimpleYaml(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const lines = content.split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const colonIndex = trimmed.indexOf(":");
-    if (colonIndex === -1) continue;
-
-    const key = trimmed.slice(0, colonIndex).trim();
-    let value = trimmed.slice(colonIndex + 1).trim();
-
-    // Remove quotes
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    result[key] = value;
+/** Strip a single pair of surrounding quotes. */
+function unquote(value: string): string {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
   }
 
-  return result;
+  return value;
 }
+
+/** A project name at the start of a line, e.g. `my-project:` */
+const PROJECT_LINE = /^(\S[^:]*):\s*$/;
+
+/** An indented `approot: /path` belonging to the project above it */
+const APPROOT_LINE = /^\s+approot:\s*(.+?)\s*$/;
 
 /**
  * Load projects from DDEV's project_list.yaml
  * Returns a map of project name -> app root path
+ *
+ * The file nests the path under the project name:
+ *
+ *   scalian:
+ *       approot: /home/ddev/www/scalian
+ *
+ * Indentation therefore has to be read. A flat key/value pass produces one
+ * entry per line instead: the project mapped to an empty string, plus a
+ * phantom project called `approot`. Both did damage — the empty path meant
+ * `loadProjectConfig` looked for `.ddev/config.trafic.yaml` relative to the
+ * working directory and never found it, so per-project settings were silently
+ * ignored, and the phantom entered the hostname index, where the TLS ask
+ * endpoint would vouch for `approot.<tld>` and have a certificate issued for
+ * a project that does not exist.
  */
 export function loadProjectList(
   projectListPath: string,
@@ -43,10 +45,32 @@ export function loadProjectList(
     return new Map();
   }
 
-  const content = readFileSync(projectListPath, "utf-8");
-  const parsed = parseSimpleYaml(content);
+  const projects = new Map<string, string>();
+  let current: string | undefined;
 
-  return new Map(Object.entries(parsed));
+  for (const line of readFileSync(projectListPath, "utf-8").split("\n")) {
+    if (!line.trim() || line.trimStart().startsWith("#")) {
+      continue;
+    }
+
+    const project = PROJECT_LINE.exec(line);
+
+    if (project) {
+      current = unquote(project[1]!.trim());
+      // Recorded now so a project keeps its hostname even if DDEV writes no
+      // approot for it
+      projects.set(current, "");
+      continue;
+    }
+
+    const approot = APPROOT_LINE.exec(line);
+
+    if (approot && current) {
+      projects.set(current, unquote(approot[1]!));
+    }
+  }
+
+  return projects;
 }
 
 /**

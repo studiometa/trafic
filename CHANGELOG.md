@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Agent**: Read `project_list.yaml` as the nested file it is. DDEV writes the path under the project name, but the parser walked lines flat and produced one entry per line: the project mapped to an empty string, plus a phantom project named `approot`. Both did damage. The empty path meant `loadProjectConfig` looked for `.ddev/config.trafic.yaml` relative to the working directory and never found it, so per-project `auth_policy` and `idle_timeout` were silently ignored in every released version — the "0 with custom config" in the startup log was the symptom. The phantom entered the hostname index, where the TLS ask endpoint vouched for `approot.<tld>`: confirmed answering 200 on a live server, so a wildcard-DNS domain would have a Let's Encrypt certificate issued for a project that does not exist. `loadProjectList` had no tests, which is why this survived ([#43])
+
 ## [0.1.31] - 2026.09.03
 
 ### Added
@@ -399,6 +405,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#40]: https://github.com/studiometa/trafic/pull/40
 [#41]: https://github.com/studiometa/trafic/pull/41
 [#42]: https://github.com/studiometa/trafic/pull/42
+[#43]: https://github.com/studiometa/trafic/pull/43
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
