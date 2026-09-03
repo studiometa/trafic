@@ -185,7 +185,11 @@ Environment=DDEV_NONINTERACTIVE=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/var/lib/trafic /home/ddev/.ddev
+# ddev start writes across its own home: the project directory
+# (.ddev/.webimageBuild), buildx state in .docker, mutagen data. Listing
+# individual paths is whack-a-mole across DDEV versions, so grant the home
+# and leave the rest of /home read-only.
+ReadWritePaths=/var/lib/trafic /home/ddev
 PrivateTmp=true
 
 [Install]

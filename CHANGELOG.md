@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Agent**: Fix scale-to-zero, which could not have worked in any released version. Two independent faults. First, the waiting page never appeared: `ddev stop` removes the project's Traefik router, so nothing matched and Traefik answered 404 — and an entry point middleware does not run without a router match, so `trafic-errors` (which lists only 502 and 503) never saw those requests. Migration [#27] removed the catch-all router to close an auth bypass, correctly, but it was also the only thing catching them. A catch-all at priority 1 is safe now that auth lives on the entry point, since a project router always outranks it. Two routers are needed, because one carrying `tls` matches HTTPS entry points only and would leave plain HTTP answering 404 ([#39])
+- **Agent**: Fix auto-start failing with `read-only file system`. The systemd unit granted `ReadWritePaths=/var/lib/trafic /home/ddev/.ddev`, but `ddev start` writes to `/home/ddev/www/<project>/.ddev/.webimageBuild` and to buildx state in `/home/ddev/.docker`, both refused by `ProtectHome=read-only`. The agent now gets its own home; the rest of `/home` stays read-only. Enumerating individual paths is whack-a-mole across DDEV versions ([#39])
+- **Agent**: Add migration `0009__scale_to_zero_fixes` applying both to existing servers. It restarts DDEV rather than only the router: Traefik reads its config from the `ddev-global-cache` volume, and DDEV copies `~/.ddev/traefik` into it on project start, so a router restart alone leaves the old config in place ([#39])
+
 ### Security
 
 - **Agent**: Attach forward auth to every entry point DDEV publishes, not just `http-80` and `http-443`. `ddev-router` publishes the Mailpit and xhgui ports on `0.0.0.0`, and **Docker bypasses UFW for published ports**, so the firewall rules written by `configureFirewall` never governed them — the middleware is the only thing that can. Observed on a live server: xhgui answered from the internet on 8142 and 8143 with no authentication. The ports are read from `ddev config global` rather than hardcoded, since they are configurable ([#38])
@@ -382,6 +388,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [18bc15d]: https://github.com/studiometa/trafic/commit/18bc15d
 [#37]: https://github.com/studiometa/trafic/pull/37
 [#38]: https://github.com/studiometa/trafic/pull/38
+[#39]: https://github.com/studiometa/trafic/pull/39
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

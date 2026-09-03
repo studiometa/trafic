@@ -121,14 +121,27 @@ describe("createSystemdService", () => {
     expect(unit).toContain("ProtectSystem=strict");
   });
 
-  it("grants write access only to the paths the agent needs", () => {
+  it("grants the agent write access to its own home", () => {
     const io = createFakeIo();
 
     createSystemdService(io);
 
+    // ddev start writes to the project directory and to buildx state in
+    // .docker; the narrower /home/ddev/.ddev made auto-start fail outright
     expect(io.written(UNIT_PATH)).toContain(
-      "ReadWritePaths=/var/lib/trafic /home/ddev/.ddev",
+      "ReadWritePaths=/var/lib/trafic /home/ddev",
     );
+  });
+
+  it("still protects the rest of the filesystem", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    const unit = io.written(UNIT_PATH);
+    expect(unit).toContain("ProtectSystem=strict");
+    expect(unit).toContain("ProtectHome=read-only");
+    expect(unit).toContain("NoNewPrivileges=true");
   });
 
   it("sets DDEV_NONINTERACTIVE so ddev-hostname never blocks a start", () => {

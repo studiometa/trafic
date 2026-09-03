@@ -8,6 +8,7 @@ import { migration0005TraefikGatewayIp } from "./0005__traefik_gateway_ip.js";
 import { migration0006TraefikGatewayIpFix } from "./0006__traefik_gateway_ip_fix.js";
 import { migration0007UfwDockerTraficPort } from "./0007__ufw_docker_trafic_port.js";
 import { migration0008TraefikEntrypointMiddleware } from "./0008__traefik_entrypoint_middleware.js";
+import { migration0009ScaleToZeroFixes } from "./0009__scale_to_zero_fixes.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -22,6 +23,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0006TraefikGatewayIpFix,
   migration0007UfwDockerTraficPort,
   migration0008TraefikEntrypointMiddleware,
+  migration0009ScaleToZeroFixes,
 ];
 
 // ---------------------------------------------------------------------------

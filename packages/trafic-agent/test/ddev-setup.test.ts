@@ -265,3 +265,62 @@ describe("installDnsmasq", () => {
     expect(io.ran("systemctl enable dnsmasq")).toBe(true);
   });
 });
+
+describe("configureTraefik catch-all router", () => {
+  const io = () => createFakeIo({ output: { [DDEV_NETWORK]: "172.20.0.1\n" } });
+
+  it("defines a catch-all router so stopped projects reach the agent", () => {
+    const fake = io();
+
+    configureTraefik(fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    // ddev stop removes the project's router, so without this Traefik answers
+    // 404 and the waiting page never appears
+    expect(config).toContain("trafic-catchall");
+    expect(config).toContain("service: trafic-service");
+  });
+
+  it("gives it the lowest priority so project routers always win", () => {
+    const fake = io();
+
+    configureTraefik(fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    expect(config).toContain("priority: 1");
+  });
+
+  it("defines both a plain and a TLS catch-all", () => {
+    const fake = io();
+
+    configureTraefik(fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    // A router carrying tls only matches HTTPS entry points, so one alone
+    // leaves plain HTTP answering 404 — verified on a real server
+    expect(config).toContain("trafic-catchall:");
+    expect(config).toContain("trafic-catchall-tls:");
+  });
+
+  it("puts tls on exactly one of them", () => {
+    const fake = io();
+
+    configureTraefik(fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const routers = config.slice(config.indexOf("routers:"), config.indexOf("services:"));
+    expect(routers.match(/tls: \{\}/g) ?? []).toHaveLength(1);
+  });
+
+  it("does not attach auth to the catch-all itself", () => {
+    const fake = io();
+
+    configureTraefik(fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const router = config.slice(config.indexOf("trafic-catchall"));
+    // Auth lives on the entry point. Attaching it here was the arrangement
+    // that let project routers bypass it, which #27 fixed.
+    expect(router).not.toContain("middlewares");
+  });
+});
