@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Agent**: Remove Traefik's Let's Encrypt storage when Let's Encrypt is disabled. `use_letsencrypt=false` stops DDEV asking for new certificates but leaves the issued ones in `acme.json` inside the `ddev-global-cache` volume, and Traefik loads them again on restart. On a server where a host ingress terminates TLS and verifies the loopback hop against the mkcert root, that resurrected certificate fails validation and every request answers 502 with `certificate signed by unknown authority` — which is exactly what happened on a live server today. The volume's mountpoint is resolved rather than reached through a container, so the purge works whether or not ddev-router is running and needs no extra image. Only runs where Let's Encrypt is off; with it on, those certificates are the ones being served on purpose ([#47])
+
+### Added
+
+- **Agent**: Migration `0011__purge_acme_when_disabled`, applying the above to existing servers. It restarts ddev-router, because Traefik still holds in memory what it loaded at startup — deleting the file alone changes nothing until then ([#47])
+
 ## [0.1.35] - 2026.09.03
 
 ### Fixed
@@ -438,6 +448,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#44]: https://github.com/studiometa/trafic/pull/44
 [#45]: https://github.com/studiometa/trafic/pull/45
 [#46]: https://github.com/studiometa/trafic/pull/46
+[#47]: https://github.com/studiometa/trafic/pull/47
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

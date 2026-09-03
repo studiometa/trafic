@@ -10,6 +10,7 @@ import { migration0007UfwDockerTraficPort } from "./0007__ufw_docker_trafic_port
 import { migration0008TraefikEntrypointMiddleware } from "./0008__traefik_entrypoint_middleware.js";
 import { migration0009ScaleToZeroFixes } from "./0009__scale_to_zero_fixes.js";
 import { migration0010CatchallEntrypoints } from "./0010__catchall_entrypoints.js";
+import { migration0011PurgeAcmeWhenDisabled } from "./0011__purge_acme_when_disabled.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -26,6 +27,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0008TraefikEntrypointMiddleware,
   migration0009ScaleToZeroFixes,
   migration0010CatchallEntrypoints,
+  migration0011PurgeAcmeWhenDisabled,
 ];
 
 // ---------------------------------------------------------------------------
