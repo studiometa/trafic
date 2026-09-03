@@ -5,11 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.31] - 2026.09.03
 
 ### Added
 
 - **CLI**: `--create-script` on `deploy`, running on the server only for the deploy that created the project. A preview environment starts with an empty database, and the natural way to seed one is a `ddev pull` provider — but `ddev pull` overwrites the database it imports into, so running it on every deploy would discard the environment's content each time. Runs after the sync, so the code is in place, and before the container script, so that script can rely on what was seeded. A failure stops the deploy, since a half-imported database is worse than a failed pipeline ([#42])
+- **Agent**: `/__tls__` endpoint answering Caddy's `on_demand_tls { ask }` probe, so a certificate is issued only for a hostname that belongs to a known project. Without it, on-demand TLS would ask Let's Encrypt for anything pointed at the server, and the 50-new-hostnames-per-week limit could be burned by a stranger's DNS ([#40])
 
 ### Fixed
 
@@ -17,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent**: Fix auto-start failing with `read-only file system`. The systemd unit granted `ReadWritePaths=/var/lib/trafic /home/ddev/.ddev`, but `ddev start` writes to `/home/ddev/www/<project>/.ddev/.webimageBuild` and to buildx state in `/home/ddev/.docker`, both refused by `ProtectHome=read-only`. The agent now gets its own home; the rest of `/home` stays read-only. Enumerating individual paths is whack-a-mole across DDEV versions ([#39])
 - **Agent**: Add migration `0009__scale_to_zero_fixes` applying both to existing servers. It restarts DDEV rather than only the router: Traefik reads its config from the `ddev-global-cache` volume, and DDEV copies `~/.ddev/traefik` into it on project start, so a router restart alone leaves the old config in place ([#39])
 - **CLI**: `deploy --sync` now accepts single files, not only directories. The local path was always given a trailing slash, so a file made rsync fail with `change_dir … failed: Not a directory (20)`. Files are build artifacts as much as directories are: a Composer `post-install-cmd` scaffold writes `web/wp-config.php` and `web/.htaccess`, and neither could be shipped. Directories keep `--delete` so a build no longer producing a file removes it from the server; files are copied as themselves, since `--delete` means nothing for a transfer that is not a directory. A path that does not exist now fails with a clear message instead of an rsync error, because a silent skip would report a successful deploy with a missing artifact ([#41])
+- **CLI**: Pin a project's router ports to the server's global setting when writing `config.local.yaml`. A project pinning its own `router_http_port` overrides the global one, and DDEV then auto-assigns arbitrary free ports when the pinned pair is already taken — the project comes up on ports nothing proxies to and is unreachable. Seen on a real server: with the router moved to 8080, a preview inherited `router_http_port: '80'` from its repo and landed on 33000/33001. The value is read from `ddev config global` rather than assumed, and left alone if it cannot be read ([#40])
 - **Agent**: Correct the Traefik forward auth address at agent startup when the Docker gateway has moved. `setup` runs `configureTraefik` before any DDEV project exists, so `ddev_default` is absent and the address falls back to the default bridge; once a project starts it is stale. Migration `0006` exists for servers provisioned earlier, but `markAllMigrationsApplied()` marks it applied on fresh ones, so nothing recomputed it. Traefik watches the dynamic config, so the rewrite needs no restart, and any failure is logged and ignored ([#38])
 - **CLI**: `--timeout` now does something. It was parsed and stored but never read, so every remote command used the hardcoded 10-minute default. Seeding a large database is the case that needs longer, and a timeout partway through an import leaves the environment half-built. Accepts `10m`, `90s`, `1h` or a bare number read as minutes, and an unparseable value is rejected rather than quietly replaced by the default — ignoring it would time out at exactly the step the flag was raised for ([#42])
 - **Docs**: Correct the deploy step list in the CLI readme. It described steps that do not exist (`Create directory`, `Configure DDEV — create .ddev/config.yaml if missing`) and put the rsync before the container start, which is the reverse of what happens ([#42])
@@ -317,7 +319,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.30...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.31...HEAD
+[0.1.31]: https://github.com/studiometa/trafic/compare/0.1.30...0.1.31
 [0.1.30]: https://github.com/studiometa/trafic/compare/0.1.29...0.1.30
 [0.1.29]: https://github.com/studiometa/trafic/compare/0.1.28...0.1.29
 [0.1.28]: https://github.com/studiometa/trafic/compare/0.1.27...0.1.28
@@ -393,6 +396,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#37]: https://github.com/studiometa/trafic/pull/37
 [#38]: https://github.com/studiometa/trafic/pull/38
 [#39]: https://github.com/studiometa/trafic/pull/39
+[#40]: https://github.com/studiometa/trafic/pull/40
+[#41]: https://github.com/studiometa/trafic/pull/41
+[#42]: https://github.com/studiometa/trafic/pull/42
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
