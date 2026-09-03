@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Agent**: Migration `0010__catchall_entrypoints`, applying the fix below to existing servers. It restarts DDEV rather than the router alone, because Traefik reads its config from the `ddev-global-cache` volume and DDEV only copies `~/.ddev/traefik` into it on project start ([#45])
+
+### Fixed
+
+- **Agent**: Pin the Traefik catch-all routers to their entry points. The routers added in 0.1.33 named none, so Traefik instantiated each on *every* entry point — and DDEV's router health check counts router **definitions** across its config files and compares that to what Traefik reports. Two definitions appearing as fourteen instances never matched, so the check waited out its timeout and **`ddev start` failed after 60 seconds on every server `setup` produces**, since setup configures the tool entry points. Measured on a live server: 37 routers loaded against 22 expected, health still "starting" after 91s; pinned, 23 loaded and healthy immediately. The entry point names are read from `router-http-port`/`router-https-port` rather than assumed, so a server with the router moved behind a host ingress works too ([#45])
+- **Agent**: Stop writing the dynamic Traefik config twice. DDEV 1.25 copies `custom-global-config/` into the volume Traefik reads from; the second copy at the traefik root was written for older versions, is never read, and made a stale file easy to mistake for the live config while debugging ([#45])
+- **Agent**: `buildStaticConfig` no longer emits an entry point twice when a tool port equals a router port — a duplicate key invalidates the whole static config ([#45])
+
 ## [0.1.33] - 2026.09.03
 
 ### Fixed
@@ -415,6 +427,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#42]: https://github.com/studiometa/trafic/pull/42
 [#43]: https://github.com/studiometa/trafic/pull/43
 [#44]: https://github.com/studiometa/trafic/pull/44
+[#45]: https://github.com/studiometa/trafic/pull/45
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

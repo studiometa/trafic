@@ -4,7 +4,12 @@ import {
   rewriteForwardAuthAddress,
   syncForwardAuthAddress,
 } from "../src/utils/traefik.js";
-import { readToolPorts, buildStaticConfig } from "../src/setup/ddev.js";
+import {
+  readToolPorts,
+  readRouterPorts,
+  buildStaticConfig,
+  buildDynamicConfig,
+} from "../src/setup/ddev.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 beforeEach(() => {
@@ -133,7 +138,21 @@ describe("syncForwardAuthAddress", () => {
   const GLOBAL = "/home/ddev/.ddev/traefik/custom-global-config/trafic.yaml";
   const DDEV_NET = "docker network inspect ddev_default";
 
-  it("corrects a stale address in both config files", () => {
+  it("corrects a stale address in the config Traefik reads", () => {
+    const io = createFakeIo({
+      files: { [GLOBAL]: DYNAMIC },
+      output: { [DDEV_NET]: "172.18.0.1\n" },
+    });
+
+    syncForwardAuthAddress(PROJECT_LIST, io);
+
+    expect(io.written(GLOBAL)).toContain("172.18.0.1");
+    expect(io.written(GLOBAL)).not.toContain("172.17.0.1");
+  });
+
+  it("leaves the retired root copy alone", () => {
+    // DDEV 1.25 copies custom-global-config into the volume and never reads
+    // the traefik root; migration 0010 deletes that copy
     const io = createFakeIo({
       files: { [ROOT]: DYNAMIC, [GLOBAL]: DYNAMIC },
       output: { [DDEV_NET]: "172.18.0.1\n" },
@@ -141,14 +160,12 @@ describe("syncForwardAuthAddress", () => {
 
     syncForwardAuthAddress(PROJECT_LIST, io);
 
-    expect(io.written(ROOT)).toContain("172.18.0.1");
-    expect(io.written(GLOBAL)).toContain("172.18.0.1");
-    expect(io.written(ROOT)).not.toContain("172.17.0.1");
+    expect(io.writes.has(ROOT)).toBe(false);
   });
 
   it("writes nothing when the address is already right", () => {
     const io = createFakeIo({
-      files: { [ROOT]: DYNAMIC },
+      files: { [GLOBAL]: DYNAMIC },
       output: { [DDEV_NET]: "172.17.0.1\n" },
     });
 
@@ -159,14 +176,13 @@ describe("syncForwardAuthAddress", () => {
 
   it("skips a config file that does not exist", () => {
     const io = createFakeIo({
-      files: { [ROOT]: DYNAMIC },
+      files: {},
       output: { [DDEV_NET]: "172.18.0.1\n" },
     });
 
     syncForwardAuthAddress(PROJECT_LIST, io);
 
-    expect(io.writes.has(ROOT)).toBe(true);
-    expect(io.writes.has(GLOBAL)).toBe(false);
+    expect(io.writes.size).toBe(0);
   });
 
   it("leaves a config with no agent URL alone", () => {
@@ -206,12 +222,123 @@ describe("syncForwardAuthAddress", () => {
 
   it("resolves the traefik directory from the project list path", () => {
     const io = createFakeIo({
-      files: { "/custom/.ddev/traefik/trafic.yaml": DYNAMIC },
+      files: { "/custom/.ddev/traefik/custom-global-config/trafic.yaml": DYNAMIC },
       output: { [DDEV_NET]: "172.18.0.1\n" },
     });
 
     syncForwardAuthAddress("/custom/.ddev/project_list.yaml", io);
 
-    expect(io.writes.has("/custom/.ddev/traefik/trafic.yaml")).toBe(true);
+    expect(io.writes.has("/custom/.ddev/traefik/custom-global-config/trafic.yaml")).toBe(true);
+  });
+});
+
+describe("readRouterPorts", () => {
+  it("reads the ports from the global config", () => {
+    const io = createFakeIo({
+      output: {
+        "su - ddev -c 'ddev config global'":
+          "router-http-port=8080\nrouter-https-port=8443\nproject-tld=example.com\n",
+      },
+    });
+
+    expect(readRouterPorts(io)).toEqual({ http: "8080", https: "8443" });
+  });
+
+  it("falls back to 80 and 443 when the config says nothing", () => {
+    const io = createFakeIo({ output: { "su - ddev -c 'ddev config global'": "project-tld=x\n" } });
+
+    expect(readRouterPorts(io)).toEqual({ http: "80", https: "443" });
+  });
+
+  it("falls back when the config cannot be read at all", () => {
+    const io = createFakeIo({ fails: ["su - ddev -c 'ddev config global'"] });
+
+    expect(readRouterPorts(io)).toEqual({ http: "80", https: "443" });
+  });
+});
+
+describe("buildDynamicConfig", () => {
+  /** Count how many entry points each router names. */
+  function routerEntryPointCounts(config: string): number[] {
+    // Each router block ends at the next two-space-indented key
+    return [...config.matchAll(/    trafic-catchall(?:-tls)?:\n((?:      .*\n)*)/g)].map(
+      (match) => (match[1]!.match(/^        - http-\d+$/gm) ?? []).length,
+    );
+  }
+
+  it("names exactly one entry point per router", () => {
+    // The whole point: a router naming none is instantiated on every entry
+    // point, and DDEV's health check compares definitions to instances
+    expect(routerEntryPointCounts(buildDynamicConfig("172.18.0.1"))).toEqual([1, 1]);
+  });
+
+  it("uses the server's router ports", () => {
+    const config = buildDynamicConfig("172.18.0.1", { http: "8080", https: "8443" });
+
+    expect(config).toContain("- http-8080");
+    expect(config).toContain("- http-8443");
+    expect(config).not.toContain("- http-80\n");
+  });
+
+  it("defaults to 80 and 443", () => {
+    const config = buildDynamicConfig("172.18.0.1");
+
+    expect(config).toContain("- http-80");
+    expect(config).toContain("- http-443");
+  });
+
+  it("puts tls on the https router only", () => {
+    const config = buildDynamicConfig("172.18.0.1", { http: "80", https: "443" });
+    const tlsBlock = config.slice(config.indexOf("trafic-catchall-tls:"));
+    const plainBlock = config.slice(
+      config.indexOf("trafic-catchall:"),
+      config.indexOf("trafic-catchall-tls:"),
+    );
+
+    expect(tlsBlock).toContain("tls: {}");
+    expect(plainBlock).not.toContain("tls: {}");
+  });
+
+  it("points the middleware and service at the gateway", () => {
+    const config = buildDynamicConfig("10.1.2.3");
+
+    expect(config).toContain("http://10.1.2.3:9876/__auth__");
+    expect(config).toContain("http://10.1.2.3:9876");
+  });
+
+  it("keeps the catch-all at the lowest priority", () => {
+    // A project router must always outrank it, or auth policy per project breaks
+    const priorities = [...buildDynamicConfig("172.18.0.1").matchAll(/priority: (\d+)/g)].map(
+      (m) => Number(m[1]),
+    );
+
+    expect(priorities).toEqual([1, 1]);
+  });
+});
+
+describe("buildStaticConfig with router ports", () => {
+  it("attaches the web middlewares to the configured router ports", () => {
+    const config = buildStaticConfig(["8025", "8026"], { http: "8080", https: "8443" });
+
+    expect(config).toContain("  http-8080:");
+    expect(config).toContain("  http-8443:");
+    expect(config).not.toContain("  http-80:");
+    expect(config).not.toContain("  http-443:");
+  });
+
+  it("does not emit an entry point twice when a tool shares a router port", () => {
+    // A duplicate key makes the whole static config invalid
+    const config = buildStaticConfig(["80", "8025"], { http: "80", https: "443" });
+
+    expect([...config.matchAll(/^  http-80:$/gm)]).toHaveLength(1);
+  });
+
+  it("gives the error page to web entry points only", () => {
+    const config = buildStaticConfig(["8025"], { http: "80", https: "443" });
+    const tools = config.slice(config.indexOf("  http-8025:"));
+
+    // A tool port has nothing to wait for
+    expect(tools).toContain("trafic-auth@file");
+    expect(tools).not.toContain("trafic-errors@file");
   });
 });

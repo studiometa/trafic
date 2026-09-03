@@ -4,13 +4,14 @@ import { nodeIo, type SetupIo } from "../setup/io.js";
 
 /**
  * Files DDEV reads the dynamic Traefik configuration from, relative to the
- * .ddev directory. Both are written by setup: DDEV 1.25+ picks up
- * custom-global-config, older versions watch the traefik root.
+ * .ddev directory.
+ *
+ * Only custom-global-config: DDEV copies that into the ddev-global-cache
+ * volume, which is where Traefik actually reads from. Setup used to write a
+ * second copy at the traefik root for older DDEV versions; migration 0010
+ * removes it, and nothing reads it on 1.25.
  */
-const DYNAMIC_CONFIGS = [
-  "traefik/trafic.yaml",
-  "traefik/custom-global-config/trafic.yaml",
-];
+const DYNAMIC_CONFIGS = ["traefik/custom-global-config/trafic.yaml"];
 
 /** Matches the host in an agent URL, e.g. http://172.17.0.1:9876/__auth__ */
 const AGENT_URL = /http:\/\/(\d+\.\d+\.\d+\.\d+):(\d+)/g;
