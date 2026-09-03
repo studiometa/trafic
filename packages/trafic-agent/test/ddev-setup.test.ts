@@ -116,7 +116,7 @@ describe("configureTraefik", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     expect(config).toContain("http://172.20.0.1:9876/__auth__");
     // host.docker.internal does not resolve on Linux without extra setup,
     // which silently bypassed auth
@@ -139,17 +139,18 @@ describe("configureTraefik", () => {
     expect(staticConfig).toContain("trafic-errors@file");
   });
 
-  it("writes the dynamic config to both locations DDEV watches", () => {
+  it("writes the dynamic config only where Traefik reads it", () => {
     const fake = io();
 
     configureTraefik(fake);
 
-    // custom-global-config survives the config dir purge on restart in
-    // DDEV 1.25+; the traefik root is watched by older versions
-    expect(fake.written(`${TRAEFIK_DIR}/trafic.yaml`)).not.toBe("");
+    // DDEV 1.25 copies custom-global-config into the ddev-global-cache
+    // volume. A second copy at the traefik root is never read, and having
+    // two made a stale one easy to mistake for the live config.
     expect(
       fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`),
     ).not.toBe("");
+    expect(fake.writes.has(`${TRAEFIK_DIR}/trafic.yaml`)).toBe(false);
   });
 
   it("serves the waiting page on 502 and 503", () => {
@@ -157,7 +158,7 @@ describe("configureTraefik", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     expect(config).toContain('"502"');
     expect(config).toContain('"503"');
     expect(config).toContain("service: trafic-service");
@@ -168,7 +169,9 @@ describe("configureTraefik", () => {
 
     configureTraefik(fake);
 
-    expect(fake.ran(`chown ddev:ddev ${TRAEFIK_DIR}/trafic.yaml`)).toBe(true);
+    expect(
+      fake.ran(`chown ddev:ddev ${TRAEFIK_DIR}/custom-global-config/trafic.yaml`),
+    ).toBe(true);
   });
 });
 
@@ -274,7 +277,7 @@ describe("configureTraefik catch-all router", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     // ddev stop removes the project's router, so without this Traefik answers
     // 404 and the waiting page never appears
     expect(config).toContain("trafic-catchall");
@@ -286,7 +289,7 @@ describe("configureTraefik catch-all router", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     expect(config).toContain("priority: 1");
   });
 
@@ -295,7 +298,7 @@ describe("configureTraefik catch-all router", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     // A router carrying tls only matches HTTPS entry points, so one alone
     // leaves plain HTTP answering 404 — verified on a real server
     expect(config).toContain("trafic-catchall:");
@@ -307,7 +310,7 @@ describe("configureTraefik catch-all router", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     const routers = config.slice(config.indexOf("routers:"), config.indexOf("services:"));
     expect(routers.match(/tls: \{\}/g) ?? []).toHaveLength(1);
   });
@@ -317,7 +320,7 @@ describe("configureTraefik catch-all router", () => {
 
     configureTraefik(fake);
 
-    const config = fake.written(`${TRAEFIK_DIR}/trafic.yaml`);
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     const router = config.slice(config.indexOf("trafic-catchall"));
     // Auth lives on the entry point. Attaching it here was the arrangement
     // that let project routers bypass it, which #27 fixed.

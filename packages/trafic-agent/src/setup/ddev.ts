@@ -199,6 +199,35 @@ export function readToolPorts(io: SetupIo = nodeIo): string[] {
   return [...new Set(ports)];
 }
 
+/** The ports ddev-router serves projects on. */
+export interface RouterPorts {
+  http: string;
+  https: string;
+}
+
+/** Used when the global config does not say otherwise */
+const DEFAULT_ROUTER_PORTS: RouterPorts = { http: "80", https: "443" };
+
+/**
+ * Read the ports ddev-router serves projects on.
+ *
+ * Traefik names an entry point after its port, so these decide what the
+ * catch-all routers and the auth middleware must attach to. Hardcoding 80 and
+ * 443 is wrong on any server where the router was moved — which is every
+ * server running a host ingress in front of it.
+ */
+export function readRouterPorts(io: SetupIo = nodeIo): RouterPorts {
+  const output = io.execSilent("su - ddev -c 'ddev config global'");
+
+  const read = (key: string, fallback: string): string =>
+    new RegExp(`^${key}=(\\d+)$`, "m").exec(output)?.[1] ?? fallback;
+
+  return {
+    http: read("router-http-port", DEFAULT_ROUTER_PORTS.http),
+    https: read("router-https-port", DEFAULT_ROUTER_PORTS.https),
+  };
+}
+
 /**
  * Build the static config attaching forward auth to every entry point.
  *
@@ -206,7 +235,10 @@ export function readToolPorts(io: SetupIo = nodeIo): string[] {
  * stopped project should show the waiting page, while a tool port has nothing
  * to wait for.
  */
-export function buildStaticConfig(toolPorts: string[]): string {
+export function buildStaticConfig(
+  toolPorts: string[],
+  routerPorts: RouterPorts = DEFAULT_ROUTER_PORTS,
+): string {
   const webEntryPoint = (name: string) => `  ${name}:
     http:
       middlewares:
@@ -220,30 +252,32 @@ export function buildStaticConfig(toolPorts: string[]): string {
         - trafic-auth@file
 `;
 
+  // A tool port that happens to equal a router port must not be emitted
+  // twice: a duplicate key makes the whole static config invalid
+  const web = [routerPorts.http, routerPorts.https];
+  const tools = toolPorts.filter((port) => !web.includes(port));
+
   return `entryPoints:
-${webEntryPoint("http-80")}${webEntryPoint("http-443")}${toolPorts.map(toolEntryPoint).join("")}`;
+${web.map((port) => webEntryPoint(`http-${port}`)).join("")}${tools.map(toolEntryPoint).join("")}`;
 }
 
 /**
- * Configure Traefik for forward auth
+ * Build the dynamic config: the middlewares, the agent service, and the
+ * catch-all routers that hand a stopped project to the waiting page.
+ *
+ * One catch-all per web entry point, each naming the entry point it serves.
+ * A router that names none is instantiated by Traefik on *every* entry point,
+ * and DDEV's router health check compares the number of router definitions in
+ * its config files against the number Traefik reports. Two unpinned
+ * definitions became fourteen instances on a server with six tool entry
+ * points, so the counts never matched, the health check waited out its
+ * timeout, and every `ddev start` failed after 60 seconds.
  */
-export function configureTraefik(io: SetupIo = nodeIo): void {
-  step("Configure Traefik for forward auth");
-
-  // Create custom Traefik config directories
-  io.exec("mkdir -p /home/ddev/.ddev/traefik/custom-global-config", { silent: true });
-  io.exec("chown -R ddev:ddev /home/ddev/.ddev", { silent: true });
-
-  // Use the Docker bridge gateway IP instead of host.docker.internal —
-  // the latter is not available on Linux without extra Docker configuration.
-  const gatewayIp = getDockerGatewayIp(io);
-
-  // Dynamic configuration: defines the trafic-auth and trafic-errors middlewares
-  // and the trafic-service backend pointing at the agent.
-  // Written to:
-  //   - custom-global-config/ — picked up by DDEV 1.25+ (survives config dir purge on restart)
-  //   - traefik root — also watched by older DDEV versions
-  const dynamicConfig = `# Trafic: Forward auth middleware definition
+export function buildDynamicConfig(
+  gatewayIp: string,
+  routerPorts: RouterPorts = DEFAULT_ROUTER_PORTS,
+): string {
+  return `# Trafic: Forward auth middleware definition
 http:
   middlewares:
     trafic-auth:
@@ -261,22 +295,29 @@ http:
         query: "/"
 
   routers:
-    # Lowest priority, so a DDEV project router always wins. It only matches
-    # when none does - which is what a stopped project produces, because DDEV
+    # Lowest priority, so a DDEV project router always wins. These only match
+    # when none does — which is what a stopped project produces, because DDEV
     # removes that project's router and Traefik would otherwise answer 404.
-    # Without this the waiting page never appears and scale-to-zero never
+    # Without them the waiting page never appears and scale-to-zero never
     # restarts anything. Auth is unaffected: it is attached at the entry
     # point, not here, so this cannot reintroduce the bypass that #27 fixed.
     #
-    # Two of them, because a router carrying tls only matches HTTPS entry
-    # points: one alone would leave plain HTTP answering 404.
+    # Each names exactly one entry point. Leaving entryPoints out attaches a
+    # router to all of them, which breaks DDEV's router health check — it
+    # counts definitions and compares them to what Traefik loaded.
     trafic-catchall:
       rule: "PathPrefix(\`/\`)"
+      entryPoints:
+        - http-${routerPorts.http}
       priority: 1
       service: trafic-service
 
+    # Carries tls, so it only matches the https entry point. The plain one
+    # above cannot serve it, and one alone would leave HTTP answering 404.
     trafic-catchall-tls:
       rule: "PathPrefix(\`/\`)"
+      entryPoints:
+        - http-${routerPorts.https}
       priority: 1
       service: trafic-service
       tls: {}
@@ -287,20 +328,45 @@ http:
         servers:
           - url: "http://${gatewayIp}:9876"
 `;
+}
 
-  io.writeFile("/home/ddev/.ddev/traefik/trafic.yaml", dynamicConfig);
-  io.exec("chown ddev:ddev /home/ddev/.ddev/traefik/trafic.yaml", { silent: true });
+/**
+ * Configure Traefik for forward auth
+ */
+export function configureTraefik(io: SetupIo = nodeIo): void {
+  step("Configure Traefik for forward auth");
+
+  // Create custom Traefik config directories
+  io.exec("mkdir -p /home/ddev/.ddev/traefik/custom-global-config", { silent: true });
+  io.exec("chown -R ddev:ddev /home/ddev/.ddev", { silent: true });
+
+  // Use the Docker bridge gateway IP instead of host.docker.internal —
+  // the latter is not available on Linux without extra Docker configuration.
+  const gatewayIp = getDockerGatewayIp(io);
+
+  // Entry point names come from the ports, so both configs need them
+  const routerPorts = readRouterPorts(io);
+
+  // Dynamic configuration: the middlewares, the agent service and the
+  // catch-all routers. Written to custom-global-config/, which DDEV copies
+  // into the ddev-global-cache volume on project start. It used to be written
+  // to the traefik root as well, for DDEV versions that watched it — nothing
+  // reads that copy on 1.25, and having two made debugging harder.
+  const dynamicConfig = buildDynamicConfig(gatewayIp, routerPorts);
+
   io.writeFile("/home/ddev/.ddev/traefik/custom-global-config/trafic.yaml", dynamicConfig);
   io.exec("chown ddev:ddev /home/ddev/.ddev/traefik/custom-global-config/trafic.yaml", { silent: true });
 
-  // Static configuration: attaches trafic-auth and trafic-errors to the
-  // http-80 and http-443 entry points so every request goes through auth —
-  // regardless of which project router handles it.
+  // Static configuration: attaches trafic-auth to every entry point DDEV
+  // publishes, and trafic-errors to the web ones, so every request goes
+  // through auth regardless of which project router handles it.
   // DDEV merges all static_config.*.yaml files into .static_config.yaml on start.
-  const staticConfig = buildStaticConfig(readToolPorts(io));
+  const staticConfig = buildStaticConfig(readToolPorts(io), routerPorts);
 
   io.writeFile("/home/ddev/.ddev/traefik/static_config.trafic.yaml", staticConfig);
   io.exec("chown ddev:ddev /home/ddev/.ddev/traefik/static_config.trafic.yaml", { silent: true });
+
+  info(`Entry points: http-${routerPorts.http}, http-${routerPorts.https} (web) plus tool ports`);
 
   success("Traefik configured with Trafic middleware");
 }
