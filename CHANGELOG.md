@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Agent**: Route on the request path instead of the raw target, so a query string no longer breaks every internal endpoint. `req.url` carries the query, and the router compared it whole: `/__auth__?s=term` missed the auth branch and fell through to the waiting page. Caddy's `forward_auth` passes the original query along, so **every request carrying one answered 503** — a search, pagination, a tracking link, the `wp-login.php?redirect_to=` an admin request lands on. Worse, the waiting page starts the project, and `startProject` is synchronous, so each such request stalled the agent and everything queued behind it. That is the source of the intermittent multi-second responses and timeouts seen on a live server. `/__status__?project=` never reached its handler either, and `/__tls__` worked only through a hardcoded `startsWith("/__tls__?")` ([#44])
+
 ## [0.1.32] - 2026.09.03
 
 ### Fixed
@@ -407,6 +413,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#41]: https://github.com/studiometa/trafic/pull/41
 [#42]: https://github.com/studiometa/trafic/pull/42
 [#43]: https://github.com/studiometa/trafic/pull/43
+[#44]: https://github.com/studiometa/trafic/pull/44
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

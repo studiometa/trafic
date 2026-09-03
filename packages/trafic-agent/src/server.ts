@@ -235,23 +235,50 @@ function handleStatus(req: IncomingMessage, res: ServerResponse): void {
 }
 
 /**
+ * The path a request should be routed on, without the query string.
+ *
+ * `req.url` is a target, not a URL: it carries the query and, for a proxied
+ * request, may be absolute. Parsing against a fixed base keeps a malformed or
+ * absolute target from deciding the route, and a trailing slash is dropped so
+ * `/__auth__/` and `/__auth__` are the same endpoint.
+ */
+export function routePath(target: string | undefined): string {
+  let path: string;
+
+  try {
+    path = new URL(target ?? "/", "http://localhost").pathname;
+  } catch {
+    return "/";
+  }
+
+  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+}
+
+/**
  * Request handler
  */
 async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const url = req.url ?? "/";
+  // Route on the path alone. Matching the raw URL meant a query string threw
+  // every internal route off: Caddy's forward_auth passes the original query
+  // through, so `/__auth__?s=term` missed the auth branch and fell to the
+  // waiting page. Any URL carrying a query — a search, pagination, the
+  // `wp-login.php?redirect_to=` an admin request lands on — answered 503 and
+  // started an already-running project, and `startProject` is synchronous, so
+  // it stalled the agent and every request waiting on it.
+  const path = routePath(req.url);
 
   try {
     // Route requests
-    if (url === "/__auth__" || url.startsWith("/__auth__/")) {
+    if (path === "/__auth__" || path.startsWith("/__auth__/")) {
       handleAuth(req, res);
-    } else if (url === "/__status__" || url.startsWith("/__status__/")) {
+    } else if (path === "/__status__" || path.startsWith("/__status__/")) {
       handleStatus(req, res);
-    } else if (url === "/__tls__" || url.startsWith("/__tls__?")) {
+    } else if (path === "/__tls__") {
       handleTlsAsk(req, res);
-    } else if (url === "/__health__") {
+    } else if (path === "/__health__") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", version: "__VERSION__" }));
     } else {
