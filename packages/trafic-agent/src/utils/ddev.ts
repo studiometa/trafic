@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, watch } from "node:fs";
-import { execSync } from "node:child_process";
+import { execSync, execFile } from "node:child_process";
 import type { DdevProject } from "../types.js";
 
 /** Strip a single pair of surrounding quotes. */
@@ -120,15 +120,51 @@ export function watchProjectList(
 }
 
 /**
+ * Run a ddev command without blocking the event loop.
+ *
+ * The agent is single-threaded and serves forward auth for every project, so
+ * an `execSync` here stops the whole server for the duration of the command.
+ * `ddev start` takes over a minute, which froze auth for every unrelated
+ * project and produced request timeouts on a live server. Nothing about
+ * "background" work with setTimeout helps: the timer callback still runs on
+ * the same thread.
+ */
+function ddev(
+  args: string[],
+  timeoutMs: number,
+): Promise<{ ok: boolean; stdout: string }> {
+  return new Promise((resolve) => {
+    execFile(
+      "ddev",
+      args,
+      { encoding: "utf-8", timeout: timeoutMs },
+      (error, stdout) => {
+        if (error) {
+          console.error(`ddev ${args.join(" ")} failed:`, error.message);
+          resolve({ ok: false, stdout: stdout ?? "" });
+          return;
+        }
+
+        resolve({ ok: true, stdout: stdout ?? "" });
+      },
+    );
+  });
+}
+
+/**
  * Get detailed project info using ddev describe
  */
-export function getProjectInfo(name: string): DdevProject | undefined {
+export async function getProjectInfo(
+  name: string,
+): Promise<DdevProject | undefined> {
+  const { ok, stdout } = await ddev(["describe", name, "-j"], 10000);
+
+  if (!ok) {
+    return undefined;
+  }
+
   try {
-    const output = execSync(`ddev describe ${name} -j`, {
-      encoding: "utf-8",
-      timeout: 10000,
-    });
-    const data = JSON.parse(output);
+    const data = JSON.parse(stdout);
 
     if (!data.raw) return undefined;
 
@@ -149,37 +185,22 @@ export function getProjectInfo(name: string): DdevProject | undefined {
 }
 
 /**
- * Start a DDEV project
+ * Start a DDEV project.
+ *
+ * Resolves when the project is up. Callers in the request path must not await
+ * it — respond first, then let this settle and record the outcome.
  */
-export function startProject(name: string): boolean {
-  try {
-    execSync(`ddev start ${name}`, {
-      encoding: "utf-8",
-      timeout: 120000, // 2 minutes
-      stdio: "pipe",
-    });
-    return true;
-  } catch (error) {
-    console.error(`Failed to start project ${name}:`, error);
-    return false;
-  }
+export async function startProject(name: string): Promise<boolean> {
+  const { ok } = await ddev(["start", name], 120000);
+  return ok;
 }
 
 /**
  * Stop a DDEV project
  */
-export function stopProject(name: string): boolean {
-  try {
-    execSync(`ddev stop ${name}`, {
-      encoding: "utf-8",
-      timeout: 60000, // 1 minute
-      stdio: "pipe",
-    });
-    return true;
-  } catch (error) {
-    console.error(`Failed to stop project ${name}:`, error);
-    return false;
-  }
+export async function stopProject(name: string): Promise<boolean> {
+  const { ok } = await ddev(["stop", name], 60000);
+  return ok;
 }
 
 /**
