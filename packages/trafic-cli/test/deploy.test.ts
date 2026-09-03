@@ -229,3 +229,66 @@ describe("deploy container script", () => {
     expect(commands().some((c) => c.includes(".trafic-deploy.sh"))).toBe(false);
   });
 });
+
+describe("deploy router ports", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedTest.mockResolvedValue(false); // fresh clone
+    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+  });
+
+  function localConfigWrite(): string {
+    return (
+      mockedExec.mock.calls
+        .map((call) => call[1])
+        .find((c) => c.includes("config.local.yaml")) ?? ""
+    );
+  }
+
+  it("pins the project to the server's router ports", async () => {
+    mockedExec.mockImplementation(async (_o, command) => ({
+      stdout: command.includes("ddev config global")
+        ? "router-http-port=8080\nrouter-https-port=8443\n"
+        : "",
+      stderr: "",
+      exitCode: 0,
+    }));
+
+    await deploy(baseOptions);
+
+    // A project pinning its own ports overrides the global setting, and DDEV
+    // then picks arbitrary free ports that nothing proxies to
+    expect(localConfigWrite()).toContain('router_http_port: "8080"');
+    expect(localConfigWrite()).toContain('router_https_port: "8443"');
+  });
+
+  it("restates 80/443 on a standard layout", async () => {
+    mockedExec.mockImplementation(async (_o, command) => ({
+      stdout: command.includes("ddev config global")
+        ? "router-http-port=80\nrouter-https-port=443\n"
+        : "",
+      stderr: "",
+      exitCode: 0,
+    }));
+
+    await deploy(baseOptions);
+
+    expect(localConfigWrite()).toContain('router_http_port: "80"');
+  });
+
+  it("leaves the ports to DDEV when the config cannot be read", async () => {
+    await deploy(baseOptions);
+
+    // Guessing would be worse than letting the project keep its own value
+    expect(localConfigWrite()).not.toContain("router_http_port");
+    expect(localConfigWrite()).toContain("name: my-app");
+  });
+
+  it("does not rewrite the config on an existing clone", async () => {
+    mockedTest.mockResolvedValue(true);
+
+    await deploy(baseOptions);
+
+    expect(localConfigWrite()).toBe("");
+  });
+});

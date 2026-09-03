@@ -51,12 +51,19 @@ export async function deploy(options: DeployOptions): Promise<void> {
 
     // Write DDEV local config for first deployment
     info("Writing DDEV local config…");
+    const localConfig = [
+      `name: ${projectName}`,
+      "override_config: true",
+      ...(await resolveRouterPorts(options)),
+      "",
+    ].join("\\n");
+
     await ssh.exec(
       options,
       [
         `cd ${projectDir}`,
         `mkdir -p .ddev`,
-        `printf 'name: ${projectName}\\noverride_config: true\\n' > .ddev/config.local.yaml`,
+        `printf '${localConfig}' > .ddev/config.local.yaml`,
       ].join(" && "),
     );
   }
@@ -173,4 +180,37 @@ async function runContainerScript(
     // Leaving it behind would leave the values on disk
     await ssh.exec(options, `cd ${projectDir} && rm -f ${CONTAINER_SCRIPT}`);
   }
+}
+
+/**
+ * Pin the project's router ports to the server's global DDEV setting.
+ *
+ * A project that pins its own `router_http_port` overrides the global one, and
+ * DDEV then auto-assigns arbitrary free ports when the pinned pair is already
+ * taken on the host. The project comes up on ports nothing is proxying to, so
+ * it is unreachable — seen on a real server, where a preview landed on 33000
+ * and 33001 while the router listened on 8080.
+ *
+ * Reading the server's value rather than assuming one keeps this correct for
+ * any layout: where the router is on 80/443 the lines simply restate that.
+ */
+async function resolveRouterPorts(options: DeployOptions): Promise<string[]> {
+  const config = await ssh.exec(
+    options,
+    "ddev config global 2>/dev/null || true",
+    { log: "read ddev global config" },
+  );
+
+  const http = /^router-http-port=(\d+)$/m.exec(config.stdout)?.[1];
+  const https = /^router-https-port=(\d+)$/m.exec(config.stdout)?.[1];
+
+  if (!http || !https) {
+    // Leave the project's own configuration alone rather than guess
+    info("Could not read the router ports from the server — leaving them to DDEV");
+    return [];
+  }
+
+  info(`Router ports: ${http}/${https} (from the server's global config)`);
+
+  return [`router_http_port: "${http}"`, `router_https_port: "${https}"`];
 }
