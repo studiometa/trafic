@@ -141,6 +141,60 @@ export function classifyPath(path: string): PathKind {
   }
 }
 
+/** What a mirroring sync removed from the server. */
+export interface DeletionSummary {
+  /** How many paths rsync deleted. */
+  files: number;
+  /**
+   * The distinct top-level entries affected, relative to the synced
+   * directory. A whole plugin disappearing is the thing worth seeing; the
+   * hundreds of files inside it are not.
+   */
+  entries: string[];
+}
+
+/**
+ * Summarise the deletions in rsync's output.
+ *
+ * `--delete` is the right default for a build artifact — a file the build
+ * stops producing should stop existing on the server — but with `-v` the
+ * `deleting` lines are buried among every transferred path. On a real deploy
+ * that hid a WordPress plugin being removed because it was installed by hand
+ * and absent from `composer.json`: thousands of lines scrolled past and
+ * nothing said a plugin had gone.
+ */
+export function summarizeDeletions(output: string): DeletionSummary {
+  const deleted = output
+    .split("\n")
+    .map((line) => /^deleting (.+)$/.exec(line.trim())?.[1])
+    .filter((path): path is string => Boolean(path));
+
+  // Group by first path segment: one entry per plugin, theme or vendor
+  // package rather than one per file inside it
+  const entries = new Set(
+    deleted.map((path) => path.replace(/^\.\//, "").split("/")[0] ?? path),
+  );
+
+  return { files: deleted.length, entries: [...entries].filter(Boolean).sort() };
+}
+
+/** Format a summary for a human, or undefined when nothing was removed. */
+export function formatDeletions(
+  summary: DeletionSummary,
+  limit = 5,
+): string | undefined {
+  if (summary.files === 0) {
+    return undefined;
+  }
+
+  const shown = summary.entries.slice(0, limit).join(", ");
+  const rest = summary.entries.length - limit;
+  const suffix = rest > 0 ? `, and ${rest} more` : "";
+  const plural = summary.files === 1 ? "path" : "paths";
+
+  return `removed ${summary.files} ${plural} under: ${shown}${suffix}`;
+}
+
 /**
  * Rsync a local path to the remote server.
  *

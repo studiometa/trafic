@@ -4,7 +4,10 @@ import * as ssh from "../src/ssh.js";
 import type { DeployOptions } from "../src/types.js";
 
 // Mock SSH module
-vi.mock("../src/ssh.js", () => ({
+// Mock only the I/O. The pure helpers stay real, so a change in how
+// deletions are summarised is exercised here rather than stubbed out.
+vi.mock("../src/ssh.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/ssh.js")>()),
   exec: vi.fn(),
   test: vi.fn(),
   rsync: vi.fn(),
@@ -370,5 +373,61 @@ describe("deploy --create-script", () => {
 
     // A half-imported database is worse than a failed pipeline
     await expect(deploy(createOptions)).rejects.toThrow("pull failed");
+  });
+});
+
+describe("deploy sync deletion reporting", () => {
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+    mockedTest.mockResolvedValue(true);
+  });
+
+  /** Everything passed to console.warn, joined. */
+  function warnings(): string {
+    return warnSpy.mock.calls.map((call) => String(call[0])).join("\n");
+  }
+
+  it("warns about what the mirror removed", async () => {
+    mockedRsync.mockResolvedValue({
+      stdout:
+        "deleting headers-security-advanced-hsts-wp/index.php\ndeleting headers-security-advanced-hsts-wp/\n",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    await deploy({ ...baseOptions, sync: "web/wp-content/plugins" });
+
+    // Silent removal is how a hand-installed plugin disappeared unnoticed
+    expect(warnings()).toContain("web/wp-content/plugins");
+    expect(warnings()).toContain("removed 2 paths");
+    expect(warnings()).toContain("headers-security-advanced-hsts-wp");
+  });
+
+  it("says nothing when the sync removed nothing", async () => {
+    mockedRsync.mockResolvedValue({
+      stdout: "sending incremental file list\n./\ndist/app.js\n",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    await deploy({ ...baseOptions, sync: "dist" });
+
+    expect(warnings()).not.toContain("removed");
+  });
+
+  it("reports each synced path separately", async () => {
+    mockedRsync.mockResolvedValue({
+      stdout: "deleting stale.txt\n",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    await deploy({ ...baseOptions, sync: "vendor,dist" });
+
+    expect(warnings()).toContain("vendor:");
+    expect(warnings()).toContain("dist:");
   });
 });
