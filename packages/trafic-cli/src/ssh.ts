@@ -81,6 +81,16 @@ export function parseDuration(value: string | undefined): number | undefined {
 }
 
 /**
+ * Runs a local command. Injected so tests drive the result directly rather
+ * than replacing node:child_process for the whole module.
+ */
+export type CommandRunner = (
+  command: string,
+  args: string[],
+  timeoutMs: number,
+) => Promise<ExecResult>;
+
+/**
  * Execute a command on a remote host via SSH.
  */
 export async function exec(
@@ -91,6 +101,7 @@ export async function exec(
   const {
     timeoutMs = parseDuration(options.timeout) ?? DEFAULT_TIMEOUT_MS,
     log,
+    runner = run,
   } = execOptions;
   const args = [...buildSSHArgs(options), buildDestination(options), command];
 
@@ -98,7 +109,7 @@ export async function exec(
   // reaches the job output
   info(`ssh ${options.user}@${options.host} ${truncate(log ?? command, 80)}`);
 
-  return run("ssh", args, timeoutMs);
+  return runner("ssh", args, timeoutMs);
 }
 
 /**
@@ -109,6 +120,8 @@ export interface ExecOptions {
   timeoutMs?: number;
   /** Printed instead of the command itself, for commands holding secrets */
   log?: string;
+  /** Overrides how the command is run. Tests pass their own. */
+  runner?: CommandRunner;
 }
 
 /**
@@ -118,9 +131,10 @@ export interface ExecOptions {
 export async function test(
   options: SSHOptions,
   command: string,
+  execOptions: ExecOptions = {},
 ): Promise<boolean> {
   try {
-    const result = await exec(options, command);
+    const result = await exec(options, command, execOptions);
     return result.exitCode === 0;
   } catch {
     return false;
@@ -213,6 +227,7 @@ export async function rsync(
   remotePath: string,
   options: SSHOptions,
   classify: (path: string) => PathKind = classifyPath,
+  runner: CommandRunner = run,
 ): Promise<ExecResult> {
   const kind = classify(localPath);
 
@@ -242,13 +257,29 @@ export async function rsync(
 
   info(`rsync ${localPath} → ${options.host}:${remotePath}`);
 
-  return run("rsync", args);
+  return runner("rsync", args, DEFAULT_TIMEOUT_MS);
 }
+
+/**
+ * The remote operations a command performs.
+ *
+ * Injected so tests drive them directly rather than replacing this module.
+ * One shape for every command, even where a command uses only part of it:
+ * three near-identical interfaces would cost more than the unused field.
+ */
+export interface SshIo {
+  exec: typeof exec;
+  test: typeof test;
+  rsync: typeof rsync;
+}
+
+/** The real operations, used unless a caller passes its own. */
+export const nodeSshIo: SshIo = { exec, test, rsync };
 
 /**
  * Execute a local command and return the result.
  */
-function run(
+export function run(
   command: string,
   args: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,

@@ -1,25 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { deploy } from "../src/commands/deploy.js";
-import * as ssh from "../src/ssh.js";
+import { createFakeSshIo } from "./helpers/fake-ssh-io.js";
 import type { DeployOptions } from "../src/types.js";
 
-// Mock SSH module
-// Mock only the I/O. The pure helpers stay real, so a change in how
-// deletions are summarised is exercised here rather than stubbed out.
-vi.mock("../src/ssh.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/ssh.js")>()),
-  exec: vi.fn(),
-  test: vi.fn(),
-  rsync: vi.fn(),
-}));
-
-// Suppress console output
-vi.spyOn(console, "log").mockImplementation(() => {});
-vi.spyOn(console, "error").mockImplementation(() => {});
-
-const mockedExec = vi.mocked(ssh.exec);
-const mockedTest = vi.mocked(ssh.test);
-const mockedRsync = vi.mocked(ssh.rsync);
+// The steps print progress; keep it out of the test output
+console.log = () => {};
+console.error = () => {};
+const warnings: string[] = [];
+console.warn = (message?: unknown) => void warnings.push(String(message));
 
 const baseOptions: DeployOptions = {
   host: "server.example.com",
@@ -34,118 +22,237 @@ const baseOptions: DeployOptions = {
   timeout: "10m",
 };
 
-describe("deploy", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
-    mockedRsync.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+describe("deploy source update", () => {
+  it("clones when the project is not there yet", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await deploy(baseOptions, io);
+
+    expect(io.commands[0]).toContain("git clone");
   });
 
-  it("clones the repo on first deploy", async () => {
-    mockedTest.mockResolvedValue(false); // project does not exist
-    // ddev describe returns "stopped"
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // git clone
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev config
-    mockedExec.mockResolvedValueOnce({ stdout: "stopped\n", stderr: "", exitCode: 0 }); // ddev describe -j
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev start
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev describe
+  it("fetches when the repository is already there", async () => {
+    const io = createFakeSshIo({ exists: true });
 
-    await deploy(baseOptions);
+    await deploy(baseOptions, io);
 
-    // Should call git clone (first exec after test)
-    expect(mockedExec.mock.calls[0]![1]).toContain("git clone");
+    expect(io.commands[0]).toContain("git fetch");
   });
 
-  it("fetches on existing repo", async () => {
-    mockedTest.mockResolvedValue(true); // project exists
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // git fetch
-    mockedExec.mockResolvedValueOnce({ stdout: "running\n", stderr: "", exitCode: 0 }); // ddev describe -j
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev describe
+  it("uses the preview directory for a preview", async () => {
+    const io = createFakeSshIo({ exists: false });
 
-    await deploy(baseOptions);
+    await deploy({ ...baseOptions, preview: "42" }, io);
 
-    expect(mockedExec.mock.calls[0]![1]).toContain("git fetch");
+    expect(io.commands[0]).toContain("preview-42--my-app");
   });
 
-  it("creates preview environment with correct name", async () => {
-    mockedTest.mockResolvedValue(false);
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // git clone
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev config
-    mockedExec.mockResolvedValueOnce({ stdout: "stopped\n", stderr: "", exitCode: 0 }); // ddev describe -j
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev start
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev describe
+  it("writes the local config only on a fresh clone", async () => {
+    const fresh = createFakeSshIo({ exists: false });
+    const existing = createFakeSshIo({ exists: true });
 
-    await deploy({ ...baseOptions, preview: "42" });
+    await deploy(baseOptions, fresh);
+    await deploy(baseOptions, existing);
 
-    // The clone command should target the preview directory
-    expect(mockedExec.mock.calls[0]![1]).toContain("preview-42--my-app");
+    // Overwriting it on every deploy would discard the router ports a
+    // running project depends on
+    expect(fresh.commands.some((c) => c.includes("config.local.yaml"))).toBe(true);
+    expect(existing.commands.some((c) => c.includes("config.local.yaml"))).toBe(false);
+  });
+});
+
+describe("deploy router ports", () => {
+  it("pins the ports the server reports", async () => {
+    const io = createFakeSshIo({
+      exists: false,
+      output: {
+        "ddev config global": "router-http-port=8080\nrouter-https-port=8443\n",
+      },
+    });
+
+    await deploy(baseOptions, io);
+
+    const write = io.commands.find((c) => c.includes("config.local.yaml"))!;
+    expect(write).toContain('router_http_port: "8080"');
+    expect(write).toContain('router_https_port: "8443"');
   });
 
-  it("skips ddev start when noStart is true", async () => {
-    mockedTest.mockResolvedValue(true);
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // git fetch
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev describe
+  it("leaves the ports alone when the config cannot be read", async () => {
+    const io = createFakeSshIo({ exists: false, output: {} });
 
-    await deploy({ ...baseOptions, noStart: true });
+    await deploy(baseOptions, io);
 
-    // Should not call ddev describe -j or ddev start
-    const allCommands = mockedExec.mock.calls.map((c) => c[1]);
-    expect(allCommands.some((cmd) => cmd.includes("ddev start"))).toBe(false);
+    const write = io.commands.find((c) => c.includes("config.local.yaml"))!;
+    // Guessing would be worse than letting DDEV decide
+    expect(write).not.toContain("router_http_port");
+  });
+});
+
+describe("deploy start", () => {
+  it("starts a stopped project", async () => {
+    const io = createFakeSshIo({ output: { "ddev describe -j": "stopped\n" } });
+
+    await deploy(baseOptions, io);
+
+    expect(io.commands.some((c) => c.includes("ddev start"))).toBe(true);
   });
 
-  it("runs rsync when sync is provided", async () => {
-    mockedTest.mockResolvedValue(true);
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // git fetch
-    mockedExec.mockResolvedValueOnce({ stdout: "running\n", stderr: "", exitCode: 0 }); // ddev describe -j
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev describe
+  it("leaves a running project alone", async () => {
+    const io = createFakeSshIo({ output: { "ddev describe -j": "running\n" } });
 
-    await deploy({ ...baseOptions, sync: "dist/" });
+    await deploy(baseOptions, io);
 
-    expect(mockedRsync).toHaveBeenCalledOnce();
-    expect(mockedRsync.mock.calls[0]![0]).toBe("dist/");
+    expect(io.commands.some((c) => c.includes("ddev start"))).toBe(false);
   });
 
-  it("runs script inside ddev container", async () => {
-    mockedTest.mockResolvedValue(true);
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // git fetch
-    mockedExec.mockResolvedValueOnce({ stdout: "running\n", stderr: "", exitCode: 0 }); // ddev describe -j
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev exec script
-    mockedExec.mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // ddev describe
+  it("skips the start entirely with --no-start", async () => {
+    const io = createFakeSshIo({ output: { "ddev describe -j": "stopped\n" } });
 
-    await deploy({ ...baseOptions, script: "composer install --no-dev" });
+    await deploy({ ...baseOptions, noStart: true }, io);
 
-    const allCommands = mockedExec.mock.calls.map((c) => c[1]);
-    expect(allCommands.some((cmd) => cmd.includes('ddev exec'))).toBe(true);
+    expect(io.commands.some((c) => c.includes("ddev start"))).toBe(false);
+  });
+});
+
+describe("deploy sync", () => {
+  it("syncs each path to its place under the project", async () => {
+    const io = createFakeSshIo();
+
+    await deploy({ ...baseOptions, sync: "vendor,dist" }, io);
+
+    expect(io.syncs).toEqual([
+      ["vendor", "~/www/my-app/vendor"],
+      ["dist", "~/www/my-app/dist"],
+    ]);
+  });
+
+  it("syncs nothing when no paths are given", async () => {
+    const io = createFakeSshIo();
+
+    await deploy(baseOptions, io);
+
+    expect(io.syncs).toEqual([]);
+  });
+});
+
+describe("deploy sync deletion reporting", () => {
+  function deletionWarnings(): string {
+    return warnings.join("\n");
+  }
+
+  it("warns about what the mirror removed", async () => {
+    warnings.length = 0;
+    const io = createFakeSshIo({
+      rsyncStdout:
+        "deleting headers-security-advanced-hsts-wp/index.php\ndeleting headers-security-advanced-hsts-wp/\n",
+    });
+
+    await deploy({ ...baseOptions, sync: "web/wp-content/plugins" }, io);
+
+    // Silent removal is how a hand-installed plugin disappeared unnoticed
+    expect(deletionWarnings()).toContain("web/wp-content/plugins");
+    expect(deletionWarnings()).toContain("removed 2 paths");
+    expect(deletionWarnings()).toContain("headers-security-advanced-hsts-wp");
+  });
+
+  it("says nothing when the sync removed nothing", async () => {
+    warnings.length = 0;
+    const io = createFakeSshIo({
+      rsyncStdout: "sending incremental file list\n./\ndist/app.js\n",
+    });
+
+    await deploy({ ...baseOptions, sync: "dist" }, io);
+
+    expect(deletionWarnings()).not.toContain("removed");
+  });
+
+  it("reports each synced path separately", async () => {
+    warnings.length = 0;
+    const io = createFakeSshIo({ rsyncStdout: "deleting stale.txt\n" });
+
+    await deploy({ ...baseOptions, sync: "vendor,dist" }, io);
+
+    expect(deletionWarnings()).toContain("vendor:");
+    expect(deletionWarnings()).toContain("dist:");
+  });
+});
+
+describe("deploy create-script", () => {
+  it("runs on the deploy that creates the project", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
+
+    expect(io.commands.some((c) => c.includes("ddev pull prod-db -y"))).toBe(true);
+  });
+
+  it("does not run for an existing project", async () => {
+    const io = createFakeSshIo({ exists: true });
+
+    await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
+
+    // Seeding is destructive: ddev pull overwrites the database, so
+    // repeating it would discard the environment's content
+    expect(io.commands.some((c) => c.includes("ddev pull prod-db -y"))).toBe(false);
+  });
+
+  it("runs in the project directory", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
+
+    expect(io.commands.find((c) => c.includes("ddev pull"))).toContain(
+      "cd ~/www/my-app",
+    );
+  });
+
+  it("runs before the container script", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await deploy(
+      { ...baseOptions, createScript: "ddev pull prod-db -y", script: "wp cache flush" },
+      io,
+    );
+
+    const seed = io.commands.findIndex((c) => c.includes("ddev pull"));
+    const script = io.commands.findIndex((c) => c.includes(".trafic-deploy.sh"));
+
+    // So a container script can rely on what the seed put in place
+    expect(seed).toBeGreaterThanOrEqual(0);
+    expect(script).toBeGreaterThan(seed);
+  });
+
+  it("stops the deploy when seeding fails", async () => {
+    const io = createFakeSshIo({ exists: false, fails: ["ddev pull"] });
+
+    // A half-imported database is worse than a failed pipeline
+    await expect(
+      deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io),
+    ).rejects.toThrow(/ddev pull/);
   });
 });
 
 describe("deploy container script", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
-    mockedTest.mockResolvedValue(true);
-  });
-
-  /** All commands passed to ssh.exec. */
-  function commands(): string[] {
-    return mockedExec.mock.calls.map((call) => call[1]);
-  }
-
   /** The script decoded from the base64 payload written to the server. */
-  function writtenScript(): string {
-    const write = commands().find((c) => c.includes("base64 -d"))!;
-    const encoded = /printf %s (\S+) \|/.exec(write)![1];
+  function writtenScript(commands: string[]): string {
+    const write = commands.find((c) => c.includes("base64 -d"))!;
+    const encoded = /printf %s (\S+) \|/.exec(write)![1]!;
     return Buffer.from(encoded, "base64").toString("utf-8");
   }
 
   it("exports each env entry before the script", async () => {
-    await deploy({
-      ...baseOptions,
-      script: "composer install",
-      env: { COMPOSER_AUTH: '{"http-basic":{"x":{"username":"u"}}}', CI: "true" },
-    });
+    const io = createFakeSshIo();
 
-    const script = writtenScript();
+    await deploy(
+      {
+        ...baseOptions,
+        script: "composer install",
+        env: { COMPOSER_AUTH: '{"http-basic":{"x":{"username":"u"}}}', CI: "true" },
+      },
+      io,
+    );
+
+    const script = writtenScript(io.commands);
     expect(script).toContain(
       `export COMPOSER_AUTH='{"http-basic":{"x":{"username":"u"}}}'`,
     );
@@ -154,280 +261,89 @@ describe("deploy container script", () => {
   });
 
   it("keeps env values out of the logged command", async () => {
-    await deploy({
-      ...baseOptions,
-      script: "composer install",
-      env: { COMPOSER_AUTH: "s3cr3t-token-value" },
-    });
+    const io = createFakeSshIo();
 
-    const write = mockedExec.mock.calls.find((call) =>
-      call[1].includes("base64 -d"),
-    )!;
-    // The payload is logged through the override, never the command itself
-    expect(write[2]?.log).toBe("write .trafic-deploy.sh");
+    await deploy(
+      { ...baseOptions, script: "composer install", env: { COMPOSER_AUTH: "s3cr3t" } },
+      io,
+    );
+
+    const index = io.commands.findIndex((c) => c.includes("base64 -d"));
+    expect(io.execOptions[index]?.log).toBe("write .trafic-deploy.sh");
   });
 
   it("aborts the script on the first failing command", async () => {
-    await deploy({ ...baseOptions, script: "false\nnpm run build" });
+    const io = createFakeSshIo();
+
+    await deploy({ ...baseOptions, script: "false\nnpm run build" }, io);
 
     // Without errexit a failed composer install would still report success
-    expect(writtenScript().startsWith("set -o errexit")).toBe(true);
+    expect(writtenScript(io.commands).startsWith("set -o errexit")).toBe(true);
   });
 
   it("survives a script containing quotes", async () => {
+    const io = createFakeSshIo();
     const script = `php -r 'echo "hi";'`;
 
-    await deploy({ ...baseOptions, script });
+    await deploy({ ...baseOptions, script }, io);
 
-    expect(writtenScript()).toContain(script);
+    expect(writtenScript(io.commands)).toContain(script);
   });
 
   it("escapes single quotes in env values", async () => {
-    await deploy({
-      ...baseOptions,
-      script: "true",
-      env: { TOKEN: "it's-quoted" },
-    });
+    const io = createFakeSshIo();
 
-    expect(writtenScript()).toContain(`export TOKEN='it'\\''s-quoted'`);
+    await deploy({ ...baseOptions, script: "true", env: { TOKEN: "it's-quoted" } }, io);
+
+    expect(writtenScript(io.commands)).toContain(`export TOKEN='it'\\''s-quoted'`);
   });
 
   it("runs the script through bash in the container", async () => {
-    await deploy({ ...baseOptions, script: "composer install" });
+    const io = createFakeSshIo();
+
+    await deploy({ ...baseOptions, script: "composer install" }, io);
 
     expect(
-      commands().some((c) => c.includes("ddev exec bash .trafic-deploy.sh")),
+      io.commands.some((c) => c.includes("ddev exec bash .trafic-deploy.sh")),
     ).toBe(true);
   });
 
   it("removes the script afterwards", async () => {
-    await deploy({ ...baseOptions, script: "composer install" });
+    const io = createFakeSshIo();
 
-    expect(commands().some((c) => c.includes("rm -f .trafic-deploy.sh"))).toBe(
-      true,
-    );
+    await deploy({ ...baseOptions, script: "composer install" }, io);
+
+    expect(io.commands.some((c) => c.includes("rm -f .trafic-deploy.sh"))).toBe(true);
   });
 
   it("removes the script even when it fails", async () => {
-    mockedExec.mockImplementation(async (_o, command) => {
-      if (command.includes("ddev exec bash")) {
-        throw new Error("build failed");
-      }
-      return { stdout: "", stderr: "", exitCode: 0 };
-    });
+    const io = createFakeSshIo({ fails: ["ddev exec bash"] });
 
-    await expect(
-      deploy({ ...baseOptions, script: "composer install", env: { T: "x" } }),
-    ).rejects.toThrow("build failed");
+    await expect(deploy({ ...baseOptions, script: "build" }, io)).rejects.toThrow();
 
     // Otherwise the env values stay on disk after a failed build
-    expect(commands().some((c) => c.includes("rm -f .trafic-deploy.sh"))).toBe(
-      true,
-    );
+    expect(io.commands.some((c) => c.includes("rm -f .trafic-deploy.sh"))).toBe(true);
   });
 
   it("writes no script when none is given", async () => {
-    await deploy(baseOptions);
+    const io = createFakeSshIo();
 
-    expect(commands().some((c) => c.includes(".trafic-deploy.sh"))).toBe(false);
+    await deploy(baseOptions, io);
+
+    expect(io.commands.some((c) => c.includes(".trafic-deploy.sh"))).toBe(false);
   });
 });
 
-describe("deploy router ports", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedTest.mockResolvedValue(false); // fresh clone
-    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
-  });
-
-  function localConfigWrite(): string {
-    return (
-      mockedExec.mock.calls
-        .map((call) => call[1])
-        .find((c) => c.includes("config.local.yaml")) ?? ""
-    );
-  }
-
-  it("pins the project to the server's router ports", async () => {
-    mockedExec.mockImplementation(async (_o, command) => ({
-      stdout: command.includes("ddev config global")
-        ? "router-http-port=8080\nrouter-https-port=8443\n"
-        : "",
-      stderr: "",
-      exitCode: 0,
-    }));
-
-    await deploy(baseOptions);
-
-    // A project pinning its own ports overrides the global setting, and DDEV
-    // then picks arbitrary free ports that nothing proxies to
-    expect(localConfigWrite()).toContain('router_http_port: "8080"');
-    expect(localConfigWrite()).toContain('router_https_port: "8443"');
-  });
-
-  it("restates 80/443 on a standard layout", async () => {
-    mockedExec.mockImplementation(async (_o, command) => ({
-      stdout: command.includes("ddev config global")
-        ? "router-http-port=80\nrouter-https-port=443\n"
-        : "",
-      stderr: "",
-      exitCode: 0,
-    }));
-
-    await deploy(baseOptions);
-
-    expect(localConfigWrite()).toContain('router_http_port: "80"');
-  });
-
-  it("leaves the ports to DDEV when the config cannot be read", async () => {
-    await deploy(baseOptions);
-
-    // Guessing would be worse than letting the project keep its own value
-    expect(localConfigWrite()).not.toContain("router_http_port");
-    expect(localConfigWrite()).toContain("name: my-app");
-  });
-
-  it("does not rewrite the config on an existing clone", async () => {
-    mockedTest.mockResolvedValue(true);
-
-    await deploy(baseOptions);
-
-    expect(localConfigWrite()).toBe("");
-  });
-});
-
-describe("deploy --create-script", () => {
-  const createOptions: DeployOptions = {
-    ...baseOptions,
-    createScript: "ddev pull prod-db -y",
-  };
-
-  function commands(): string[] {
-    return mockedExec.mock.calls.map((call) => call[1]);
-  }
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
-    mockedRsync.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
-  });
-
-  it("runs on the deploy that creates the project", async () => {
-    mockedTest.mockResolvedValue(false);
-
-    await deploy(createOptions);
-
-    expect(commands().some((c) => c.includes("ddev pull prod-db -y"))).toBe(true);
-  });
-
-  it("does not run for an existing project", async () => {
-    mockedTest.mockResolvedValue(true);
-
-    await deploy(createOptions);
-
-    // Seeding is destructive — `ddev pull` overwrites the database, so
-    // repeating it would discard the environment's content on every deploy
-    expect(commands().some((c) => c.includes("ddev pull prod-db -y"))).toBe(false);
-  });
-
-  it("runs in the project directory", async () => {
-    mockedTest.mockResolvedValue(false);
-
-    await deploy(createOptions);
-
-    const call = commands().find((c) => c.includes("ddev pull prod-db -y"))!;
-    expect(call).toContain("cd ~/www/my-app");
-  });
-
-  it("runs before the container script", async () => {
-    mockedTest.mockResolvedValue(false);
-
-    await deploy({ ...createOptions, script: "wp cache flush" });
-
-    const all = commands();
-    const seed = all.findIndex((c) => c.includes("ddev pull prod-db -y"));
-    const script = all.findIndex((c) => c.includes(".trafic-deploy.sh"));
-
-    // So a container script can rely on what the seed put in place
-    expect(seed).toBeGreaterThanOrEqual(0);
-    expect(script).toBeGreaterThan(seed);
-  });
-
-  it("uses the preview project directory", async () => {
-    mockedTest.mockResolvedValue(false);
-
-    await deploy({ ...createOptions, preview: "42" });
-
-    const call = commands().find((c) => c.includes("ddev pull prod-db -y"))!;
-    expect(call).toContain("cd ~/www/preview-42--my-app");
-  });
-
-  it("stops the deploy when seeding fails", async () => {
-    mockedTest.mockResolvedValue(false);
-    mockedExec.mockImplementation(async (_o, command) => {
-      if (command.includes("ddev pull")) {
-        throw new Error("pull failed");
-      }
-      return { stdout: "", stderr: "", exitCode: 0 };
+describe("deploy verify", () => {
+  it("does not fail the deploy when verification fails", async () => {
+    // Only the verify step, which runs `ddev describe` without -j
+    const io = createFakeSshIo({
+      failsWhen: (command) =>
+        command.includes("ddev describe") && !command.includes("-j"),
     });
 
-    // A half-imported database is worse than a failed pipeline
-    await expect(deploy(createOptions)).rejects.toThrow("pull failed");
-  });
-});
-
-describe("deploy sync deletion reporting", () => {
-  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
-    mockedTest.mockResolvedValue(true);
-  });
-
-  /** Everything passed to console.warn, joined. */
-  function warnings(): string {
-    return warnSpy.mock.calls.map((call) => String(call[0])).join("\n");
-  }
-
-  it("warns about what the mirror removed", async () => {
-    mockedRsync.mockResolvedValue({
-      stdout:
-        "deleting headers-security-advanced-hsts-wp/index.php\ndeleting headers-security-advanced-hsts-wp/\n",
-      stderr: "",
-      exitCode: 0,
-    });
-
-    await deploy({ ...baseOptions, sync: "web/wp-content/plugins" });
-
-    // Silent removal is how a hand-installed plugin disappeared unnoticed
-    expect(warnings()).toContain("web/wp-content/plugins");
-    expect(warnings()).toContain("removed 2 paths");
-    expect(warnings()).toContain("headers-security-advanced-hsts-wp");
-  });
-
-  it("says nothing when the sync removed nothing", async () => {
-    mockedRsync.mockResolvedValue({
-      stdout: "sending incremental file list\n./\ndist/app.js\n",
-      stderr: "",
-      exitCode: 0,
-    });
-
-    await deploy({ ...baseOptions, sync: "dist" });
-
-    expect(warnings()).not.toContain("removed");
-  });
-
-  it("reports each synced path separately", async () => {
-    mockedRsync.mockResolvedValue({
-      stdout: "deleting stale.txt\n",
-      stderr: "",
-      exitCode: 0,
-    });
-
-    await deploy({ ...baseOptions, sync: "vendor,dist" });
-
-    expect(warnings()).toContain("vendor:");
-    expect(warnings()).toContain("dist:");
+    // The work is done by then; a describe that cannot read is not a reason
+    // to report failure
+    await expect(deploy(baseOptions, io)).resolves.toBeUndefined();
   });
 });

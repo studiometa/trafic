@@ -10,7 +10,10 @@ import { resolveProjectName } from "../types.js";
  * 1. Stop and delete the DDEV project
  * 2. Remove the project directory
  */
-export async function destroy(options: DestroyOptions): Promise<void> {
+export async function destroy(
+  options: DestroyOptions,
+  io: ssh.SshIo = ssh.nodeSshIo,
+): Promise<void> {
   resetSteps();
 
   const projectName = resolveProjectName(options.name, options.preview);
@@ -21,7 +24,7 @@ export async function destroy(options: DestroyOptions): Promise<void> {
   info(`Directory: ${projectDir}`);
 
   // Check if the project directory exists
-  const exists = await ssh.test(options, `test -d ${projectDir}`);
+  const exists = await io.test(options, `test -d ${projectDir}`);
 
   if (!exists) {
     warn(`Project directory ${projectDir} does not exist — nothing to destroy`);
@@ -32,7 +35,7 @@ export async function destroy(options: DestroyOptions): Promise<void> {
   step("Delete DDEV project");
 
   try {
-    await ssh.exec(
+    await io.exec(
       options,
       `cd ${projectDir} && ddev delete -Oy`,
     );
@@ -44,7 +47,7 @@ export async function destroy(options: DestroyOptions): Promise<void> {
   // 2. Remove the project directory
   step("Remove project directory");
 
-  await ssh.exec(options, `rm -rf ${projectDir}`);
+  await io.exec(options, `rm -rf ${projectDir}`);
 
   success(`Destroyed ${projectName}`);
 }

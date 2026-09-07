@@ -129,11 +129,23 @@ export function watchProjectList(
  * "background" work with setTimeout helps: the timer callback still runs on
  * the same thread.
  */
-function ddev(
+export interface DdevResult {
+  ok: boolean;
+  stdout: string;
+}
+
+/**
+ * Runs a ddev command. Injected so tests drive the outcome directly instead
+ * of replacing node:child_process for the whole module.
+ */
+export type DdevRunner = (
   args: string[],
   timeoutMs: number,
-): Promise<{ ok: boolean; stdout: string }> {
-  return new Promise((resolve) => {
+) => Promise<DdevResult>;
+
+/** The real runner, used unless a caller passes its own. */
+export const nodeDdevRunner: DdevRunner = (args, timeoutMs) =>
+  new Promise((resolve) => {
     execFile(
       "ddev",
       args,
@@ -149,15 +161,15 @@ function ddev(
       },
     );
   });
-}
 
 /**
  * Get detailed project info using ddev describe
  */
 export async function getProjectInfo(
   name: string,
+  run: DdevRunner = nodeDdevRunner,
 ): Promise<DdevProject | undefined> {
-  const { ok, stdout } = await ddev(["describe", name, "-j"], 10000);
+  const { ok, stdout } = await run(["describe", name, "-j"], 10000);
 
   if (!ok) {
     return undefined;
@@ -190,16 +202,22 @@ export async function getProjectInfo(
  * Resolves when the project is up. Callers in the request path must not await
  * it — respond first, then let this settle and record the outcome.
  */
-export async function startProject(name: string): Promise<boolean> {
-  const { ok } = await ddev(["start", name], 120000);
+export async function startProject(
+  name: string,
+  run: DdevRunner = nodeDdevRunner,
+): Promise<boolean> {
+  const { ok } = await run(["start", name], 120000);
   return ok;
 }
 
 /**
  * Stop a DDEV project
  */
-export async function stopProject(name: string): Promise<boolean> {
-  const { ok } = await ddev(["stop", name], 60000);
+export async function stopProject(
+  name: string,
+  run: DdevRunner = nodeDdevRunner,
+): Promise<boolean> {
+  const { ok } = await run(["stop", name], 60000);
   return ok;
 }
 

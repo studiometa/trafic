@@ -15,7 +15,10 @@ import { resolveProjectName } from "../types.js";
  * 6. Run after-script (on server, outside container)
  * 7. Verify deployment
  */
-export async function deploy(options: DeployOptions): Promise<void> {
+export async function deploy(
+  options: DeployOptions,
+  io: ssh.SshIo = ssh.nodeSshIo,
+): Promise<void> {
   resetSteps();
 
   const projectName = resolveProjectName(options.name, options.preview);
@@ -29,11 +32,11 @@ export async function deploy(options: DeployOptions): Promise<void> {
   // 1. Clone or pull
   step("Update source code");
 
-  const exists = await ssh.test(options, `test -d ${projectDir}/.git`);
+  const exists = await io.test(options, `test -d ${projectDir}/.git`);
 
   if (exists) {
     info("Repository exists, fetching latest changes…");
-    await ssh.exec(
+    await io.exec(
       options,
       [
         `cd ${projectDir}`,
@@ -44,7 +47,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
     );
   } else {
     info("Cloning repository…");
-    await ssh.exec(
+    await io.exec(
       options,
       `git clone --depth 1 --branch ${options.branch} ${options.repo} ${projectDir}`,
     );
@@ -54,11 +57,11 @@ export async function deploy(options: DeployOptions): Promise<void> {
     const localConfig = [
       `name: ${projectName}`,
       "override_config: true",
-      ...(await resolveRouterPorts(options)),
+      ...(await resolveRouterPorts(options, io)),
       "",
     ].join("\\n");
 
-    await ssh.exec(
+    await io.exec(
       options,
       [
         `cd ${projectDir}`,
@@ -72,7 +75,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
   if (!options.noStart) {
     step("Start DDEV container");
 
-    const statusResult = await ssh.exec(
+    const statusResult = await io.exec(
       options,
       `cd ${projectDir} && ddev describe -j 2>/dev/null | jq -r '.raw.status // "stopped"'`,
     );
@@ -81,7 +84,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
 
     if (status !== "running") {
       info(`Status: ${status} — starting DDEV…`);
-      await ssh.exec(options, `cd ${projectDir} && DDEV_NONINTERACTIVE=true ddev start`);
+      await io.exec(options, `cd ${projectDir} && DDEV_NONINTERACTIVE=true ddev start`);
     } else {
       info("Container already running");
     }
@@ -90,7 +93,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
   // 3. Before script (on server, outside container)
   if (options.beforeScript) {
     step("Run before-script");
-    await ssh.exec(options, `cd ${projectDir} && ${options.beforeScript}`);
+    await io.exec(options, `cd ${projectDir} && ${options.beforeScript}`);
   }
 
   // 4. Rsync build artifacts
@@ -101,7 +104,7 @@ export async function deploy(options: DeployOptions): Promise<void> {
 
     for (const localPath of paths) {
       const remotePath = `${projectDir}/${localPath}`;
-      const result = await ssh.rsync(localPath, remotePath, options);
+      const result = await io.rsync(localPath, remotePath, options);
 
       // Say what the mirror removed. --delete is correct for a build
       // artifact, but a deletion nobody expected — a plugin installed by
@@ -126,27 +129,27 @@ export async function deploy(options: DeployOptions): Promise<void> {
       info("Project already existed — skipping create-script");
     } else {
       step("Run create-script");
-      await ssh.exec(options, `cd ${projectDir} && ${options.createScript}`);
+      await io.exec(options, `cd ${projectDir} && ${options.createScript}`);
     }
   }
 
   // 6. Script inside DDEV container
   if (options.script) {
     step("Run deploy script in DDEV container");
-    await runContainerScript(options, projectDir);
+    await runContainerScript(options, projectDir, io);
   }
 
   // 7. After script (on server, outside container)
   if (options.afterScript) {
     step("Run after-script");
-    await ssh.exec(options, `cd ${projectDir} && ${options.afterScript}`);
+    await io.exec(options, `cd ${projectDir} && ${options.afterScript}`);
   }
 
   // 8. Verify
   step("Verify deployment");
 
   try {
-    await ssh.exec(options, `cd ${projectDir} && ddev describe`);
+    await io.exec(options, `cd ${projectDir} && ddev describe`);
   } catch {
     error("Could not verify deployment — ddev describe failed");
   }
@@ -176,6 +179,7 @@ function shellQuote(value: string): string {
 async function runContainerScript(
   options: DeployOptions,
   projectDir: string,
+  io: ssh.SshIo,
 ): Promise<void> {
   const env = Object.entries(options.env ?? {});
 
@@ -193,17 +197,17 @@ async function runContainerScript(
   const encoded = Buffer.from(script, "utf-8").toString("base64");
 
   try {
-    await ssh.exec(
+    await io.exec(
       options,
       `cd ${projectDir} && printf %s ${encoded} | base64 -d > ${CONTAINER_SCRIPT} && chmod 600 ${CONTAINER_SCRIPT}`,
       // The payload holds the environment values
       { log: `write ${CONTAINER_SCRIPT}` },
     );
 
-    await ssh.exec(options, `cd ${projectDir} && ddev exec bash ${CONTAINER_SCRIPT}`);
+    await io.exec(options, `cd ${projectDir} && ddev exec bash ${CONTAINER_SCRIPT}`);
   } finally {
     // Leaving it behind would leave the values on disk
-    await ssh.exec(options, `cd ${projectDir} && rm -f ${CONTAINER_SCRIPT}`);
+    await io.exec(options, `cd ${projectDir} && rm -f ${CONTAINER_SCRIPT}`);
   }
 }
 
@@ -219,8 +223,11 @@ async function runContainerScript(
  * Reading the server's value rather than assuming one keeps this correct for
  * any layout: where the router is on 80/443 the lines simply restate that.
  */
-async function resolveRouterPorts(options: DeployOptions): Promise<string[]> {
-  const config = await ssh.exec(
+async function resolveRouterPorts(
+  options: DeployOptions,
+  io: ssh.SshIo,
+): Promise<string[]> {
+  const config = await io.exec(
     options,
     "ddev config global 2>/dev/null || true",
     { log: "read ddev global config" },

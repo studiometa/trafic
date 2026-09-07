@@ -29,7 +29,10 @@ const KEYRING_TMP = "/tmp/trafic-nodesource.gpg";
  * 4. Run the agent setup (Docker, DDEV, Traefik, systemd, hardening)
  * 5. Verify the agent service
  */
-export async function setup(options: SetupOptions): Promise<void> {
+export async function setup(
+  options: SetupOptions,
+  io: ssh.SshIo = ssh.nodeSshIo,
+): Promise<void> {
   resetSteps();
 
   info(`Server: ${options.user}@${options.host}:${options.port}`);
@@ -61,7 +64,7 @@ export async function setup(options: SetupOptions): Promise<void> {
   // 1. Check the server
   step("Check the server");
 
-  const os = await ssh.exec(options, "cat /etc/os-release");
+  const os = await io.exec(options, "cat /etc/os-release");
   const prettyName = /^PRETTY_NAME="?(.*?)"?$/m.exec(os.stdout)?.[1];
 
   if (prettyName) {
@@ -72,17 +75,17 @@ export async function setup(options: SetupOptions): Promise<void> {
     }
   }
 
-  const sudo = await resolveSudo(options);
+  const sudo = await resolveSudo(options, io);
 
   // 2. Install Node.js
   step("Install Node.js");
 
-  await installNode(options, sudo);
+  await installNode(options, sudo, io);
 
   // 3. Install the Trafic agent
   step("Install the Trafic agent");
 
-  const agentBin = await installAgent(options, sudo);
+  const agentBin = await installAgent(options, sudo, io);
 
   // 4. Run the agent setup
   step("Setup the server");
@@ -92,7 +95,7 @@ export async function setup(options: SetupOptions): Promise<void> {
   if (options.dryRun) {
     info(setupCommand);
   } else {
-    await ssh.exec(options, setupCommand, { timeoutMs: SETUP_TIMEOUT_MS });
+    await io.exec(options, setupCommand, { timeoutMs: SETUP_TIMEOUT_MS });
   }
 
   // 5. Verify the agent service
@@ -101,7 +104,7 @@ export async function setup(options: SetupOptions): Promise<void> {
   if (options.dryRun) {
     info("Skipped (dry-run)");
   } else {
-    const active = await ssh.test(
+    const active = await io.test(
       options,
       "systemctl is-active --quiet trafic-agent",
     );
@@ -137,15 +140,18 @@ export async function setup(options: SetupOptions): Promise<void> {
  * Resolve the prefix needed to run privileged commands.
  * Returns an empty string when the SSH user is already root.
  */
-async function resolveSudo(options: SetupOptions): Promise<string> {
-  const uid = await ssh.exec(options, "id -u");
+async function resolveSudo(
+  options: SetupOptions,
+  io: ssh.SshIo,
+): Promise<string> {
+  const uid = await io.exec(options, "id -u");
 
   if (uid.stdout.trim() === "0") {
     info("Privileges: root");
     return "";
   }
 
-  const canSudo = await ssh.test(options, "sudo -n true");
+  const canSudo = await io.test(options, "sudo -n true");
 
   if (!canSudo) {
     throw new Error(
@@ -170,11 +176,12 @@ async function resolveSudo(options: SetupOptions): Promise<string> {
 async function installNode(
   options: SetupOptions,
   sudo: string,
+  io: ssh.SshIo,
 ): Promise<void> {
-  const hasNode = await ssh.test(options, "command -v node");
+  const hasNode = await io.test(options, "command -v node");
 
   if (hasNode) {
-    const version = (await ssh.exec(options, "node --version")).stdout.trim();
+    const version = (await io.exec(options, "node --version")).stdout.trim();
     const major = Number.parseInt(version.replace(/^v/, ""), 10);
 
     if (Number.isNaN(major) || major >= NODE_MAJOR) {
@@ -191,7 +198,7 @@ async function installNode(
   const missing: string[] = [];
 
   for (const tool of ["curl", "gpg"]) {
-    if (!(await ssh.test(options, `command -v ${tool}`))) {
+    if (!(await io.test(options, `command -v ${tool}`))) {
       missing.push(tool === "gpg" ? "gnupg" : tool);
     }
   }
@@ -226,12 +233,12 @@ async function installNode(
     if (options.dryRun) {
       info(command);
     } else {
-      await ssh.exec(options, command);
+      await io.exec(options, command);
     }
   }
 
   if (!options.dryRun) {
-    const version = (await ssh.exec(options, "node --version")).stdout.trim();
+    const version = (await io.exec(options, "node --version")).stdout.trim();
     info(`Node.js installed: ${version}`);
   }
 }
@@ -249,8 +256,9 @@ const ROOT_PATH_PREFIXES = ["/usr", "/usr/local"];
 async function installAgent(
   options: SetupOptions,
   sudo: string,
+  io: ssh.SshIo,
 ): Promise<string> {
-  const npm = (await ssh.exec(options, "command -v npm || true")).stdout.trim();
+  const npm = (await io.exec(options, "command -v npm || true")).stdout.trim();
 
   if (!npm) {
     if (options.dryRun) {
@@ -268,14 +276,14 @@ async function installAgent(
     return "trafic-agent";
   }
 
-  await ssh.exec(options, install);
+  await io.exec(options, install);
 
-  const prefix = (await ssh.exec(options, `${npm} prefix -g`)).stdout.trim();
+  const prefix = (await io.exec(options, `${npm} prefix -g`)).stdout.trim();
   const agentBin = `${prefix}/bin/trafic-agent`;
 
   if (!ROOT_PATH_PREFIXES.includes(prefix)) {
     info(`npm prefix ${prefix} is not on root's PATH — linking the binary`);
-    await ssh.exec(
+    await io.exec(
       options,
       `${sudo}ln -sf ${agentBin} /usr/local/bin/trafic-agent`,
     );

@@ -1,20 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { destroy } from "../src/commands/destroy.js";
-import * as ssh from "../src/ssh.js";
+import { createFakeSshIo } from "./helpers/fake-ssh-io.js";
 import type { DestroyOptions } from "../src/types.js";
 
-// Mock SSH module
-vi.mock("../src/ssh.js", () => ({
-  exec: vi.fn(),
-  test: vi.fn(),
-}));
-
-// Suppress console output
-vi.spyOn(console, "log").mockImplementation(() => {});
-vi.spyOn(console, "warn").mockImplementation(() => {});
-
-const mockedExec = vi.mocked(ssh.exec);
-const mockedTest = vi.mocked(ssh.test);
+// The steps print progress; keep it out of the test output
+console.log = () => {};
+console.warn = () => {};
+console.error = () => {};
 
 const baseOptions: DestroyOptions = {
   host: "server.example.com",
@@ -26,52 +18,41 @@ const baseOptions: DestroyOptions = {
 };
 
 describe("destroy", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockedExec.mockResolvedValue({ stdout: "", stderr: "", exitCode: 0 });
+  it("does nothing when the project is not there", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await destroy(baseOptions, io);
+
+    expect(io.commands).toEqual([]);
   });
 
-  it("does nothing if project does not exist", async () => {
-    mockedTest.mockResolvedValue(false);
+  it("deletes the DDEV project and then the directory", async () => {
+    const io = createFakeSshIo({ exists: true });
 
-    await destroy(baseOptions);
+    await destroy(baseOptions, io);
 
-    expect(mockedExec).not.toHaveBeenCalled();
+    expect(io.commands).toHaveLength(2);
+    expect(io.commands[0]).toContain("ddev delete");
+    expect(io.commands[1]).toContain("rm -rf");
   });
 
-  it("deletes DDEV project and removes directory", async () => {
-    mockedTest.mockResolvedValue(true);
+  it("targets the preview environment when one is given", async () => {
+    const io = createFakeSshIo({ exists: true });
 
-    await destroy(baseOptions);
+    await destroy({ ...baseOptions, preview: "42" }, io);
 
-    expect(mockedExec).toHaveBeenCalledTimes(2);
-    const commands = mockedExec.mock.calls.map((c) => c[1]);
-    expect(commands[0]).toContain("ddev delete");
-    expect(commands[1]).toContain("rm -rf");
+    expect(io.tested[0]).toContain("preview-42--my-app");
+    expect(io.commands[0]).toContain("preview-42--my-app");
   });
 
-  it("uses preview name when preview is set", async () => {
-    mockedTest.mockResolvedValue(true);
+  it("still removes the directory when ddev delete fails", async () => {
+    // Otherwise a project DDEV has already forgotten could never be cleaned
+    // up, and the next deploy would find a stale directory
+    const io = createFakeSshIo({ exists: true, fails: ["ddev delete"] });
 
-    await destroy({ ...baseOptions, preview: "42" });
+    await destroy(baseOptions, io);
 
-    const testCommand = mockedTest.mock.calls[0]![1];
-    expect(testCommand).toContain("preview-42--my-app");
-
-    const deleteCommand = mockedExec.mock.calls[0]![1];
-    expect(deleteCommand).toContain("preview-42--my-app");
-  });
-
-  it("continues if ddev delete fails", async () => {
-    mockedTest.mockResolvedValue(true);
-    mockedExec
-      .mockRejectedValueOnce(new Error("ddev delete failed")) // ddev delete
-      .mockResolvedValueOnce({ stdout: "", stderr: "", exitCode: 0 }); // rm -rf
-
-    await destroy(baseOptions);
-
-    // Should still call rm -rf
-    expect(mockedExec).toHaveBeenCalledTimes(2);
-    expect(mockedExec.mock.calls[1]![1]).toContain("rm -rf");
+    expect(io.commands).toHaveLength(2);
+    expect(io.commands[1]).toContain("rm -rf");
   });
 });

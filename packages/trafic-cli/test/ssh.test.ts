@@ -1,19 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { execFile } from "node:child_process";
+import { describe, it, expect } from "vitest";
 import { join } from "node:path";
-import { exec, test, rsync, classifyPath, parseDuration } from "../src/ssh.js";
+import {
+  exec,
+  test as sshTest,
+  rsync,
+  run,
+  classifyPath,
+  parseDuration,
+  type CommandRunner,
+  type ExecResult,
+} from "../src/ssh.js";
 import type { SSHOptions } from "../src/types.js";
 
-// Mock child_process
-vi.mock("node:child_process", () => ({
-  execFile: vi.fn(),
-}));
-
-// Suppress console output in tests
-vi.spyOn(console, "log").mockImplementation(() => {});
-vi.spyOn(console, "error").mockImplementation(() => {});
-
-const mockedExecFile = vi.mocked(execFile);
+// The helpers print progress; keep it out of the test output
+console.log = () => {};
+console.error = () => {};
 
 const defaultOptions: SSHOptions = {
   host: "server.example.com",
@@ -22,95 +23,130 @@ const defaultOptions: SSHOptions = {
   sshOptions: "",
 };
 
-function mockExecFileSuccess(stdout = "", stderr = "") {
-  mockedExecFile.mockImplementation(
-    (_cmd: any, _args: any, _opts: any, callback: any) => {
-      callback(null, stdout, stderr);
-      return {} as any;
-    },
-  );
+interface Call {
+  command: string;
+  args: string[];
+  timeoutMs: number;
 }
 
-function mockExecFileFailure(code: number, stderr = "error") {
-  mockedExecFile.mockImplementation(
-    (_cmd: any, _args: any, _opts: any, callback: any) => {
-      const err = Object.assign(new Error("command failed"), { code });
-      callback(err, "", stderr);
-      return {} as any;
-    },
-  );
+/** A runner that records what it was asked to do and returns a fixed result. */
+function recorder(result: Partial<ExecResult> = {}) {
+  const calls: Call[] = [];
+  const runner: CommandRunner = (command, args, timeoutMs) => {
+    calls.push({ command, args, timeoutMs });
+    return Promise.resolve({ stdout: "", stderr: "", exitCode: 0, ...result });
+  };
+
+  return { calls, runner };
 }
 
-describe("ssh.exec", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+/** A runner that fails, as the real one does on a non-zero exit. */
+const failingRunner: CommandRunner = () =>
+  Promise.reject(new Error("Command failed: ssh (exit code 1)"));
+
+describe("exec", () => {
+  it("runs ssh against the destination with the command", async () => {
+    const { calls, runner } = recorder({ stdout: "hello world\n" });
+
+    const result = await exec(defaultOptions, "echo hello", { runner });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.command).toBe("ssh");
+    expect(calls[0]!.args).toContain("ddev@server.example.com");
+    expect(calls[0]!.args).toContain("echo hello");
+    expect(result.stdout).toBe("hello world\n");
   });
 
-  it("executes a command via SSH", async () => {
-    mockExecFileSuccess("hello world\n");
+  it("passes the port through", async () => {
+    const { calls, runner } = recorder();
 
-    const result = await exec(defaultOptions, "echo hello");
+    await exec({ ...defaultOptions, port: 2222 }, "ls", { runner });
 
-    expect(mockedExecFile).toHaveBeenCalledOnce();
-    const [cmd, args] = mockedExecFile.mock.calls[0]!;
-    expect(cmd).toBe("ssh");
-    expect(args).toContain("ddev@server.example.com");
-    expect(args).toContain("echo hello");
-    expect(result.stdout).toBe("hello world\n");
+    const args = calls[0]!.args;
+    expect(args[args.indexOf("-p") + 1]).toBe("2222");
+  });
+
+  it("passes extra SSH options through, respecting quotes", async () => {
+    const { calls, runner } = recorder();
+
+    await exec({ ...defaultOptions, sshOptions: "-J jump@bastion" }, "ls", {
+      runner,
+    });
+
+    expect(calls[0]!.args).toContain("-J");
+    expect(calls[0]!.args).toContain("jump@bastion");
+  });
+
+  it("propagates a failure rather than swallowing it", async () => {
+    await expect(
+      exec(defaultOptions, "false", { runner: failingRunner }),
+    ).rejects.toThrow("exit code 1");
+  });
+
+  describe("timeout", () => {
+    it("uses the value from the options", async () => {
+      const { calls, runner } = recorder();
+
+      await exec({ ...defaultOptions, timeout: "45m" }, "echo hi", { runner });
+
+      expect(calls[0]!.timeoutMs).toBe(2_700_000);
+    });
+
+    it("falls back to ten minutes when none is set", async () => {
+      const { calls, runner } = recorder();
+
+      await exec(defaultOptions, "echo hi", { runner });
+
+      expect(calls[0]!.timeoutMs).toBe(600_000);
+    });
+
+    it("lets an explicit per-command value win", async () => {
+      const { calls, runner } = recorder();
+
+      await exec({ ...defaultOptions, timeout: "45m" }, "echo hi", {
+        runner,
+        timeoutMs: 5_000,
+      });
+
+      expect(calls[0]!.timeoutMs).toBe(5_000);
+    });
+  });
+});
+
+describe("test", () => {
+  it("is true when the command succeeds", async () => {
+    const { runner } = recorder();
+
+    await expect(sshTest(defaultOptions, "test -d /tmp", { runner })).resolves.toBe(
+      true,
+    );
+  });
+
+  it("is false when the command fails, rather than throwing", async () => {
+    await expect(
+      sshTest(defaultOptions, "test -d /nope", { runner: failingRunner }),
+    ).resolves.toBe(false);
+  });
+});
+
+describe("run", () => {
+  // No injection here on purpose: this is the seam everything else replaces,
+  // so it is worth exercising against real processes
+  it("resolves with the output of a command that succeeds", async () => {
+    const result = await run("printf", ["hi"], 5000);
+
+    expect(result.stdout).toBe("hi");
     expect(result.exitCode).toBe(0);
   });
 
-  it("includes port in SSH args", async () => {
-    mockExecFileSuccess();
-
-    await exec({ ...defaultOptions, port: 2222 }, "ls");
-
-    const [, args] = mockedExecFile.mock.calls[0]!;
-    const portIndex = (args as string[]).indexOf("-p");
-    expect((args as string[])[portIndex + 1]).toBe("2222");
-  });
-
-  it("includes extra SSH options", async () => {
-    mockExecFileSuccess();
-
-    await exec(
-      { ...defaultOptions, sshOptions: '-J jump@bastion' },
-      "ls",
-    );
-
-    const [, args] = mockedExecFile.mock.calls[0]!;
-    expect(args).toContain("-J");
-    expect(args).toContain("jump@bastion");
-  });
-
-  it("rejects on non-zero exit code", async () => {
-    mockExecFileFailure(1, "not found");
-
-    await expect(exec(defaultOptions, "false")).rejects.toThrow(
-      "Command failed: ssh (exit code 1)",
+  it("rejects with the exit code when a command fails", async () => {
+    await expect(run("sh", ["-c", "exit 3"], 5000)).rejects.toThrow(
+      /exit code 3/,
     );
   });
 });
 
-describe("ssh.test", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("returns true when command succeeds", async () => {
-    mockExecFileSuccess();
-    const result = await test(defaultOptions, "test -d /tmp");
-    expect(result).toBe(true);
-  });
-
-  it("returns false when command fails", async () => {
-    mockExecFileFailure(1);
-    const result = await test(defaultOptions, "test -d /nonexistent");
-    expect(result).toBe(false);
-  });
-});
-
-describe("ssh.parseDuration", () => {
+describe("parseDuration", () => {
   it("reads second, minute and hour suffixes", () => {
     expect(parseDuration("90s")).toBe(90_000);
     expect(parseDuration("10m")).toBe(600_000);
@@ -138,114 +174,68 @@ describe("ssh.parseDuration", () => {
   });
 });
 
-describe("ssh.exec timeout", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("honours the timeout from the options", async () => {
-    mockExecFileSuccess();
-
-    await exec({ ...defaultOptions, timeout: "45m" }, "echo hi");
-
-    const [, , execOptions] = mockedExecFile.mock.calls[0]!;
-    expect(execOptions).toMatchObject({ timeout: 2_700_000 });
-  });
-
-  it("falls back to ten minutes without a timeout", async () => {
-    mockExecFileSuccess();
-
-    await exec(defaultOptions, "echo hi");
-
-    const [, , execOptions] = mockedExecFile.mock.calls[0]!;
-    expect(execOptions).toMatchObject({ timeout: 600_000 });
-  });
-
-  it("lets an explicit per-command timeout win", async () => {
-    mockExecFileSuccess();
-
-    await exec({ ...defaultOptions, timeout: "45m" }, "echo hi", {
-      timeoutMs: 5_000,
-    });
-
-    const [, , execOptions] = mockedExecFile.mock.calls[0]!;
-    expect(execOptions).toMatchObject({ timeout: 5_000 });
-  });
-});
-
-describe("ssh.rsync", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
+describe("rsync", () => {
   const asDirectory = () => "directory" as const;
   const asFile = () => "file" as const;
   const asMissing = () => "missing" as const;
 
-  it("calls rsync with correct arguments", async () => {
-    mockExecFileSuccess();
+  it("mirrors a directory by its contents", async () => {
+    const { calls, runner } = recorder();
 
-    await rsync("dist/", "/home/ddev/www/my-app/dist/", defaultOptions, asDirectory);
+    await rsync("dist", "/home/ddev/www/app/dist", defaultOptions, asDirectory, runner);
 
-    expect(mockedExecFile).toHaveBeenCalledOnce();
-    const [cmd, args] = mockedExecFile.mock.calls[0]!;
-    expect(cmd).toBe("rsync");
+    const { command, args } = calls[0]!;
+    expect(command).toBe("rsync");
     expect(args).toContain("-azv");
     expect(args).toContain("--delete");
     expect(args).toContain("dist/");
-    expect(args).toContain("ddev@server.example.com:/home/ddev/www/my-app/dist/");
+    expect(args).toContain("ddev@server.example.com:/home/ddev/www/app/dist");
   });
 
-  it("appends trailing slash to a directory", async () => {
-    mockExecFileSuccess();
+  it("does not double the trailing slash", async () => {
+    const { calls, runner } = recorder();
 
-    await rsync("dist", "/home/ddev/www/my-app/dist", defaultOptions, asDirectory);
+    await rsync("dist/", "/x", defaultOptions, asDirectory, runner);
 
-    const [, args] = mockedExecFile.mock.calls[0]!;
-    // localPath should have trailing slash
-    expect(args).toContain("dist/");
+    expect(calls[0]!.args).toContain("dist/");
+    expect(calls[0]!.args).not.toContain("dist//");
   });
 
-  it("syncs a single file without a trailing slash", async () => {
-    mockExecFileSuccess();
+  it("copies a single file as itself", async () => {
+    const { calls, runner } = recorder();
 
-    await rsync(
-      "web/wp-config.php",
-      "/home/ddev/www/my-app/web/wp-config.php",
-      defaultOptions,
-      asFile,
-    );
+    await rsync("web/wp-config.php", "/x/web/wp-config.php", defaultOptions, asFile, runner);
 
-    const [, args] = mockedExecFile.mock.calls[0]!;
-    // A trailing slash would make rsync fail with "not a directory"
-    expect(args).toContain("web/wp-config.php");
-    expect(args).not.toContain("web/wp-config.php/");
+    // A trailing slash makes rsync fail with "not a directory"
+    expect(calls[0]!.args).toContain("web/wp-config.php");
+    expect(calls[0]!.args).not.toContain("web/wp-config.php/");
   });
 
-  it("omits --delete for a single file", async () => {
-    mockExecFileSuccess();
+  it("omits --delete for a single file, where it means nothing", async () => {
+    const { calls, runner } = recorder();
 
-    await rsync("web/.htaccess", "/home/ddev/www/my-app/web/.htaccess", defaultOptions, asFile);
+    await rsync("web/.htaccess", "/x/web/.htaccess", defaultOptions, asFile, runner);
 
-    const [, args] = mockedExecFile.mock.calls[0]!;
-    expect(args).not.toContain("--delete");
+    expect(calls[0]!.args).not.toContain("--delete");
   });
 
-  it("throws when the local path does not exist", async () => {
-    mockExecFileSuccess();
+  it("refuses a path that does not exist instead of reporting success", async () => {
+    const { calls, runner } = recorder();
 
     await expect(
-      rsync("vendor", "/home/ddev/www/my-app/vendor", defaultOptions, asMissing),
+      rsync("vendor", "/x/vendor", defaultOptions, asMissing, runner),
     ).rejects.toThrow(/Cannot sync "vendor"/);
 
-    // A silent skip would report a successful deploy with a missing artifact
-    expect(mockedExecFile).not.toHaveBeenCalled();
+    // A silent skip would leave the server missing a build artifact
+    expect(calls).toHaveLength(0);
   });
+});
 
-  it("classifies a real directory, file and absent path", () => {
-    // Anchored to this file so the result does not depend on the cwd
-    const src = join(import.meta.dirname, "..", "src");
+describe("classifyPath", () => {
+  // Real filesystem, anchored to this file so the cwd does not matter
+  const src = join(import.meta.dirname, "..", "src");
 
+  it("recognises a directory, a file and an absent path", () => {
     expect(classifyPath(src)).toBe("directory");
     expect(classifyPath(join(src, "ssh.ts"))).toBe("file");
     expect(classifyPath(join(src, "does-not-exist"))).toBe("missing");
