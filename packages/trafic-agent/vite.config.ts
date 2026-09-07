@@ -9,6 +9,16 @@ export default defineConfig({
     coverage: {
       // Test helpers are not production code
       exclude: ["test/**", "*.config.ts", "dist/**"],
+      // A floor, not a target. Set just under the current numbers so a drop
+      // fails CI while an improvement does not. Raise them when coverage
+      // rises — two untested parsers, loadProjectList and routePath, each
+      // hid a bug for nine releases, which is what this is here to prevent.
+      thresholds: {
+        statements: 75,
+        branches: 70,
+        functions: 70,
+        lines: 75,
+      },
     },
   },
   define: {

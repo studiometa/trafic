@@ -9,6 +9,14 @@ export default defineConfig({
     coverage: {
       // Test helpers are not production code
       exclude: ["test/**", "*.config.ts", "dist/**"],
+      // A floor, not a target. Set just under the current numbers so a drop
+      // fails CI while an improvement does not.
+      thresholds: {
+        statements: 95,
+        branches: 92,
+        functions: 100,
+        lines: 95,
+      },
     },
   },
   define: {
