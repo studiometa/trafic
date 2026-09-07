@@ -2,7 +2,14 @@ import type { SetupOptions } from "./types.js";
 import { step, info, error, setDryRun, resetSteps, isRoot } from "./steps.js";
 import { createDdevUser } from "./user.js";
 import { installDocker, configureDocker, setupDockerPrune } from "./docker.js";
-import { installSystemDeps, installDdev, configureDdev, configureTraefik } from "./ddev.js";
+import {
+  installSystemDeps,
+  installDdev,
+  configureDdev,
+  configureTraefik,
+  readToolPorts,
+} from "./ddev.js";
+import { configureDockerFirewall } from "./docker-firewall.js";
 import { installNode, installAgent, createAgentConfig, createSystemdService } from "./agent.js";
 import { hardenServer } from "./hardening.js";
 import { runAudit, printAuditResults } from "./audit.js";
@@ -64,6 +71,9 @@ export async function setup(options: SetupOptions): Promise<void> {
       installDdev();
       configureDdev(options.tld, options.email);
       configureTraefik();
+      // After DDEV, so the tool ports are known. UFW cannot reach these:
+      // Docker's rules run before its chains.
+      configureDockerFirewall(readToolPorts());
     } else {
       step("Install DDEV");
       info("Skipped (--no-ddev)");
