@@ -34,6 +34,15 @@ export {
   listProjects,
 } from "./utils/ddev.js";
 
+// Setup: firewall rules for Docker-published ports
+export {
+  buildDockerFirewallScript,
+  buildDockerFirewallUnit,
+  configureDockerFirewall,
+  DOCKER_FIREWALL_SCRIPT,
+  DOCKER_FIREWALL_UNIT,
+} from "./setup/docker-firewall.js";
+
 // Database utilities
 export {
   initDb,

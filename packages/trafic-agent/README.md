@@ -214,29 +214,52 @@ ddev-router publishes for DDEV's tools:
 | 8025, 8026 | Mailpit |
 | 8142, 8143 | xhgui |
 
-Those are protected by **forward auth, not by the firewall** — the middleware
-is attached to every entry point ddev-router publishes, so an unauthenticated
-request gets `401` on a tool port exactly as it does on 443. An earlier
-version attached it only to 80 and 443, which left xhgui answering from the
-internet with no authentication at all; that is fixed, and it is the reason
-the middleware is attached per entry point rather than per project router.
+Both layers now apply:
 
-If you want those ports closed at the network level rather than answered with
-a `401`, two options actually work:
+1. **`DOCKER-USER` rules**, installed by `setup`. That is the chain Docker
+   jumps to first in `FORWARD` and never flushes, so it is the only host-level
+   hook that can filter a published port. The rules drop traffic to the tool
+   ports unless it comes from Docker's own networks. They match on the
+   *original* destination port (`-m conntrack --ctorigdstport`), because by
+   `FORWARD` the destination has already been rewritten to the container.
 
-1. **A firewall in front of the server.** The packets never reach the host, so
-   Docker's rules are irrelevant. On OVH dedicated servers this is the Network
-   Firewall in the control panel — note it is *stateless*, so return traffic
-   needs allowing explicitly. This is the recommended defence in depth. It is
-   deliberately not automated: `setup` cannot create or verify it, and a tool
-   that pretends to configure something it cannot check is worse than one that
-   tells you to do it yourself.
-2. **Rules in the `DOCKER-USER` chain**, which Docker evaluates first in
-   `FORWARD` and never overwrites. Match on the pre-DNAT port
-   (`-m conntrack --ctorigdstport 8025`), because by `FORWARD` the destination
-   has already been rewritten to the container. Remember these live outside
-   UFW: they need their own persistence across reboots, an `ip6tables`
-   equivalent, and they will not show up in `ufw status`.
+   They live in `/usr/local/sbin/trafic-docker-firewall`, reapplied at boot and
+   after any Docker restart by `trafic-docker-firewall.service` — Docker
+   recreates `DOCKER-USER` empty and nothing else would restore them.
+   **They will not appear in `ufw status`.** Inspect them with
+   `iptables -S DOCKER-USER`.
+
+2. **Forward auth**, attached to every entry point ddev-router publishes, so a
+   request that does reach a tool port still needs credentials. An earlier
+   version attached it only to 80 and 443, which left xhgui answering from the
+   internet with no authentication at all.
+
+Access from the host itself is unaffected: a connection to `127.0.0.1:8026`
+goes through Docker's userland proxy rather than `FORWARD`, so an SSH tunnel
+still works:
+
+```bash
+ssh -L 8026:127.0.0.1:8026 ddev@server.example.com
+# then open https://localhost:8026
+```
+
+### A provider firewall is not a substitute
+
+Recommended as an extra layer, but do not rely on it alone. Measured on an OVH
+dedicated server with the Edge Firewall enabled and a correct rule denying
+these ports: a connection from **another host inside OVH** still completed in
+113ms, while a port with nothing listening was dropped and timed out at 12s.
+The deny applies to traffic crossing the provider's edge; traffic that never
+crosses it is not filtered.
+
+Anyone able to rent a VM from the same provider is inside that blind spot,
+which for a large host is a very low bar. That is why the `DOCKER-USER` rules
+above exist: they apply to every packet regardless of origin.
+
+On OVH the setting is the Network Firewall in the control panel. Two things to
+know: it is *stateless*, so `permit tcp established` is required or return
+traffic for outbound connections is dropped, and it is IPv4-only. `setup` does
+not configure it — it can neither create nor verify it.
 
 Binding ddev-router to loopback only (`router-bind-all-interfaces=false`)
 closes everything at once, but then nothing serves the public and you need a

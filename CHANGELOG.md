@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Agent**: Close the DDEV tool ports at the host with `DOCKER-USER` rules. `ufw default deny incoming` never applied to them: Docker's DNAT sits in `nat/PREROUTING` and its filtering in the `DOCKER` chain of `FORWARD`, both evaluated before UFW's chains, so the ports ddev-router publishes for Mailpit and xhgui have been reachable on every server regardless of what `ufw status` showed. Forward auth answered those requests with a 401, so this was never an open door — but it is a single control, and it was silently missing from those exact entry points until 0.1.30, which is how xhgui came to answer the internet unauthenticated. `DOCKER-USER` is the only host-level hook that can filter a published port: Docker jumps to it first in `FORWARD` and never flushes it. The rules match the **original** destination port (`-m conntrack --ctorigdstport`), because after DNAT the destination is the container, and exempt Docker's own networks. Verified on a live server: the four tool ports went from connecting in 113ms to being dropped, the DROP counters registering the probes, while 22/80/443 stayed at 110ms and both sites kept serving ([#49])
+- **Docs**: A provider firewall is not a substitute, with the measurement. On an OVH dedicated server with the Edge Firewall enabled and a correct rule denying these ports, a connection from **another host inside OVH** still completed in 113ms, while a port with nothing listening was dropped and timed out at 12s. The deny applies to traffic crossing the provider's edge; traffic that never crosses it is not filtered, so anyone able to rent a VM from the same provider sits inside that blind spot ([#49])
+
+### Added
+
+- **Agent**: `trafic-docker-firewall.service`, reapplying the rules at boot and after any Docker restart — Docker recreates `DOCKER-USER` empty and nothing else would restore them. `PartOf=docker.service` covers the restart case. The script removes an existing copy of each rule before inserting it, so reapplying never stacks duplicates: verified at 8 rules before and after three further runs, and restored from 0 to 8 after the chain was flushed ([#49])
+- **Agent**: Migration `0012__docker_user_tool_ports`, applying the rules to existing servers ([#49])
+
 ## [0.1.37] - 2026.09.03
 
 ### Removed
@@ -465,6 +477,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#46]: https://github.com/studiometa/trafic/pull/46
 [#47]: https://github.com/studiometa/trafic/pull/47
 [#48]: https://github.com/studiometa/trafic/pull/48
+[#49]: https://github.com/studiometa/trafic/pull/49
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
