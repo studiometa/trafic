@@ -157,12 +157,91 @@ The agent:
 
 ## Endpoints
 
+All internal endpoints are prefixed with `__` so they cannot collide with a
+project's own paths. Everything else is treated as a request for a project.
+
 | Endpoint | Description |
 |----------|-------------|
-| `GET /auth` | Forward auth for Traefik |
-| `GET /errors` | Error handler for stopped projects |
-| `GET /status` | Health check |
-| `GET /projects` | List all projects (JSON) |
+| `GET /__auth__` | Forward auth for Traefik. `200` allows, `401` prompts for basic auth |
+| `GET /__status__?project=<name>` | Project status as JSON, for the waiting page to poll |
+| `GET /__health__` | Agent health and version |
+| anything else | Waiting page for a known project, error page otherwise |
+
+## TLS
+
+Traefik obtains the certificates, and `setup --email` is what turns that on:
+
+```bash
+trafic setup --host server.example.com --tld previews.example.com \
+  --email admin@example.com
+```
+
+With an email, DDEV sets `use_letsencrypt=true` and Traefik requests a
+certificate per project hostname on first use — previews included, since each
+one gets its own router. Without an email, projects are served with a locally
+trusted mkcert certificate, which is fine behind a proxy that terminates TLS
+itself but shows a browser warning if used directly.
+
+Two limits worth knowing before you rely on it:
+
+- Let's Encrypt allows **50 new certificates per registered domain per week**.
+  Each preview hostname is a new certificate, so environments that churn fast
+  can hit the ceiling. Renewals do not count against it.
+- Turning Let's Encrypt off does not discard certificates already issued.
+  Traefik keeps them in `acme.json` in the `ddev-global-cache` volume and
+  serves them again after a restart, so `configureDdev` deletes that storage
+  when Let's Encrypt is disabled.
+
+Wildcard certificates would avoid the per-hostname limit but need a DNS-01
+challenge, which DDEV does not do. If you churn tens of previews a week, put a
+proxy in front that can (Caddy or Traefik with a DNS provider) and disable
+Let's Encrypt in DDEV so the two do not both try.
+
+## Network exposure
+
+**`ufw default deny incoming` does not cover the ports Docker publishes.**
+Docker adds its rules to `nat/PREROUTING` and the `DOCKER` chain of `FORWARD`,
+both of which are evaluated before UFW's chains. So the ports ddev-router
+publishes are reachable from the internet whatever UFW says about them, and
+`ufw status` will not tell you otherwise.
+
+`setup` opens 22, 80 and 443, and 9876 for the agent from the Docker bridge
+only. Those rules are accurate. What they do **not** do is close the ports
+ddev-router publishes for DDEV's tools:
+
+| Port | Service |
+|------|---------|
+| 8025, 8026 | Mailpit |
+| 8142, 8143 | xhgui |
+
+Those are protected by **forward auth, not by the firewall** — the middleware
+is attached to every entry point ddev-router publishes, so an unauthenticated
+request gets `401` on a tool port exactly as it does on 443. An earlier
+version attached it only to 80 and 443, which left xhgui answering from the
+internet with no authentication at all; that is fixed, and it is the reason
+the middleware is attached per entry point rather than per project router.
+
+If you want those ports closed at the network level rather than answered with
+a `401`, two options actually work:
+
+1. **A firewall in front of the server.** The packets never reach the host, so
+   Docker's rules are irrelevant. On OVH dedicated servers this is the Network
+   Firewall in the control panel — note it is *stateless*, so return traffic
+   needs allowing explicitly. This is the recommended defence in depth. It is
+   deliberately not automated: `setup` cannot create or verify it, and a tool
+   that pretends to configure something it cannot check is worse than one that
+   tells you to do it yourself.
+2. **Rules in the `DOCKER-USER` chain**, which Docker evaluates first in
+   `FORWARD` and never overwrites. Match on the pre-DNAT port
+   (`-m conntrack --ctorigdstport 8025`), because by `FORWARD` the destination
+   has already been rewritten to the container. Remember these live outside
+   UFW: they need their own persistence across reboots, an `ip6tables`
+   equivalent, and they will not show up in `ufw status`.
+
+Binding ddev-router to loopback only (`router-bind-all-interfaces=false`)
+closes everything at once, but then nothing serves the public and you need a
+host proxy in front. That is a reasonable setup; it is just a different one
+from what `setup` builds.
 
 ## License
 

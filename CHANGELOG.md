@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- **Agent**: The `/__tls__` endpoint and `allowTlsFor`. They existed for a host proxy's on-demand TLS ask, and a proxy is no longer part of the design: DDEV's own Let's Encrypt issues a certificate per project hostname, previews included, because each gets its own Traefik router. That also removes the need to vet hostnames before issuance — Traefik only requests certificates for routers DDEV generated, so the project list is already the gate. The endpoint's hostname index was where the phantom `approot` project of 0.1.32 could have had a certificate issued ([#48])
+
+### Changed
+
+- **Docs**: State plainly that `ufw default deny incoming` does not cover ports Docker publishes. Docker's rules are evaluated before UFW's, so the ports ddev-router publishes stay reachable whatever `ufw status` shows. The tool ports (Mailpit, xhgui) are protected by **forward auth, not the firewall** — the middleware is attached to every entry point, which is why an unauthenticated request gets `401` there exactly as on 443. `setup` now says this in its firewall step rather than leaving the operator to infer a guarantee UFW cannot make ([#48])
+- **Docs**: Recommend a firewall in front of the server as defence in depth, with the OVH specifics (Network Firewall in the control panel, stateless so return traffic needs allowing). Deliberately not automated: `setup` can neither create nor verify it, and claiming to secure something it cannot check would be worse than saying so. The `DOCKER-USER` chain is documented as the on-host alternative, including matching the pre-DNAT port with `conntrack --ctorigdstport` and the fact that such rules live outside UFW ([#48])
+- **Docs**: Document how TLS actually works — `setup --email` turns on DDEV's Let's Encrypt, without it projects get a mkcert certificate — along with the two limits that matter: 50 new certificates per registered domain per week, one per preview hostname, and that disabling Let's Encrypt does not discard certificates already issued ([#48])
+- **Docs**: Correct the agent's endpoint table. It listed `/auth`, `/errors`, `/status` and a `/projects` endpoint that does not exist; the real paths are `/__auth__`, `/__status__?project=` and `/__health__`, with everything else falling through to the waiting or error page ([#48])
+
 ## [0.1.36] - 2026.09.03
 
 ### Fixed
@@ -450,6 +463,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#45]: https://github.com/studiometa/trafic/pull/45
 [#46]: https://github.com/studiometa/trafic/pull/46
 [#47]: https://github.com/studiometa/trafic/pull/47
+[#48]: https://github.com/studiometa/trafic/pull/48
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
