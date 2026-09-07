@@ -1,5 +1,5 @@
 import * as ssh from "../ssh.js";
-import { error, info, step, success, resetSteps } from "../steps.js";
+import { error, info, warn, step, success, resetSteps } from "../steps.js";
 import type { DeployOptions } from "../types.js";
 import { resolveProjectName } from "../types.js";
 
@@ -101,7 +101,17 @@ export async function deploy(options: DeployOptions): Promise<void> {
 
     for (const localPath of paths) {
       const remotePath = `${projectDir}/${localPath}`;
-      await ssh.rsync(localPath, remotePath, options);
+      const result = await ssh.rsync(localPath, remotePath, options);
+
+      // Say what the mirror removed. --delete is correct for a build
+      // artifact, but a deletion nobody expected — a plugin installed by
+      // hand and absent from the manifest, say — is otherwise invisible
+      // among rsync's per-file output.
+      const removed = ssh.formatDeletions(ssh.summarizeDeletions(result.stdout));
+
+      if (removed) {
+        warn(`${localPath}: ${removed}`);
+      }
     }
   }
 

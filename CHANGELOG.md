@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **CLI**: `deploy` reports what the mirroring sync removed from the server. `--delete` is the right default for a build artifact — a file the build stops producing should stop existing — but with `-v` the `deleting` lines are buried among every transferred path. On a real deploy that hid a WordPress plugin being removed because it was installed by hand and absent from `composer.json`: thousands of lines scrolled by and nothing said a plugin had gone. Deletions are now grouped by top-level entry, so a whole plugin disappearing is one line rather than the hundreds of files inside it, capped at five entries with `and N more` ([#50])
+
 ## [0.1.38] - 2026.09.07
 
 ### Security
@@ -479,6 +485,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#47]: https://github.com/studiometa/trafic/pull/47
 [#48]: https://github.com/studiometa/trafic/pull/48
 [#49]: https://github.com/studiometa/trafic/pull/49
+[#50]: https://github.com/studiometa/trafic/pull/50
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
