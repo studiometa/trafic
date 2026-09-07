@@ -5,30 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.39] - 2026.09.08
 
 ### Added
 
 - **CLI**: `deploy` reports what the mirroring sync removed from the server. `--delete` is the right default for a build artifact — a file the build stops producing should stop existing — but with `-v` the `deleting` lines are buried among every transferred path. On a real deploy that hid a WordPress plugin being removed because it was installed by hand and absent from `composer.json`: thousands of lines scrolled by and nothing said a plugin had gone. Deletions are now grouped by top-level entry, so a whole plugin disappearing is one line rather than the hundreds of files inside it, capped at five entries with `and N more` ([#50])
-
-## [Unreleased]
+- **Dev**: Tests for `utils/db.ts`, which sat at 2.85% coverage — the persistence layer behind scale-to-zero, essentially untested. 23 tests, aimed at the boundaries that decide behaviour: `updateProjectAccess` must not clobber a status set elsewhere, or a start in flight would be reset by a request arriving on the waiting page; `setProjectStatus` must leave `last_access` alone, or stopping a project would look like activity and defer the next sweep; `getIdleProjects` treats a project used exactly at the cutoff as active and ignores anything not `running`; and `cleanOldLogs` keeps an entry exactly at the cutoff ([#51])
+- **Dev**: A coverage floor in CI. `test:ci` now fails when statements, branches, functions or lines drop below a threshold set just under the current numbers, so a regression fails while an improvement does not. Verified to actually fail rather than pass silently: raising the bar above the current figure exits 1 with `Coverage for statements (76.24%) does not meet global threshold`. This is the gate for the problem behind several fixes this cycle — `loadProjectList` and `routePath` each had no tests and each hid a bug for nine releases ([#52])
+- **Dev**: Tests for the request handlers, taking agent coverage of `server.ts` from 5.8% to 66.7%. The handlers now receive a `ServerDeps` seam holding the project index, the per-project configs and the side effects, so a test drives them with a known world and records what they did — no socket, no database, no DDEV. The cases worth having: a project's own `auth_policy` overriding the global one while credentials stay server-wide, a second request during a start not queueing another `ddev start`, a failed start recording `stopped` rather than leaving the project wedged on `starting`, and `/__auth__?s=term` reaching the auth handler — the query-string routing bug from 0.1.33, now covered ([#52])
+- **Dev**: Tests for the upgrade sequence, taking `setup/upgrade.ts` from 18.9% to 66.7%. `runUpgrade` takes an `UpgradeIo`, which is what makes the re-exec path testable without replacing the process. Covers the two guards that matter: no re-exec when npm served a stale cache and left the old version in place, and no second re-exec once one has happened — either would loop. Also that an unreachable registry does not stop migrations that are already due ([#52])
 
 ### Changed
 
 - **Dev**: Inject dependencies instead of mocking modules. Every `vi.mock` and `vi.useFakeTimers` is gone from the suite: the CLI's `exec`, `test` and `rsync` reach the commands through one injected `SshIo`, the agent's `ddev` calls through a `DdevRunner`, and the four database functions that read the time through a `Clock`. Tests now drive a fake that answers probes, so the real control flow runs — `setup`'s decisions about whether Node is recent enough, whether the apt prerequisites are present, and whether the npm prefix is on root's PATH are exercised rather than stubbed. The conversion immediately surfaced a test that had two conflicting fake-server assignments, the second silently discarding the non-root uid the assertion depended on; a mock-based version passed while testing nothing ([#51])
 - **Dev**: `run` is exported and tested against real processes. It is the seam everything else replaces, so its exit-code handling was previously only reachable through a mocked `execFile` and never actually exercised — `run("sh", ["-c", "exit 3"])` must reject with `exit code 3` ([#51])
-
-### Added
-
-- **Dev**: Tests for `utils/db.ts`, which sat at 2.85% coverage — the persistence layer behind scale-to-zero, essentially untested. 23 tests, aimed at the boundaries that decide behaviour: `updateProjectAccess` must not clobber a status set elsewhere, or a start in flight would be reset by a request arriving on the waiting page; `setProjectStatus` must leave `last_access` alone, or stopping a project would look like activity and defer the next sweep; `getIdleProjects` treats a project used exactly at the cutoff as active and ignores anything not `running`; and `cleanOldLogs` keeps an entry exactly at the cutoff ([#51])
-
-## [Unreleased]
-
-### Added
-
-- **Dev**: A coverage floor in CI. `test:ci` now fails when statements, branches, functions or lines drop below a threshold set just under the current numbers, so a regression fails while an improvement does not. Verified to actually fail rather than pass silently: raising the bar above the current figure exits 1 with `Coverage for statements (76.24%) does not meet global threshold`. This is the gate for the problem behind several fixes this cycle — `loadProjectList` and `routePath` each had no tests and each hid a bug for nine releases ([#52])
-- **Dev**: Tests for the request handlers, taking agent coverage of `server.ts` from 5.8% to 66.7%. The handlers now receive a `ServerDeps` seam holding the project index, the per-project configs and the side effects, so a test drives them with a known world and records what they did — no socket, no database, no DDEV. The cases worth having: a project's own `auth_policy` overriding the global one while credentials stay server-wide, a second request during a start not queueing another `ddev start`, a failed start recording `stopped` rather than leaving the project wedged on `starting`, and `/__auth__?s=term` reaching the auth handler — the query-string routing bug from 0.1.33, now covered ([#52])
-- **Dev**: Tests for the upgrade sequence, taking `setup/upgrade.ts` from 18.9% to 66.7%. `runUpgrade` takes an `UpgradeIo`, which is what makes the re-exec path testable without replacing the process. Covers the two guards that matter: no re-exec when npm served a stale cache and left the old version in place, and no second re-exec once one has happened — either would loop. Also that an unreachable registry does not stop migrations that are already due ([#52])
 
 ## [0.1.38] - 2026.09.07
 
@@ -410,7 +400,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.38...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.39...HEAD
+[0.1.39]: https://github.com/studiometa/trafic/compare/0.1.38...0.1.39
 [0.1.38]: https://github.com/studiometa/trafic/compare/0.1.37...0.1.38
 [0.1.37]: https://github.com/studiometa/trafic/compare/0.1.36...0.1.37
 [0.1.36]: https://github.com/studiometa/trafic/compare/0.1.35...0.1.36
