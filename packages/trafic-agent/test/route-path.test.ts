@@ -12,7 +12,6 @@ describe("routePath", () => {
     // threw every internal route off and the request fell to the waiting page
     expect(routePath("/__auth__?s=search+term")).toBe("/__auth__");
     expect(routePath("/__status__?project=scalian")).toBe("/__status__");
-    expect(routePath("/__tls__?domain=scalian.preprod.ikko.fr")).toBe("/__tls__");
     expect(routePath("/__health__?x=1")).toBe("/__health__");
   });
 

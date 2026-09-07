@@ -134,6 +134,12 @@ export function configureFirewall(io: SetupIo = nodeIo): void {
   io.exec("ufw --force enable");
 
   success("Firewall enabled: SSH (22), HTTP (80), HTTPS (443), trafic-agent (9876 from Docker) allowed");
+
+  // Say it plainly rather than let `ufw status` imply a guarantee it cannot
+  // make: Docker's rules run before UFW's, so published ports stay reachable
+  info("UFW does not cover ports Docker publishes — DDEV's tool ports (Mailpit, xhgui)");
+  info("are protected by forward auth, not the firewall. For network-level closure use a");
+  info("firewall in front of the server; see the agent readme, 'Network exposure'");
 }
 
 /**

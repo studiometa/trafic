@@ -51,6 +51,8 @@ trafic setup \
 - With `--no-root-ssh`, connect as a sudo user: root is dropped from `AllowUsers` and `PermitRootLogin` becomes `no`, leaving the provider's rescue mode as the only recovery path
 - Wildcard DNS (`*.previews.example.com` → server IP)
 
+**Recommended:** a firewall in front of the server. UFW cannot close the ports Docker publishes — its rules run after Docker's — so DDEV's tool ports (Mailpit, xhgui) are protected by forward auth rather than by the firewall. A network-level firewall drops those packets before they reach the host. On OVH dedicated servers that is the Network Firewall in the control panel; note it is stateless, so return traffic needs allowing explicitly. `setup` deliberately does not configure it: it cannot verify it, and claiming to secure something it cannot check would be worse than saying so. See [Network exposure](../trafic-agent/README.md#network-exposure).
+
 The command is safe to run again: each step is skipped when the server is already in the target state.
 
 ### `trafic deploy`
