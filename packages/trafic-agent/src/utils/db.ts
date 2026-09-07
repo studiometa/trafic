@@ -1,6 +1,17 @@
 import { DatabaseSync } from "node:sqlite";
 import type { ProjectRecord, AccessLog } from "../types.js";
 
+/**
+ * Reads the current time in epoch milliseconds.
+ *
+ * Injected so a test can place a project's last access at a chosen moment
+ * without freezing the clock for everything else in the process.
+ */
+export type Clock = () => number;
+
+/** The real clock, used unless a caller passes its own. */
+export const systemClock: Clock = () => Date.now();
+
 let db: DatabaseSync | null = null;
 
 /**
@@ -57,14 +68,14 @@ export function closeDb(): void {
 /**
  * Update project last access time
  */
-export function updateProjectAccess(name: string): void {
+export function updateProjectAccess(name: string, now: Clock = systemClock): void {
   const database = getDb();
   const stmt = database.prepare(`
     INSERT INTO projects (name, last_access, status)
     VALUES (?, ?, 'running')
     ON CONFLICT(name) DO UPDATE SET last_access = excluded.last_access
   `);
-  stmt.run(name, Date.now());
+  stmt.run(name, now());
 }
 
 /**
@@ -84,6 +95,7 @@ export function getProject(name: string): ProjectRecord | undefined {
 export function setProjectStatus(
   name: string,
   status: ProjectRecord["status"],
+  now: Clock = systemClock,
 ): void {
   const database = getDb();
   const stmt = database.prepare(`
@@ -91,15 +103,18 @@ export function setProjectStatus(
     VALUES (?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET status = excluded.status
   `);
-  stmt.run(name, Date.now(), status);
+  stmt.run(name, now(), status);
 }
 
 /**
  * Get idle projects (last access older than threshold)
  */
-export function getIdleProjects(thresholdMs: number): ProjectRecord[] {
+export function getIdleProjects(
+  thresholdMs: number,
+  now: Clock = systemClock,
+): ProjectRecord[] {
   const database = getDb();
-  const cutoff = Date.now() - thresholdMs;
+  const cutoff = now() - thresholdMs;
   const stmt = database.prepare(`
     SELECT name, last_access as lastAccess, status
     FROM projects
@@ -138,9 +153,9 @@ export function getAccessLogs(project: string, limit = 100): AccessLog[] {
 /**
  * Clean old access logs (older than given days)
  */
-export function cleanOldLogs(days: number): number {
+export function cleanOldLogs(days: number, now: Clock = systemClock): number {
   const database = getDb();
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const cutoff = now() - days * 24 * 60 * 60 * 1000;
   const stmt = database.prepare("DELETE FROM access_logs WHERE timestamp < ?");
   const result = stmt.run(cutoff);
   return Number(result.changes);
