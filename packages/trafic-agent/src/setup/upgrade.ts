@@ -95,6 +95,42 @@ export function restartAgentService(dryRun: boolean): void {
 }
 
 /**
+ * What the upgrade sequence needs from the outside world.
+ *
+ * Injected so the orchestration can be tested without reaching npm, writing
+ * to the filesystem or replacing the running process — the last of which is
+ * why `reExecNewBinary` is here rather than called directly.
+ */
+export interface UpgradeIo {
+  /** The version of the process running the upgrade. */
+  currentVersion: string;
+  /** Whether an earlier run already re-execed, guarding against a loop. */
+  alreadyReExeced: boolean;
+  isRoot: () => boolean;
+  fetchLatestVersion: () => string | null;
+  installLatestAgent: (dryRun: boolean) => void;
+  getInstalledVersion: () => string | null;
+  reExecNewBinary: (args: string[]) => never;
+  restartAgentService: (dryRun: boolean) => void;
+  runPendingMigrations: (dryRun: boolean) => void;
+}
+
+/** The real collaborators, used unless a caller passes their own. */
+export function nodeUpgradeIo(): UpgradeIo {
+  return {
+    currentVersion: __VERSION__,
+    alreadyReExeced: process.env["TRAFIC_UPGRADE_REEXEC"] === "1",
+    isRoot,
+    fetchLatestVersion,
+    installLatestAgent,
+    getInstalledVersion,
+    reExecNewBinary,
+    restartAgentService,
+    runPendingMigrations,
+  };
+}
+
+/**
  * Full upgrade sequence:
  *  1. Check for a new version on npm
  *  2. Install it globally if one is found — then re-exec the new binary
@@ -102,23 +138,27 @@ export function restartAgentService(dryRun: boolean): void {
  *  3. Run pending migrations
  *  4. Restart the systemd service
  */
-export function runUpgrade(dryRun = false, reExecArgs?: string[]): void {
-  if (!isRoot() && !dryRun) {
+export function runUpgrade(
+  dryRun = false,
+  reExecArgs?: string[],
+  io: UpgradeIo = nodeUpgradeIo(),
+): void {
+  if (!io.isRoot() && !dryRun) {
     console.error("    \x1b[31m✗\x1b[0m This command must be run as root");
     console.log("  Run: sudo trafic-agent upgrade");
     process.exit(1);
   }
 
   // Guard against infinite re-exec loops: only re-exec once per upgrade run.
-  const alreadyReExeced = process.env["TRAFIC_UPGRADE_REEXEC"] === "1";
+  const alreadyReExeced = io.alreadyReExeced;
 
   // ── Step 1: Check for updates ─────────────────────────────────────────────
   step("Check for updates");
 
-  const current = __VERSION__;
+  const current = io.currentVersion;
   info(`Current version: ${current}`);
 
-  const latest = fetchLatestVersion();
+  const latest = io.fetchLatestVersion();
 
   if (!latest) {
     warn("Could not reach npm registry — skipping version check");
@@ -127,19 +167,19 @@ export function runUpgrade(dryRun = false, reExecArgs?: string[]): void {
 
     // ── Step 2: Install ───────────────────────────────────────────────────
     step("Install latest version");
-    installLatestAgent(dryRun);
+    io.installLatestAgent(dryRun);
 
     if (!dryRun) {
       // Verify the installed version actually changed before re-execing —
       // npm can serve stale cache and leave the old binary in place.
-      const installedVersion = getInstalledVersion();
+      const installedVersion = io.getInstalledVersion();
 
       if (!alreadyReExeced && installedVersion && isNewer(current, installedVersion)) {
         success(`Installed @studiometa/trafic-agent@${installedVersion}`);
         // Re-exec the newly installed binary so steps 3 and 4 run with the
         // new migration registry — the current process only knows about
         // migrations that existed at the time it was compiled.
-        reExecNewBinary(reExecArgs ?? ["upgrade"]);
+        io.reExecNewBinary(reExecArgs ?? ["upgrade"]);
       } else if (installedVersion) {
         success(`Installed @studiometa/trafic-agent@${installedVersion}`);
       }
@@ -150,11 +190,11 @@ export function runUpgrade(dryRun = false, reExecArgs?: string[]): void {
 
   // ── Step 3: Run pending migrations ───────────────────────────────────────
   step("Run pending migrations");
-  runPendingMigrations(dryRun);
+  io.runPendingMigrations(dryRun);
 
   // ── Step 4: Restart service ───────────────────────────────────────────────
   step("Restart trafic-agent service");
-  restartAgentService(dryRun);
+  io.restartAgentService(dryRun);
   if (!dryRun) {
     success("Service restarted");
   }

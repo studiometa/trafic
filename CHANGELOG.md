@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Dev**: Tests for `utils/db.ts`, which sat at 2.85% coverage — the persistence layer behind scale-to-zero, essentially untested. 23 tests, aimed at the boundaries that decide behaviour: `updateProjectAccess` must not clobber a status set elsewhere, or a start in flight would be reset by a request arriving on the waiting page; `setProjectStatus` must leave `last_access` alone, or stopping a project would look like activity and defer the next sweep; `getIdleProjects` treats a project used exactly at the cutoff as active and ignores anything not `running`; and `cleanOldLogs` keeps an entry exactly at the cutoff ([#51])
 
+## [Unreleased]
+
+### Added
+
+- **Dev**: A coverage floor in CI. `test:ci` now fails when statements, branches, functions or lines drop below a threshold set just under the current numbers, so a regression fails while an improvement does not. Verified to actually fail rather than pass silently: raising the bar above the current figure exits 1 with `Coverage for statements (76.24%) does not meet global threshold`. This is the gate for the problem behind several fixes this cycle — `loadProjectList` and `routePath` each had no tests and each hid a bug for nine releases ([#52])
+- **Dev**: Tests for the request handlers, taking agent coverage of `server.ts` from 5.8% to 66.7%. The handlers now receive a `ServerDeps` seam holding the project index, the per-project configs and the side effects, so a test drives them with a known world and records what they did — no socket, no database, no DDEV. The cases worth having: a project's own `auth_policy` overriding the global one while credentials stay server-wide, a second request during a start not queueing another `ddev start`, a failed start recording `stopped` rather than leaving the project wedged on `starting`, and `/__auth__?s=term` reaching the auth handler — the query-string routing bug from 0.1.33, now covered ([#52])
+- **Dev**: Tests for the upgrade sequence, taking `setup/upgrade.ts` from 18.9% to 66.7%. `runUpgrade` takes an `UpgradeIo`, which is what makes the re-exec path testable without replacing the process. Covers the two guards that matter: no re-exec when npm served a stale cache and left the old version in place, and no second re-exec once one has happened — either would loop. Also that an unreachable registry does not stop migrations that are already due ([#52])
+
 ## [0.1.38] - 2026.09.07
 
 ### Security
@@ -498,6 +506,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#49]: https://github.com/studiometa/trafic/pull/49
 [#50]: https://github.com/studiometa/trafic/pull/50
 [#51]: https://github.com/studiometa/trafic/pull/51
+[#52]: https://github.com/studiometa/trafic/pull/52
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

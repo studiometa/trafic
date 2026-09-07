@@ -31,6 +31,28 @@ let hostnameIndex: Map<string, string>;
 const projectConfigs = new Map<string, ReturnType<typeof loadProjectConfig>>();
 
 /**
+ * What the request handlers need from the outside world.
+ *
+ * Gathered into one seam so a test can drive the handlers with a known
+ * project list and record what they did, without a listening socket, a real
+ * database or a DDEV install. `startServer` builds the real one.
+ */
+export interface ServerDeps {
+  auth: AuthConfig;
+  /** hostname -> project name */
+  hostnameIndex: Map<string, string>;
+  /** project name -> its own config, where it has one */
+  projectConfigs: Map<string, ReturnType<typeof loadProjectConfig>>;
+  loadTemplate: (name: string) => string;
+  updateProjectAccess: (name: string) => void;
+  logAccess: (log: Parameters<typeof logAccess>[0]) => void;
+  getProject: (name: string) => ReturnType<typeof getProject>;
+  setProjectStatus: (name: string, status: "running" | "stopped" | "starting") => void;
+  startProject: (name: string) => Promise<boolean>;
+  getProjectInfo: (name: string) => ReturnType<typeof getProjectInfo>;
+}
+
+/**
  * Load HTML template
  */
 function loadTemplate(name: string): string {
@@ -45,15 +67,18 @@ function loadTemplate(name: string): string {
 /**
  * Get effective auth config for a project (merges global + per-project)
  */
-function getEffectiveAuthConfig(projectName: string | undefined): AuthConfig {
-  if (!projectName) return config.auth;
+export function getEffectiveAuthConfig(
+  projectName: string | undefined,
+  deps: Pick<ServerDeps, "auth" | "projectConfigs">,
+): AuthConfig {
+  if (!projectName) return deps.auth;
 
-  const projectConfig = projectConfigs.get(projectName);
-  if (!projectConfig?.auth_policy) return config.auth;
+  const projectConfig = deps.projectConfigs.get(projectName);
+  if (!projectConfig?.auth_policy) return deps.auth;
 
   // Override default policy with project-specific policy
   return {
-    ...config.auth,
+    ...deps.auth,
     defaultPolicy: projectConfig.auth_policy,
   };
 }
@@ -62,7 +87,11 @@ function getEffectiveAuthConfig(projectName: string | undefined): AuthConfig {
  * Handle forward auth requests from Traefik
  * Traefik sends the original request headers, we return 200 (allow) or 401 (deny)
  */
-function handleAuth(req: IncomingMessage, res: ServerResponse): void {
+export function handleAuth(
+  req: IncomingMessage,
+  res: ServerResponse,
+  deps: ServerDeps,
+): void {
   const hostname = req.headers["x-forwarded-host"] as string ?? "";
   // Keep the two apart: the socket peer cannot be forged, X-Forwarded-For
   // partly can. checkAuth decides which entry to trust.
@@ -72,10 +101,10 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
   const path = req.headers["x-forwarded-uri"] as string ?? "/";
 
   // Find project from hostname
-  const projectName = hostnameIndex.get(hostname);
+  const projectName = deps.hostnameIndex.get(hostname);
 
   // Get effective auth config (global + per-project overrides)
-  const authConfig = getEffectiveAuthConfig(projectName);
+  const authConfig = getEffectiveAuthConfig(projectName, deps);
 
   const clientIp = resolveClientIp(
     socketIp,
@@ -96,8 +125,8 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
   if (result.allowed) {
     // Log access and update last access time
     if (projectName) {
-      updateProjectAccess(projectName);
-      logAccess({
+      deps.updateProjectAccess(projectName);
+      deps.logAccess({
         project: projectName,
         timestamp: Date.now(),
         ip: clientIp,
@@ -121,26 +150,27 @@ function handleAuth(req: IncomingMessage, res: ServerResponse): void {
  * Handle errors middleware requests (502 from Traefik)
  * When a project is stopped, Traefik returns 502. We show a waiting page and start the project.
  */
-async function handleErrors(
+export async function handleErrors(
   req: IncomingMessage,
   res: ServerResponse,
+  deps: ServerDeps,
 ): Promise<void> {
   const hostname = req.headers["x-forwarded-host"] as string ?? req.headers.host ?? "";
-  const projectName = hostnameIndex.get(hostname);
+  const projectName = deps.hostnameIndex.get(hostname);
 
   if (!projectName) {
     // Unknown project
-    const template = loadTemplate("error");
+    const template = deps.loadTemplate("error");
     res.writeHead(404, { "Content-Type": "text/html" });
     res.end(template.replace("{{message}}", "Project not found"));
     return;
   }
 
   // Check if project is already starting
-  const record = getProject(projectName);
+  const record = deps.getProject(projectName);
   if (record?.status === "starting") {
     // Show waiting page
-    const template = loadTemplate("wait");
+    const template = deps.loadTemplate("wait");
     res.writeHead(503, {
       "Content-Type": "text/html",
       "Retry-After": "5",
@@ -154,10 +184,10 @@ async function handleErrors(
   }
 
   // Mark as starting
-  setProjectStatus(projectName, "starting");
+  deps.setProjectStatus(projectName, "starting");
 
   // Show waiting page immediately
-  const template = loadTemplate("wait");
+  const template = deps.loadTemplate("wait");
   res.writeHead(503, {
     "Content-Type": "text/html",
     "Retry-After": "5",
@@ -173,13 +203,13 @@ async function handleErrors(
   // serving forward auth for every other project while this runs. The status
   // is recorded when it settles, which is what stops a second request from
   // starting the same project again.
-  void startProject(projectName)
+  void deps.startProject(projectName)
     .then((success) => {
-      setProjectStatus(projectName, success ? "running" : "stopped");
+      deps.setProjectStatus(projectName, success ? "running" : "stopped");
     })
     .catch((error: unknown) => {
       // Leaving it "starting" forever would wedge the waiting page
-      setProjectStatus(projectName, "stopped");
+      deps.setProjectStatus(projectName, "stopped");
       console.error(`Could not start ${projectName}:`, error);
     });
 }
@@ -187,9 +217,10 @@ async function handleErrors(
 /**
  * Handle status polling requests
  */
-async function handleStatus(
+export async function handleStatus(
   req: IncomingMessage,
   res: ServerResponse,
+  deps: ServerDeps,
 ): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const projectName = url.searchParams.get("project");
@@ -200,8 +231,8 @@ async function handleStatus(
     return;
   }
 
-  const info = await getProjectInfo(projectName);
-  const record = getProject(projectName);
+  const info = await deps.getProjectInfo(projectName);
+  const record = deps.getProject(projectName);
 
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(
@@ -236,9 +267,10 @@ export function routePath(target: string | undefined): string {
 /**
  * Request handler
  */
-async function handleRequest(
+export async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
+  deps: ServerDeps,
 ): Promise<void> {
   // Route on the path alone. Matching the raw URL meant a query string threw
   // every internal route off: Traefik's catch-all and errors middleware pass
@@ -251,15 +283,15 @@ async function handleRequest(
   try {
     // Route requests
     if (path === "/__auth__" || path.startsWith("/__auth__/")) {
-      handleAuth(req, res);
+      handleAuth(req, res, deps);
     } else if (path === "/__status__" || path.startsWith("/__status__/")) {
-      await handleStatus(req, res);
+      await handleStatus(req, res, deps);
     } else if (path === "/__health__") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "ok", version: "__VERSION__" }));
     } else {
       // Default: errors middleware
-      await handleErrors(req, res);
+      await handleErrors(req, res, deps);
     }
   } catch (error) {
     console.error("Request error:", error);
@@ -310,9 +342,24 @@ export function startServer(agentConfig: AgentConfig): void {
     reloadProjects();
   });
 
+  // The real dependencies. Rebuilt per request for the two maps, which
+  // reloadProjects replaces wholesale when the project list changes.
+  const deps = (): ServerDeps => ({
+    auth: config.auth,
+    hostnameIndex,
+    projectConfigs,
+    loadTemplate,
+    updateProjectAccess,
+    logAccess,
+    getProject,
+    setProjectStatus,
+    startProject,
+    getProjectInfo,
+  });
+
   // Create HTTP server
   const server = createServer((req, res) => {
-    handleRequest(req, res).catch((error) => {
+    handleRequest(req, res, deps()).catch((error) => {
       console.error("Unhandled error:", error);
       if (!res.headersSent) {
         res.writeHead(500);
