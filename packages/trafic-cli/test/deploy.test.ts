@@ -230,6 +230,59 @@ describe("deploy create-script", () => {
       deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io),
     ).rejects.toThrow(/ddev pull/);
   });
+
+  it("records that it ran, so the next deploy skips it", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
+
+    const seed = io.commands.findIndex((c) => c.includes("ddev pull"));
+    const mark = io.commands.findIndex(
+      (c) => c.includes("touch") && c.includes(".trafic-created"),
+    );
+
+    expect(mark).toBeGreaterThan(seed);
+  });
+
+  it("does not record it when it fails", async () => {
+    const io = createFakeSshIo({ exists: false, fails: ["ddev pull"] });
+
+    await expect(
+      deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io),
+    ).rejects.toThrow();
+
+    // Recording a create-script that failed would strand the environment
+    // half-seeded: no later deploy would try again
+    expect(io.commands.some((c) => c.includes(".trafic-created"))).toBe(false);
+  });
+
+  it("runs again after a first deploy that failed before it", async () => {
+    // The clone succeeded and the sync failed, so the directory is there but
+    // the create-script never ran
+    const io = createFakeSshIo({
+      tests: (command) => !command.includes(".trafic-created"),
+    });
+
+    await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
+
+    // Keying on the directory made this deploy skip the seed for good,
+    // leaving an environment that could only be destroyed and remade
+    expect(io.commands.some((c) => c.includes("ddev pull prod-db -y"))).toBe(true);
+  });
+
+  it("assumes an environment older than the markers was already created", async () => {
+    const io = createFakeSshIo({
+      tests: (command) =>
+        !command.includes(".trafic-cloned") && !command.includes(".trafic-created"),
+    });
+
+    await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
+
+    // Its database has been live for a while: re-seeding would discard that
+    expect(io.commands.some((c) => c.includes("ddev pull prod-db -y"))).toBe(false);
+    // Recorded, so the question is settled from now on
+    expect(io.commands.some((c) => c.includes(".trafic-created"))).toBe(true);
+  });
 });
 
 describe("deploy container script", () => {

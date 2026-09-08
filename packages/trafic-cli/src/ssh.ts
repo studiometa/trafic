@@ -209,6 +209,21 @@ export function formatDeletions(
   return `removed ${summary.files} ${plural} under: ${shown}${suffix}`;
 }
 
+/** The parent of a remote path, for the `mkdir -p` that precedes a transfer. */
+export function parentOf(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const cut = trimmed.lastIndexOf("/");
+
+  // No slash, or only the leading one: the parent is the root or the cwd,
+  // both of which already exist
+  return cut > 0 ? trimmed.slice(0, cut) : cut === 0 ? "/" : ".";
+}
+
+/** Quote a value for a single-quoted shell string. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 /**
  * Rsync a local path to the remote server.
  *
@@ -249,6 +264,20 @@ export async function rsync(
   const args = [
     "-azv",
     ...(isDirectory ? ["--delete"] : []),
+    // Create the destination's parent before the transfer starts.
+    //
+    // rsync makes the destination directory itself, but never its parent: a
+    // single file whose parent is missing fails with "No such file or
+    // directory", and so does a directory nested more than one level deep.
+    // Seen on a first deploy, where `web/index.php` came before the
+    // `web/wp` that would have created `web/` — the order of the sync list
+    // decided whether the deployment worked.
+    //
+    // `--rsync-path` rather than `--mkpath`: the flag needs rsync 3.2.3 on
+    // both ends, and a runner older than that would fail on the option
+    // itself. This runs in the remote shell, so any version does.
+    "--rsync-path",
+    `mkdir -p ${shellQuote(parentOf(remotePath))} && rsync`,
     "-e",
     sshCmd,
     isDirectory && !localPath.endsWith("/") ? `${localPath}/` : localPath,

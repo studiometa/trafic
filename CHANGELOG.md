@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CLI**: `deploy` creates the destination's parent directory before a sync. rsync makes the destination directory itself but never its parent, so syncing a single file whose parent is missing failed with `No such file or directory` — and whether a deploy worked depended on the order of `--sync`: a project listing `web/index.php` before the `web/wp` that would have created `web/` never got past the first file. Found by a real first deploy, not by the tests. The parent is created by `--rsync-path`, which runs in the remote shell, rather than `--mkpath`, which needs rsync 3.2.3 at both ends and would fail on the option itself on an older runner ([#53])
+- **CLI**: `deploy` keys the create-script on a marker rather than on the project directory being absent. A first deploy that failed after the clone left the directory in place, so every later deploy took it for an existing project and skipped the create-script — the environment stayed unseeded for good, recoverable only by destroying it. Seen on the deploy that found the bug above: it left a project whose `.env` was never written and never would be. The marker is written only after the script succeeds, so a create-script that fails runs again next time. An environment created before this release carries no marker and is assumed to have been seeded, because re-running a seed against a live database is worse than skipping a step that was probably already done ([#53])
+- **Dev**: The coverage floor no longer fails the integration run. `test:integration:ci` collects coverage for Codecov's `integration` flag, and so inherited the thresholds added in [#52] — which are the unit suite's floor, while the integration suite exercises `ssh.ts` against a real server and touches little else. The run failed at 66% with all of its tests passing, and CI has been red on `main` since 0.1.39 was released ([#53])
+
 ## [0.1.39] - 2026.09.08
 
 ### Added
@@ -498,6 +506,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#50]: https://github.com/studiometa/trafic/pull/50
 [#51]: https://github.com/studiometa/trafic/pull/51
 [#52]: https://github.com/studiometa/trafic/pull/52
+[#53]: https://github.com/studiometa/trafic/pull/53
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

@@ -67,6 +67,7 @@ export async function deploy(
         `cd ${projectDir}`,
         `mkdir -p .ddev`,
         `printf '${localConfig}' > .ddev/config.local.yaml`,
+        `touch ${CLONED_MARKER}`,
       ].join(" && "),
     );
   }
@@ -125,12 +126,7 @@ export async function deploy(
   // existing project: seeding is not idempotent — `ddev pull` overwrites the
   // database, which would discard the environment's content on every deploy.
   if (options.createScript) {
-    if (exists) {
-      info("Project already existed — skipping create-script");
-    } else {
-      step("Run create-script");
-      await io.exec(options, `cd ${projectDir} && ${options.createScript}`);
-    }
+    await runCreateScript(options, projectDir, exists, io);
   }
 
   // 6. Script inside DDEV container
@@ -161,11 +157,16 @@ export async function deploy(
 const CONTAINER_SCRIPT = ".trafic-deploy.sh";
 
 /**
- * Quote a value for a shell single-quoted string.
+ * Written once this tool has cloned the repository.
+ *
+ * Its absence on a project that already has a `.git` means the environment
+ * was created by an earlier version, which left nothing on disk to say
+ * whether the create-script had run.
  */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
+const CLONED_MARKER = ".trafic-cloned";
+
+/** Written once the create-script has completed. */
+const CREATED_MARKER = ".trafic-created";
 
 /**
  * Run the deploy script inside the DDEV container.
@@ -189,7 +190,7 @@ async function runContainerScript(
 
   const script = [
     "set -o errexit",
-    ...env.map(([key, value]) => `export ${key}=${shellQuote(value)}`),
+    ...env.map(([key, value]) => `export ${key}=${ssh.shellQuote(value)}`),
     options.script ?? "",
     "",
   ].join("\n");
@@ -209,6 +210,49 @@ async function runContainerScript(
     // Leaving it behind would leave the values on disk
     await io.exec(options, `cd ${projectDir} && rm -f ${CONTAINER_SCRIPT}`);
   }
+}
+
+/**
+ * Run the create-script, once per environment.
+ *
+ * Keyed on a marker rather than on the project directory being absent. A
+ * first deploy that fails after the clone — a sync error, say — leaves the
+ * directory in place, and keying on that made every later deploy skip the
+ * create-script: the environment stayed unseeded for good, with no way to
+ * recover but to destroy it. Seen on a real first deploy, which left a
+ * project whose `.env` was never written.
+ *
+ * The marker is written only after the script succeeds, so a create-script
+ * that fails runs again on the next deploy.
+ */
+async function runCreateScript(
+  options: DeployOptions,
+  projectDir: string,
+  existedBefore: boolean,
+  io: ssh.SshIo,
+): Promise<void> {
+  const created = await io.test(options, `test -f ${projectDir}/${CREATED_MARKER}`);
+
+  if (created) {
+    info("Create-script already ran for this environment — skipping");
+    return;
+  }
+
+  const cloned = await io.test(options, `test -f ${projectDir}/${CLONED_MARKER}`);
+
+  // An environment that predates the markers. Assume the create-script ran:
+  // re-running it would re-seed a database that has been live since, and
+  // losing that content is worse than skipping a step that was probably
+  // already done. Recorded so the question is settled from now on.
+  if (existedBefore && !cloned) {
+    info("Environment predates the create-script marker — assuming it ran");
+    await io.exec(options, `touch ${projectDir}/${CREATED_MARKER}`);
+    return;
+  }
+
+  step("Run create-script");
+  await io.exec(options, `cd ${projectDir} && ${options.createScript}`);
+  await io.exec(options, `touch ${projectDir}/${CREATED_MARKER}`);
 }
 
 /**

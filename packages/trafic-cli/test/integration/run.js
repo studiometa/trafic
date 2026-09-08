@@ -148,7 +148,18 @@ function runTests(options = {}) {
 
   const args = ["vitest", "run", "test/integration/"];
   if (withCoverage) {
-    args.push("--coverage");
+    // Coverage is collected for Codecov's `integration` flag, but without
+    // the thresholds in vite.config.ts: those are the unit suite's floor,
+    // and this suite exercises ssh.ts against a real server while touching
+    // little else. Applying that floor here failed a run whose every test
+    // had passed — CI was red on main from 0.1.39 until this was fixed.
+    args.push(
+      "--coverage",
+      "--coverage.thresholds.statements=0",
+      "--coverage.thresholds.branches=0",
+      "--coverage.thresholds.functions=0",
+      "--coverage.thresholds.lines=0",
+    );
   }
 
   // Set environment variables for tests
