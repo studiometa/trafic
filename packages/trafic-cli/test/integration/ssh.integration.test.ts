@@ -126,6 +126,28 @@ describe("SSH Integration Tests", () => {
       }
     });
 
+    it("syncs a single file whose remote parent does not exist", async () => {
+      const localDir = "/tmp/trafic-test-missing-parent";
+      execSync(`mkdir -p ${localDir} && echo "scaffolded" > ${localDir}/index.php`);
+
+      try {
+        // The shape that broke a real deploy: a file lands in `web/` before
+        // anything has created it. rsync makes the destination directory but
+        // never its parent, so this failed with "No such file or directory"
+        // and the deployment stopped at the first file of the sync list.
+        await rsync(
+          `${localDir}/index.php`,
+          `${testDir}/web/index.php`,
+          sshOptions,
+        );
+
+        const result = await exec(sshOptions, `cat ${testDir}/web/index.php`);
+        expect(result.stdout.trim()).toBe("scaffolded");
+      } finally {
+        execSync(`rm -rf ${localDir}`);
+      }
+    });
+
     it("syncs a directory to remote", async () => {
       // Create a temp local directory with files
       const localDir = "/tmp/trafic-test-dir";
