@@ -7,6 +7,7 @@ import {
   run,
   classifyPath,
   parseDuration,
+  parentOf,
   type CommandRunner,
   type ExecResult,
 } from "../src/ssh.js";
@@ -219,6 +220,19 @@ describe("rsync", () => {
     expect(calls[0]!.args).not.toContain("--delete");
   });
 
+  it("creates the destination's parent before transferring", async () => {
+    const { calls, runner } = recorder();
+
+    await rsync("web/index.php", "/x/web/index.php", defaultOptions, asFile, runner);
+
+    // rsync makes the destination directory but never its parent: without
+    // this, syncing a file before the directory that would have created its
+    // parent failed with "No such file or directory"
+    const index = calls[0]!.args.indexOf("--rsync-path");
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(calls[0]!.args[index + 1]).toBe("mkdir -p '/x/web' && rsync");
+  });
+
   it("refuses a path that does not exist instead of reporting success", async () => {
     const { calls, runner } = recorder();
 
@@ -239,5 +253,24 @@ describe("classifyPath", () => {
     expect(classifyPath(src)).toBe("directory");
     expect(classifyPath(join(src, "ssh.ts"))).toBe("file");
     expect(classifyPath(join(src, "does-not-exist"))).toBe("missing");
+  });
+});
+
+describe("parentOf", () => {
+  it("drops the last segment", () => {
+    expect(parentOf("/home/ddev/www/app/web/index.php")).toBe(
+      "/home/ddev/www/app/web",
+    );
+    expect(parentOf("~/www/app/vendor")).toBe("~/www/app");
+  });
+
+  it("ignores a trailing slash", () => {
+    expect(parentOf("/x/y/")).toBe("/x");
+  });
+
+  it("falls back to a path that always exists", () => {
+    // Nothing to create in either case, and "" would make mkdir fail
+    expect(parentOf("/top")).toBe("/");
+    expect(parentOf("bare")).toBe(".");
   });
 });
