@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CLI**: `deploy` leaves a leading `~` for the remote shell to expand when creating a sync destination's parent. Quoting the whole path defeated the expansion added in 0.1.40: the shell read `'~/www/app/web'` literally, so `mkdir -p` created a directory actually named `~` and the transfer still failed on the path it was meant to create. The server grew a `./~/www/preview-462--alloayiti/web` tree while the deploy reported the original error, so 0.1.40 fixed nothing in practice. The unit test asserted on `/x/web`, an absolute path — the one shape where quoting is harmless, and not the shape a deploy uses. Both a unit test and an integration test now use a `~` path, and each was checked to fail without the fix ([#54])
+
 ## [0.1.40] - 2026.09.08
 
 ### Fixed
@@ -508,6 +514,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#51]: https://github.com/studiometa/trafic/pull/51
 [#52]: https://github.com/studiometa/trafic/pull/52
 [#53]: https://github.com/studiometa/trafic/pull/53
+[#54]: https://github.com/studiometa/trafic/pull/54
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
