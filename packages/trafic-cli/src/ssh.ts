@@ -225,6 +225,23 @@ export function shellQuote(value: string): string {
 }
 
 /**
+ * Quote a remote path, leaving a leading `~` for the remote shell to expand.
+ *
+ * Quoting the whole path defeats the expansion: the shell takes `'~/www/x'`
+ * literally, so `mkdir -p` made a directory actually named `~` and the
+ * transfer still failed on the path it was meant to create. Seen on a server,
+ * which grew a `./~/www/preview-462--alloayiti/web` tree while the deploy
+ * reported the original error.
+ */
+export function quoteRemotePath(path: string): string {
+  if (path === "~") {
+    return "~";
+  }
+
+  return path.startsWith("~/") ? `~/${shellQuote(path.slice(2))}` : shellQuote(path);
+}
+
+/**
  * Rsync a local path to the remote server.
  *
  * Directories and files need different flags. A directory is synced by its
@@ -277,7 +294,7 @@ export async function rsync(
     // both ends, and a runner older than that would fail on the option
     // itself. This runs in the remote shell, so any version does.
     "--rsync-path",
-    `mkdir -p ${shellQuote(parentOf(remotePath))} && rsync`,
+    `mkdir -p ${quoteRemotePath(parentOf(remotePath))} && rsync`,
     "-e",
     sshCmd,
     isDirectory && !localPath.endsWith("/") ? `${localPath}/` : localPath,

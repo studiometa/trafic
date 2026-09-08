@@ -8,6 +8,7 @@ import {
   classifyPath,
   parseDuration,
   parentOf,
+  quoteRemotePath,
   type CommandRunner,
   type ExecResult,
 } from "../src/ssh.js";
@@ -233,6 +234,24 @@ describe("rsync", () => {
     expect(calls[0]!.args[index + 1]).toBe("mkdir -p '/x/web' && rsync");
   });
 
+  it("leaves a leading tilde for the remote shell to expand", async () => {
+    const { calls, runner } = recorder();
+
+    // The shape a deploy actually uses. Quoting the whole path made the
+    // remote mkdir create a directory named "~", and the transfer failed on
+    // the path it was meant to have created.
+    await rsync(
+      "web/index.php",
+      "~/www/my-app/web/index.php",
+      defaultOptions,
+      asFile,
+      runner,
+    );
+
+    const index = calls[0]!.args.indexOf("--rsync-path");
+    expect(calls[0]!.args[index + 1]).toBe("mkdir -p ~/'www/my-app/web' && rsync");
+  });
+
   it("refuses a path that does not exist instead of reporting success", async () => {
     const { calls, runner } = recorder();
 
@@ -272,5 +291,22 @@ describe("parentOf", () => {
     // Nothing to create in either case, and "" would make mkdir fail
     expect(parentOf("/top")).toBe("/");
     expect(parentOf("bare")).toBe(".");
+  });
+});
+
+describe("quoteRemotePath", () => {
+  it("keeps a leading tilde outside the quotes", () => {
+    expect(quoteRemotePath("~/www/app/web")).toBe("~/'www/app/web'");
+    expect(quoteRemotePath("~")).toBe("~");
+  });
+
+  it("quotes a path the shell has nothing to expand in", () => {
+    expect(quoteRemotePath("/home/ddev/www/app")).toBe("'/home/ddev/www/app'");
+  });
+
+  it("quotes a tilde that is not the whole first segment", () => {
+    // `~user` is a different expansion, and `a~b` is not one at all
+    expect(quoteRemotePath("~user/www")).toBe("'~user/www'");
+    expect(quoteRemotePath("a~b")).toBe("'a~b'");
   });
 });

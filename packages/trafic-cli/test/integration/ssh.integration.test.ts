@@ -148,6 +148,34 @@ describe("SSH Integration Tests", () => {
       }
     });
 
+    it("syncs a single file under a tilde path whose parent is missing", async () => {
+      const localDir = "/tmp/trafic-test-tilde-parent";
+      execSync(`mkdir -p ${localDir} && echo "tilde" > ${localDir}/index.php`);
+
+      try {
+        // `~` is what a deploy passes, and it has to reach the remote shell
+        // unquoted: quoting it made mkdir create a directory named "~"
+        await rsync(
+          `${localDir}/index.php`,
+          "~/trafic-test-tilde/web/index.php",
+          sshOptions,
+        );
+
+        const result = await exec(
+          sshOptions,
+          "cat ~/trafic-test-tilde/web/index.php",
+        );
+        expect(result.stdout.trim()).toBe("tilde");
+
+        // Nothing called "~" in the home directory
+        const stray = await exec(sshOptions, 'ls -d ./~ 2>/dev/null || echo none');
+        expect(stray.stdout.trim()).toBe("none");
+      } finally {
+        execSync(`rm -rf ${localDir}`);
+        await exec(sshOptions, "rm -rf ~/trafic-test-tilde");
+      }
+    });
+
     it("syncs a directory to remote", async () => {
       // Create a temp local directory with files
       const localDir = "/tmp/trafic-test-dir";
