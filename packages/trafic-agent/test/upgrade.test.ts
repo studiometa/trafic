@@ -6,14 +6,12 @@ import {
   upgradeDdev,
   type UpgradeIo,
 } from "../src/setup/upgrade.js";
-import { commandExists, exec, execSilent } from "../src/setup/steps.js";
+import { exec, execSilent } from "../src/setup/steps.js";
 
-// `ddevVersion` and `upgradeDdev` reach for the server's own `ddev` and apt,
-// which a test machine may or may not have. Only the three collaborators that
-// touch the outside world are replaced; the progress logging stays real.
+// `ddevVersion` and `upgradeDdev` run package and apt commands that must not
+// reach the test machine. The progress logging stays real.
 vi.mock("../src/setup/steps.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/setup/steps.js")>()),
-  commandExists: vi.fn(() => false),
   exec: vi.fn(() => ""),
   execSilent: vi.fn(() => ""),
 }));
@@ -252,27 +250,18 @@ describe("runUpgrade", () => {
 
 describe("ddevVersion", () => {
   beforeEach(() => {
-    vi.mocked(commandExists).mockReset().mockReturnValue(false);
     vi.mocked(execSilent).mockReset().mockReturnValue("");
   });
 
-  it("returns null when ddev is not on the server", () => {
-    expect(ddevVersion()).toBeNull();
-    expect(execSilent).not.toHaveBeenCalled();
+  it("returns the installed apt package version", () => {
+    vi.mocked(execSilent).mockReturnValue("1.25.3");
+
+    expect(ddevVersion()).toBe("1.25.3");
+    expect(execSilent).toHaveBeenCalledWith("dpkg-query --show --showformat='${Version}' ddev");
   });
 
-  it("returns the first line reported by ddev --version", () => {
-    vi.mocked(commandExists).mockReturnValue(true);
-    vi.mocked(execSilent).mockReturnValue("ddev version v1.24.3");
-
-    expect(ddevVersion()).toBe("ddev version v1.24.3");
-  });
-
-  it("returns null when ddev is installed but reports nothing", () => {
+  it("returns null when the DDEV package is not installed", () => {
     // execSilent swallows a failing command and hands back an empty string
-    vi.mocked(commandExists).mockReturnValue(true);
-    vi.mocked(execSilent).mockReturnValue("");
-
     expect(ddevVersion()).toBeNull();
   });
 });
