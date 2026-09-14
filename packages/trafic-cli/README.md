@@ -42,7 +42,7 @@ trafic setup \
 | `--no-docker` | Skip Docker installation | `false` |
 | `--no-ddev` | Skip DDEV installation | `false` |
 | `--dry-run` | Print the remote commands without running them | `false` |
-| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"` | - |
+| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"`. A quoted value with spaces, such as `-o ProxyCommand="ssh -i key -W %h:%p bastion"` for a jump host that needs its own `-i`, reaches ssh as one argument with the quotes stripped | - |
 
 **Requirements:**
 
@@ -85,7 +85,7 @@ trafic deploy \
 | `--branch` | Git branch name | auto-detected from CI |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--repo` | Repository URL | auto-detected from CI |
-| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"` | - |
+| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"`. A quoted value with spaces, such as `-o ProxyCommand="ssh -i key -W %h:%p bastion"` for a jump host that needs its own `-i`, reaches ssh as one argument with the quotes stripped | - |
 
 ### `trafic destroy`
 
