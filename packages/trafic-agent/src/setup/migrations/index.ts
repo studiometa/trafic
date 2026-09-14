@@ -12,6 +12,7 @@ import { migration0009ScaleToZeroFixes } from "./0009__scale_to_zero_fixes.js";
 import { migration0010CatchallEntrypoints } from "./0010__catchall_entrypoints.js";
 import { migration0011PurgeAcmeWhenDisabled } from "./0011__purge_acme_when_disabled.js";
 import { migration0012DockerUserToolPorts } from "./0012__docker_user_tool_ports.js";
+import { migration0013SshKexDefaults } from "./0013__ssh_kex_defaults.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -30,6 +31,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0010CatchallEntrypoints,
   migration0011PurgeAcmeWhenDisabled,
   migration0012DockerUserToolPorts,
+  migration0013SshKexDefaults,
 ];
 
 // ---------------------------------------------------------------------------

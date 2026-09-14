@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   hardenSsh,
+  removeSshKexAlgorithms,
   resolveAllowedUsers,
   configureFirewall,
   configureFail2ban,
@@ -85,6 +86,19 @@ describe("hardenSsh", () => {
     expect(config).toContain("PubkeyAuthentication yes");
   });
 
+  it("leaves key exchange on the OpenSSH defaults", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    // A KexAlgorithms line with no +/-/^ prefix replaces OpenSSH's default
+    // list, dropping the post-quantum hybrids a current client expects
+    expect(config).not.toMatch(/^KexAlgorithms/m);
+    expect(config).toContain("Ciphers chacha20-poly1305@openssh.com");
+    expect(config).toContain("MACs hmac-sha2-512-etm@openssh.com");
+  });
+
   it("reverts the drop-in when sshd rejects the config", () => {
     const io = createFakeIo({ output: { "sshd -t": "error" } });
 
@@ -100,6 +114,64 @@ describe("hardenSsh", () => {
     hardenSsh({ allowedUsers: ["ddev"] }, io);
 
     expect(io.ran("systemctl reload ssh")).toBe(true);
+  });
+});
+
+describe("removeSshKexAlgorithms", () => {
+  const withKex = `# Trafic SSH hardening
+AllowUsers root ddev
+
+# Use strong algorithms only
+KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256
+Ciphers chacha20-poly1305@openssh.com
+MACs hmac-sha2-512-etm@openssh.com
+`;
+
+  it("drops the line and reloads sshd", () => {
+    const io = createFakeIo({ files: { [SSHD_CONFIG]: withKex } });
+
+    expect(removeSshKexAlgorithms(io)).toBe(true);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).not.toMatch(/^KexAlgorithms/m);
+    // Only that line goes — the rest of the drop-in is untouched
+    expect(config).toContain("AllowUsers root ddev");
+    expect(config).toContain("Ciphers chacha20-poly1305@openssh.com");
+    expect(config).toContain("MACs hmac-sha2-512-etm@openssh.com");
+    expect(io.ran("systemctl reload ssh")).toBe(true);
+  });
+
+  it("does nothing when the line is already gone", () => {
+    const io = createFakeIo({
+      files: {
+        [SSHD_CONFIG]: "AllowUsers root ddev\nCiphers aes256-gcm@openssh.com\n",
+      },
+    });
+
+    expect(removeSshKexAlgorithms(io)).toBe(false);
+
+    expect(io.written(SSHD_CONFIG)).toBe("");
+    expect(io.ran("systemctl reload")).toBe(false);
+  });
+
+  it("does nothing when the drop-in is missing", () => {
+    const io = createFakeIo();
+
+    expect(removeSshKexAlgorithms(io)).toBe(false);
+
+    expect(io.ran("systemctl reload")).toBe(false);
+  });
+
+  it("restores the file when sshd rejects the result", () => {
+    const io = createFakeIo({
+      files: { [SSHD_CONFIG]: withKex },
+      output: { "sshd -t": "error" },
+    });
+
+    expect(removeSshKexAlgorithms(io)).toBe(false);
+
+    expect(io.written(SSHD_CONFIG)).toBe(withKex);
+    expect(io.ran("systemctl reload")).toBe(false);
   });
 });
 
