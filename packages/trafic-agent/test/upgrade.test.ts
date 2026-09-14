@@ -1,5 +1,22 @@
-import { describe, it, expect } from "vitest";
-import { isNewer, runUpgrade, type UpgradeIo } from "../src/setup/upgrade.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  ddevVersion,
+  isNewer,
+  runUpgrade,
+  upgradeDdev,
+  type UpgradeIo,
+} from "../src/setup/upgrade.js";
+import { commandExists, exec, execSilent } from "../src/setup/steps.js";
+
+// `ddevVersion` and `upgradeDdev` reach for the server's own `ddev` and apt,
+// which a test machine may or may not have. Only the three collaborators that
+// touch the outside world are replaced; the progress logging stays real.
+vi.mock("../src/setup/steps.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/setup/steps.js")>()),
+  commandExists: vi.fn(() => false),
+  exec: vi.fn(() => ""),
+  execSilent: vi.fn(() => ""),
+}));
 
 // runUpgrade prints its progress; keep it out of the test output
 console.log = () => {};
@@ -46,6 +63,8 @@ describe("runUpgrade", () => {
     reExeced: string[][];
     migrated: boolean[];
     restarted: boolean[];
+    ddevUpgraded: boolean[];
+    order: string[];
   }
 
   function fakeIo(
@@ -56,6 +75,8 @@ describe("runUpgrade", () => {
       reExeced: [],
       migrated: [],
       restarted: [],
+      ddevUpgraded: [],
+      order: [],
     };
 
     const io: UpgradeIo = {
@@ -71,8 +92,19 @@ describe("runUpgrade", () => {
         // a test can get without exiting the runner
         throw new Error("re-exec");
       }) as UpgradeIo["reExecNewBinary"],
-      restartAgentService: (dryRun) => void recorded.restarted.push(dryRun),
-      runPendingMigrations: (dryRun) => void recorded.migrated.push(dryRun),
+      restartAgentService: (dryRun) => {
+        recorded.restarted.push(dryRun);
+        recorded.order.push("restart");
+      },
+      runPendingMigrations: (dryRun) => {
+        recorded.migrated.push(dryRun);
+        recorded.order.push("migrations");
+      },
+      ddevVersion: () => "ddev version v1.24.0",
+      upgradeDdev: (dryRun) => {
+        recorded.ddevUpgraded.push(dryRun);
+        recorded.order.push("ddev");
+      },
       ...overrides,
     };
 
@@ -170,11 +202,117 @@ describe("runUpgrade", () => {
     expect(recorded.restarted).toEqual([true]);
   });
 
+  it("updates DDEV after the migrations and before the restart", () => {
+    const { io, recorded } = fakeIo();
+
+    runUpgrade(false, undefined, io);
+
+    expect(recorded.ddevUpgraded).toEqual([false]);
+    expect(recorded.order).toEqual(["migrations", "ddev", "restart"]);
+  });
+
+  it("skips the DDEV update when DDEV is not installed", () => {
+    const { io, recorded } = fakeIo({ ddevVersion: () => null });
+
+    runUpgrade(false, undefined, io);
+
+    expect(recorded.ddevUpgraded).toEqual([]);
+    expect(recorded.restarted).toEqual([false]);
+  });
+
+  it("warns on a failed DDEV update and still restarts the service", () => {
+    // An apt failure must not cost the server its restart
+    const { io, recorded } = fakeIo({
+      upgradeDdev: () => {
+        throw new Error("apt-get failed");
+      },
+    });
+
+    runUpgrade(false, undefined, io);
+
+    expect(recorded.restarted).toEqual([false]);
+  });
+
+  it("shows the DDEV commands in dry-run without probing for ddev", () => {
+    const { io, recorded } = fakeIo();
+
+    runUpgrade(true, undefined, io);
+
+    expect(recorded.ddevUpgraded).toEqual([true]);
+  });
+
   it("runs as a non-root dry-run without exiting", () => {
     const { io, recorded } = fakeIo({ isRoot: () => false });
 
     runUpgrade(true, undefined, io);
 
     expect(recorded.migrated).toEqual([true]);
+  });
+});
+
+describe("ddevVersion", () => {
+  beforeEach(() => {
+    vi.mocked(commandExists).mockReset().mockReturnValue(false);
+    vi.mocked(execSilent).mockReset().mockReturnValue("");
+  });
+
+  it("returns null when ddev is not on the server", () => {
+    expect(ddevVersion()).toBeNull();
+    expect(execSilent).not.toHaveBeenCalled();
+  });
+
+  it("returns the first line reported by ddev --version", () => {
+    vi.mocked(commandExists).mockReturnValue(true);
+    vi.mocked(execSilent).mockReturnValue("ddev version v1.24.3");
+
+    expect(ddevVersion()).toBe("ddev version v1.24.3");
+  });
+
+  it("returns null when ddev is installed but reports nothing", () => {
+    // execSilent swallows a failing command and hands back an empty string
+    vi.mocked(commandExists).mockReturnValue(true);
+    vi.mocked(execSilent).mockReturnValue("");
+
+    expect(ddevVersion()).toBeNull();
+  });
+});
+
+describe("upgradeDdev", () => {
+  beforeEach(() => {
+    vi.mocked(exec).mockReset().mockReturnValue("");
+  });
+
+  it("refreshes the apt lists before upgrading", () => {
+    upgradeDdev(false);
+
+    const commands = vi.mocked(exec).mock.calls.map((call) => String(call[0]));
+    expect(commands).toHaveLength(2);
+    expect(commands[0]).toContain("apt-get update");
+    expect(commands[1]).toContain("apt-get install -y --only-upgrade ddev");
+  });
+
+  it("never installs DDEV on a server that does not have it", () => {
+    // `--only-upgrade` is what keeps this from adding DDEV to a plain server
+    upgradeDdev(false);
+
+    const install = String(vi.mocked(exec).mock.calls[1]?.[0]);
+    expect(install).toContain("--only-upgrade");
+  });
+
+  it("answers apt prompts for itself", () => {
+    upgradeDdev(false);
+
+    for (const call of vi.mocked(exec).mock.calls) {
+      expect(String(call[0])).toContain("DEBIAN_FRONTEND=noninteractive");
+      expect(String(call[0])).toContain("NEEDRESTART_MODE=a");
+    }
+  });
+
+  it("shows the commands in dry-run instead of hiding them", () => {
+    upgradeDdev(true);
+
+    for (const call of vi.mocked(exec).mock.calls) {
+      expect(call[1]).toEqual({ silent: false });
+    }
   });
 });

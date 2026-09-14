@@ -186,6 +186,75 @@ export function configureFirewall(io: SetupIo = nodeIo): void {
   info("firewall in front of the server; see the agent readme, 'Network exposure'");
 }
 
+/** The unattended-upgrades config written by `setup`, and owned by Trafic. */
+export const UNATTENDED_UPGRADES_CONFIG = "/etc/apt/apt.conf.d/50unattended-upgrades";
+
+/**
+ * The Allowed-Origins entry covering Docker Engine.
+ *
+ * `origin=Docker` is the `Origin:` field of the Release file served by
+ * download.docker.com (its `Label:` is `Docker CE`), and that repository's
+ * dist is the Ubuntu codename, so `codename=${distro_codename}` pins the
+ * entry to the release the server runs.
+ */
+export const DOCKER_ORIGIN_LINE = '"origin=Docker,codename=${distro_codename}"';
+
+/**
+ * Build the contents of /etc/apt/apt.conf.d/50unattended-upgrades.
+ *
+ * Pure, so `setup` and migration 0014 write the exact same file.
+ */
+export function buildUnattendedUpgradesConfig(): string {
+  return `// Trafic: Automatic security updates
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}";
+    "\${distro_id}:\${distro_codename}-security";
+    "\${distro_id}ESMApps:\${distro_codename}-apps-security";
+    "\${distro_id}ESM:\${distro_codename}-infra-security";
+    // Docker Engine ships from download.docker.com, outside Ubuntu's own
+    // pockets, so without this entry its security releases were never applied.
+    // DDEV is deliberately left out: a DDEV major landing unattended can break
+    // running previews, so DDEV is updated by \`trafic-agent upgrade\` instead,
+    // when an operator is there to see it.
+    ${DOCKER_ORIGIN_LINE};
+};
+
+// Do not automatically reboot
+Unattended-Upgrade::Automatic-Reboot "false";
+
+// Remove unused dependencies
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+// Email notifications (optional)
+// Unattended-Upgrade::Mail "root";
+`;
+}
+
+/**
+ * Add the Docker origin to an existing unattended-upgrades config.
+ *
+ * Returns whether the file was changed. Idempotent: a server with no such
+ * file was set up without hardening and is left alone, and a config that
+ * already names the Docker origin is not rewritten. The whole file is
+ * regenerated rather than patched because Trafic generates and owns it — the
+ * header comment says so.
+ *
+ * No service restart is needed: unattended-upgrades reads the config on each
+ * daily run.
+ */
+export function addDockerOriginToUnattendedUpgrades(io: SetupIo = nodeIo): boolean {
+  if (!io.fileExists(UNATTENDED_UPGRADES_CONFIG)) {
+    return false;
+  }
+
+  if (io.readFile(UNATTENDED_UPGRADES_CONFIG).includes(DOCKER_ORIGIN_LINE)) {
+    return false;
+  }
+
+  io.writeFile(UNATTENDED_UPGRADES_CONFIG, buildUnattendedUpgradesConfig());
+  return true;
+}
+
 /**
  * Configure automatic security updates
  */
@@ -198,29 +267,8 @@ export function configureUnattendedUpgrades(io: SetupIo = nodeIo): void {
     { silent: true },
   );
 
-  // Configure for security updates only
-  const upgradesConfig = `// Trafic: Automatic security updates
-Unattended-Upgrade::Allowed-Origins {
-    "\${distro_id}:\${distro_codename}";
-    "\${distro_id}:\${distro_codename}-security";
-    "\${distro_id}ESMApps:\${distro_codename}-apps-security";
-    "\${distro_id}ESM:\${distro_codename}-infra-security";
-};
-
-// Do not automatically reboot
-Unattended-Upgrade::Automatic-Reboot "false";
-
-// Remove unused dependencies
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-
-// Email notifications (optional)
-// Unattended-Upgrade::Mail "root";
-`;
-
-  io.writeFile(
-    "/etc/apt/apt.conf.d/50unattended-upgrades",
-    upgradesConfig,
-  );
+  // Ubuntu's release and security pockets, plus Docker Engine
+  io.writeFile(UNATTENDED_UPGRADES_CONFIG, buildUnattendedUpgradesConfig());
 
   // Enable automatic updates
   const autoConfig = `APT::Periodic::Update-Package-Lists "1";

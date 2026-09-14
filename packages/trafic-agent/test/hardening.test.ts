@@ -6,6 +6,9 @@ import {
   configureFirewall,
   configureFail2ban,
   configureUnattendedUpgrades,
+  addDockerOriginToUnattendedUpgrades,
+  DOCKER_ORIGIN_LINE,
+  UNATTENDED_UPGRADES_CONFIG,
   configureSystemLimits,
   configureFilePermissions,
   hardenServer,
@@ -262,9 +265,30 @@ describe("configureUnattendedUpgrades", () => {
 
     configureUnattendedUpgrades(io);
 
-    const config = io.written("/etc/apt/apt.conf.d/50unattended-upgrades");
+    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
     expect(config).toContain("${distro_id}:${distro_codename}-security");
     expect(config).toContain('Unattended-Upgrade::Automatic-Reboot "false"');
+  });
+
+  it("includes Docker Engine, which ships outside Ubuntu's pockets", () => {
+    const io = createFakeIo();
+
+    configureUnattendedUpgrades(io);
+
+    // Without this entry docker-ce is never upgraded: download.docker.com is
+    // none of the ${distro_id} pockets above
+    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
+    expect(config).toContain('"origin=Docker,codename=${distro_codename}"');
+    expect(config).toContain("${distro_id}:${distro_codename}-security");
+  });
+
+  it("leaves DDEV out, so a major cannot land on running previews", () => {
+    const io = createFakeIo();
+
+    configureUnattendedUpgrades(io);
+
+    // DDEV is updated by `trafic-agent upgrade` instead
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).not.toContain("origin=ddev");
   });
 
   it("turns on the periodic upgrade timer", () => {
@@ -275,6 +299,48 @@ describe("configureUnattendedUpgrades", () => {
     const periodic = io.written("/etc/apt/apt.conf.d/20auto-upgrades");
     expect(periodic).toContain('APT::Periodic::Unattended-Upgrade "1"');
     expect(io.ran("systemctl enable unattended-upgrades")).toBe(true);
+  });
+});
+
+describe("addDockerOriginToUnattendedUpgrades", () => {
+  const withoutDocker = `// Trafic: Automatic security updates
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}";
+    "\${distro_id}:\${distro_codename}-security";
+};
+`;
+
+  it("rewrites a config that predates the Docker origin", () => {
+    const io = createFakeIo({
+      files: { [UNATTENDED_UPGRADES_CONFIG]: withoutDocker },
+    });
+
+    expect(addDockerOriginToUnattendedUpgrades(io)).toBe(true);
+
+    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
+    expect(config).toContain(DOCKER_ORIGIN_LINE);
+    expect(config).toContain("${distro_id}:${distro_codename}-security");
+  });
+
+  it("does nothing when the Docker origin is already there", () => {
+    const io = createFakeIo({
+      files: {
+        [UNATTENDED_UPGRADES_CONFIG]: `Unattended-Upgrade::Allowed-Origins {\n    ${DOCKER_ORIGIN_LINE};\n};\n`,
+      },
+    });
+
+    expect(addDockerOriginToUnattendedUpgrades(io)).toBe(false);
+
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).toBe("");
+  });
+
+  it("does nothing when the config is missing", () => {
+    // A server set up without hardening owns no such file
+    const io = createFakeIo();
+
+    expect(addDockerOriginToUnattendedUpgrades(io)).toBe(false);
+
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).toBe("");
   });
 });
 
