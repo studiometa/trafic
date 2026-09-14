@@ -238,7 +238,7 @@ describe("deploy create-script", () => {
 
     const seed = io.commands.findIndex((c) => c.includes("ddev pull"));
     const mark = io.commands.findIndex(
-      (c) => c.includes("touch") && c.includes(".trafic-created"),
+      (c) => c.includes("touch") && c.includes("/.git/trafic-created"),
     );
 
     expect(mark).toBeGreaterThan(seed);
@@ -253,14 +253,14 @@ describe("deploy create-script", () => {
 
     // Recording a create-script that failed would strand the environment
     // half-seeded: no later deploy would try again
-    expect(io.commands.some((c) => c.includes(".trafic-created"))).toBe(false);
+    expect(io.commands.some((c) => c.includes("trafic-created"))).toBe(false);
   });
 
   it("runs again after a first deploy that failed before it", async () => {
     // The clone succeeded and the sync failed, so the directory is there but
     // the create-script never ran
     const io = createFakeSshIo({
-      tests: (command) => !command.includes(".trafic-created"),
+      tests: (command) => !command.includes("/.git/trafic-created"),
     });
 
     await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
@@ -273,7 +273,8 @@ describe("deploy create-script", () => {
   it("assumes an environment older than the markers was already created", async () => {
     const io = createFakeSshIo({
       tests: (command) =>
-        !command.includes(".trafic-cloned") && !command.includes(".trafic-created"),
+        !command.includes("/.git/trafic-cloned") &&
+        !command.includes("/.git/trafic-created"),
     });
 
     await deploy({ ...baseOptions, createScript: "ddev pull prod-db -y" }, io);
@@ -281,7 +282,7 @@ describe("deploy create-script", () => {
     // Its database has been live for a while: re-seeding would discard that
     expect(io.commands.some((c) => c.includes("ddev pull prod-db -y"))).toBe(false);
     // Recorded, so the question is settled from now on
-    expect(io.commands.some((c) => c.includes(".trafic-created"))).toBe(true);
+    expect(io.commands.some((c) => c.includes("/.git/trafic-created"))).toBe(true);
   });
 });
 
