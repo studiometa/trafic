@@ -1,6 +1,9 @@
 import { nodeIo, type SetupIo } from "./io.js";
 import { step, success, info, warn } from "./steps.js";
 
+/** The sshd drop-in written by `setup`, and the only file hardening owns. */
+export const SSHD_DROPIN = "/etc/ssh/sshd_config.d/trafic.conf";
+
 /**
  * Resolve the users listed in AllowUsers.
  *
@@ -82,20 +85,21 @@ X11Forwarding no
 # Disable TCP forwarding
 AllowTcpForwarding no
 
-# Use strong algorithms only
-KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256
+# Pin ciphers and MACs to strong AEAD and encrypt-then-MAC algorithms.
+# Key exchange is left to OpenSSH's own defaults, which are kept current and
+# include the post-quantum hybrids a fixed list here would silently exclude.
 Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com
 MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 `;
 
-  io.writeFile("/etc/ssh/sshd_config.d/trafic.conf", sshConfig);
-  io.exec("chmod 644 /etc/ssh/sshd_config.d/trafic.conf");
+  io.writeFile(SSHD_DROPIN, sshConfig);
+  io.exec(`chmod 644 ${SSHD_DROPIN}`);
 
   // Test config before restarting
   const testResult = io.exec("sshd -t 2>&1 || echo 'error'", { silent: true });
   if (testResult?.includes("error")) {
     warn("SSH config test failed, reverting...");
-    io.exec("rm /etc/ssh/sshd_config.d/trafic.conf");
+    io.exec(`rm ${SSHD_DROPIN}`);
     return;
   }
 
@@ -106,6 +110,46 @@ MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
       : "SSH hardened: password auth disabled, root key-only login retained",
   );
   info(`Allowed users: ${allowList.join(", ")}`);
+}
+
+/**
+ * Drop the KexAlgorithms line from the sshd drop-in.
+ *
+ * `setup` used to pin key exchange to two classical algorithms. A
+ * KexAlgorithms line with no `+`, `-` or `^` prefix replaces OpenSSH's whole
+ * default list, so the post-quantum hybrids it enables by itself
+ * (mlkem768x25519-sha256, sntrup761x25519-sha512) were excluded, and an
+ * OpenSSH 10.1+ client warns on every connection that the session is not
+ * using a post-quantum key exchange. Removing the line hands key exchange
+ * back to OpenSSH's maintained defaults; Ciphers and MACs stay pinned.
+ *
+ * Returns whether the file was changed. Idempotent: a drop-in without the
+ * line, or no drop-in at all, is left alone.
+ */
+export function removeSshKexAlgorithms(io: SetupIo = nodeIo): boolean {
+  if (!io.fileExists(SSHD_DROPIN)) {
+    return false;
+  }
+
+  const original = io.readFile(SSHD_DROPIN);
+  const lines = original.split("\n");
+  const kept = lines.filter((line) => !line.startsWith("KexAlgorithms"));
+
+  if (kept.length === lines.length) {
+    return false;
+  }
+
+  io.writeFile(SSHD_DROPIN, kept.join("\n"));
+
+  const testResult = io.exec("sshd -t 2>&1 || echo 'error'", { silent: true });
+  if (testResult?.includes("error")) {
+    warn("SSH config test failed after removing KexAlgorithms, reverting...");
+    io.writeFile(SSHD_DROPIN, original);
+    return false;
+  }
+
+  io.exec("systemctl reload ssh || systemctl reload sshd");
+  return true;
 }
 
 /**

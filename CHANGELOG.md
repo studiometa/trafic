@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CLI**: `deploy` writes its two markers inside the clone's `.git/` directory rather than at the root of the project. `.trafic-cloned` and `.trafic-created` sat next to the repository's own files, so every deployed project showed two untracked entries in `git status` — noise for anyone inspecting a preview on the server, and two paths that `git checkout FETCH_HEAD` had to step around on each deploy. Git neither reports nor touches what is inside `.git/`, and the markers still disappear with the clone, so `destroy` — which removes the whole project directory — needs no change. No compatibility path for the old locations: an environment deployed with 0.1.40 or 0.1.41 carries no marker under `.git/` and takes the existing "predates the marker" branch on its next deploy, which assumes the create-script already ran and records that ([#55])
+- **Agent**: `setup` leaves SSH key exchange on the OpenSSH defaults. The generated `/etc/ssh/sshd_config.d/trafic.conf` pinned `KexAlgorithms` to `curve25519-sha256@libssh.org` and `diffie-hellman-group-exchange-sha256`. Without a `+`, `-` or `^` prefix that directive replaces OpenSSH's whole default list rather than adding to it, and both algorithms named are classical, so the post-quantum hybrids OpenSSH enables by itself — `mlkem768x25519-sha256` and `sntrup761x25519-sha512` — were excluded. Every OpenSSH 10.1+ client then printed a warning on connection that the session is not using a post-quantum key exchange and may be vulnerable to "store now, decrypt later" attacks; confirmed with `sshd -T` on Ubuntu 26.04 running OpenSSH 10.2. The line is gone and key exchange now follows OpenSSH's own maintained defaults, which track new algorithms as they land. `Ciphers` and `MACs` stay pinned — neither takes part in the key exchange. Servers set up by an earlier release still carry the line; migration `0013__ssh_kex_defaults` removes it from the existing drop-in, validates the result with `sshd -t` before reloading, and restores the file if the test fails. Run `trafic-agent upgrade` to apply it ([#56])
 
 ## [0.1.41] - 2026.09.08
 
@@ -523,6 +524,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#53]: https://github.com/studiometa/trafic/pull/53
 [#54]: https://github.com/studiometa/trafic/pull/54
 [#55]: https://github.com/studiometa/trafic/pull/55
+[#56]: https://github.com/studiometa/trafic/pull/56
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
