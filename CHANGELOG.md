@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **CLI**: `deploy` writes its two markers inside the clone's `.git/` directory rather than at the root of the project. `.trafic-cloned` and `.trafic-created` sat next to the repository's own files, so every deployed project showed two untracked entries in `git status` — noise for anyone inspecting a preview on the server, and two paths that `git checkout FETCH_HEAD` had to step around on each deploy. Git neither reports nor touches what is inside `.git/`, and the markers still disappear with the clone, so `destroy` — which removes the whole project directory — needs no change. No compatibility path for the old locations: an environment deployed with 0.1.40 or 0.1.41 carries no marker under `.git/` and takes the existing "predates the marker" branch on its next deploy, which assumes the create-script already ran and records that ([#55])
+
 ## [0.1.41] - 2026.09.08
 
 ### Fixed
@@ -516,6 +522,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#52]: https://github.com/studiometa/trafic/pull/52
 [#53]: https://github.com/studiometa/trafic/pull/53
 [#54]: https://github.com/studiometa/trafic/pull/54
+[#55]: https://github.com/studiometa/trafic/pull/55
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

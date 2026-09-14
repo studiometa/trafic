@@ -162,11 +162,17 @@ const CONTAINER_SCRIPT = ".trafic-deploy.sh";
  * Its absence on a project that already has a `.git` means the environment
  * was created by an earlier version, which left nothing on disk to say
  * whether the create-script had run.
+ *
+ * Kept inside `.git/` rather than at the root of the project: git never
+ * reports what is in there, so the marker no longer shows up as an untracked
+ * file in `git status` and `git checkout FETCH_HEAD` never touches it. It
+ * still goes away with the clone, so `destroy` — which removes the whole
+ * project directory — needs no change.
  */
-const CLONED_MARKER = ".trafic-cloned";
+const CLONED_MARKER = ".git/trafic-cloned";
 
-/** Written once the create-script has completed. */
-const CREATED_MARKER = ".trafic-created";
+/** Written once the create-script has completed. Kept in `.git/` for the same reason. */
+const CREATED_MARKER = ".git/trafic-created";
 
 /**
  * Run the deploy script inside the DDEV container.
