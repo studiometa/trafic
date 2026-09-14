@@ -1,6 +1,6 @@
 import { execSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { step, success, info, warn, exec, execSilent, commandExists, isRoot } from "./steps.js";
+import { step, success, info, warn, exec, execSilent, isRoot } from "./steps.js";
 import { runPendingMigrations } from "./migrations/index.js";
 
 declare const __VERSION__: string;
@@ -95,15 +95,10 @@ export function restartAgentService(dryRun: boolean): void {
 }
 
 /**
- * The version string reported by `ddev --version`, or null when DDEV is not
- * installed or the version cannot be read.
+ * The installed apt package version of DDEV, or null when it cannot be read.
  */
 export function ddevVersion(): string | null {
-  if (!commandExists("ddev")) {
-    return null;
-  }
-
-  return execSilent("ddev --version 2>/dev/null | head -1") || null;
+  return execSilent("dpkg-query --show --showformat='${Version}' ddev") || null;
 }
 
 /**

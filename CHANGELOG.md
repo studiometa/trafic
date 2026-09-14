@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **Agent**: Fix `trafic-agent upgrade` incorrectly skipping DDEV because its version check ran DDEV as root ([9fbb16d], [#58])
+
 ## [0.1.43] - 2026.09.14
 
 ### Added
@@ -535,6 +541,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#55]: https://github.com/studiometa/trafic/pull/55
 [#56]: https://github.com/studiometa/trafic/pull/56
 [#57]: https://github.com/studiometa/trafic/pull/57
+[9fbb16d]: https://github.com/studiometa/trafic/commit/9fbb16d
+[#58]: https://github.com/studiometa/trafic/pull/58
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
