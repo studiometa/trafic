@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Agent**: Fix `trafic-agent upgrade` incorrectly skipping DDEV because its version check ran DDEV as root ([9fbb16d], [#58])
+- **CLI**: `deploy` and `setup` strip quotes from `--ssh-options` tokens before passing them to ssh. A quoted value with spaces, such as `-o ProxyCommand="ssh -i key -W %h:%p bastion"`, reached ssh's argv with its quotes still attached, so OpenSSH ran the proxy command through its own shell as one word and failed with `no such file or directory: ssh -i key ...`. This is the only way to give a bastion its own private key, since `-J` cannot carry `-i` to the jump hop — hit deploying to a DDEV host behind a bastion from GitLab CI ([80c94ab], [#61])
 
 ## [0.1.43] - 2026.09.14
 
@@ -543,6 +544,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#57]: https://github.com/studiometa/trafic/pull/57
 [9fbb16d]: https://github.com/studiometa/trafic/commit/9fbb16d
 [#58]: https://github.com/studiometa/trafic/pull/58
+[80c94ab]: https://github.com/studiometa/trafic/commit/80c94ab
+[#61]: https://github.com/studiometa/trafic/pull/61
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
