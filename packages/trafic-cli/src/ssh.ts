@@ -26,9 +26,14 @@ function buildSSHArgs(options: SSHOptions): string[] {
   ];
 
   if (options.sshOptions) {
-    // Split extra SSH options respecting quotes
+    // Split extra SSH options respecting quotes, then strip the quotes
+    // themselves: ssh receives argv elements directly, with no shell to
+    // remove them, so a token left as `ProxyCommand="ssh -i key … bastion"`
+    // reaches OpenSSH quotes and all. OpenSSH then runs the proxy command
+    // through its own shell as one word `"ssh -i key ..."` and fails with
+    // "no such file or directory: ssh -i key ...".
     const extra = options.sshOptions.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [];
-    args.push(...extra);
+    args.push(...extra.map((token) => token.replace(/"/g, "")));
   }
 
   return args;

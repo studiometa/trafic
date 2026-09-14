@@ -79,6 +79,40 @@ describe("exec", () => {
     expect(calls[0]!.args).toContain("jump@bastion");
   });
 
+  it("strips quotes from a quoted value with spaces, keeping it one argument", async () => {
+    const { calls, runner } = recorder();
+
+    await exec(
+      {
+        ...defaultOptions,
+        sshOptions:
+          '-o ProxyCommand="ssh -i key -W %h:%p bastion"',
+      },
+      "ls",
+      { runner },
+    );
+
+    const args = calls[0]!.args;
+    expect(args).toContain("ProxyCommand=ssh -i key -W %h:%p bastion");
+    expect(args.some((arg) => arg.includes('"'))).toBe(false);
+  });
+
+  it("still splits the README example into 4 elements", async () => {
+    const { calls, runner } = recorder();
+
+    await exec(
+      { ...defaultOptions, sshOptions: "-i key -o IdentitiesOnly=yes" },
+      "ls",
+      { runner },
+    );
+
+    // Base args are -o StrictHostKeyChecking=... -o BatchMode=yes -p 22 (6),
+    // followed by the destination and the command: extra sits in between.
+    const args = calls[0]!.args;
+    const extra = args.slice(6, args.length - 2);
+    expect(extra).toEqual(["-i", "key", "-o", "IdentitiesOnly=yes"]);
+  });
+
   it("propagates a failure rather than swallowing it", async () => {
     await expect(
       exec(defaultOptions, "false", { runner: failingRunner }),
