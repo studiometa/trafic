@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **CLI**: `deploy` quotes an `--ssh-options` value with spaces when building rsync's `-e` string. rsync re-splits `-e` on whitespace through its own shell rather than receiving argv elements directly, so a `ProxyCommand` value such as `-o ProxyCommand="ssh -i key -o IdentitiesOnly=yes -W %h:%p studiometa@bastion"` split apart: `-W %h:%p` landed on the outer ssh instead of the proxy command, which then failed with `Bad stdio forwarding specification '%h:%p'`. The `exec` and `test` paths were unaffected — they already pass argv arrays with no shell involved. Hit deploying through a bastion from GitLab CI ([2eb2953], [#62])
+
 ## [0.1.44] - 2026.09.14
 
 ### Fixed
@@ -435,7 +441,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.39...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.44...HEAD
+[2eb2953]: https://github.com/studiometa/trafic/commit/2eb2953
+[#62]: https://github.com/studiometa/trafic/pull/62
 [0.1.44]: https://github.com/studiometa/trafic/compare/0.1.43...0.1.44
 [0.1.43]: https://github.com/studiometa/trafic/compare/0.1.42...0.1.43
 [0.1.42]: https://github.com/studiometa/trafic/compare/0.1.41...0.1.42
