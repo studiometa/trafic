@@ -42,6 +42,8 @@ trafic-agent setup --tld previews.example.com
 - Root access (for initial setup)
 - Wildcard DNS pointing to the server
 
+**Automatic security updates.** Setup installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/50unattended-upgrades`, allowing Ubuntu's release, security and ESM pockets plus Docker Engine (`origin=Docker`, from `download.docker.com`). Docker security releases are therefore applied daily with the rest. Note that a Docker Engine update restarts the daemon and stops running preview containers; the waiting page starts a project again on its next request. DDEV is deliberately excluded — it is updated by `trafic-agent upgrade` instead. The server never reboots on its own (`Unattended-Upgrade::Automatic-Reboot "false"`).
+
 ### `trafic-agent upgrade` / `trafic-agent update`
 
 Upgrade the server to the latest version of `trafic-agent` in one command. `update` is an alias for `upgrade`.
@@ -50,7 +52,10 @@ Steps:
 1. **Check for updates** — queries the npm registry for the latest version
 2. **Install** — runs `npm install -g @studiometa/trafic-agent@latest` if a newer version is available
 3. **Migrations** — runs any pending server migrations (forward-only, idempotent)
-4. **Restart** — restarts the `trafic-agent` systemd service
+4. **DDEV** — upgrades the `ddev` package from its apt repository, printing the version before and after. Skipped when DDEV is not installed; a failure is reported as a warning and does not stop the upgrade
+5. **Restart** — restarts the `trafic-agent` systemd service
+
+DDEV is updated here rather than by `unattended-upgrades` on purpose: a DDEV major landing unattended can break running previews, so it happens when an operator runs the command and can watch the result.
 
 Fresh servers set up with `trafic-agent setup` have all migrations automatically marked as applied, so migrations only run when needed on existing deployments.
 

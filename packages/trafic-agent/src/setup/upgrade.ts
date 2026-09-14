@@ -1,6 +1,6 @@
 import { execSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { step, success, info, warn, exec, isRoot } from "./steps.js";
+import { step, success, info, warn, exec, execSilent, commandExists, isRoot } from "./steps.js";
 import { runPendingMigrations } from "./migrations/index.js";
 
 declare const __VERSION__: string;
@@ -95,6 +95,37 @@ export function restartAgentService(dryRun: boolean): void {
 }
 
 /**
+ * The version string reported by `ddev --version`, or null when DDEV is not
+ * installed or the version cannot be read.
+ */
+export function ddevVersion(): string | null {
+  if (!commandExists("ddev")) {
+    return null;
+  }
+
+  return execSilent("ddev --version 2>/dev/null | head -1") || null;
+}
+
+/**
+ * Upgrade DDEV from its apt repository. Throws when apt fails.
+ *
+ * DDEV is left out of unattended-upgrades on purpose — a major landing on its
+ * own can break running previews — so it is updated here, where an operator
+ * is watching. `--only-upgrade` never installs DDEV on a server that does not
+ * already have it.
+ */
+export function upgradeDdev(dryRun: boolean): void {
+  exec(
+    "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get update",
+    { silent: !dryRun },
+  );
+  exec(
+    "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y --only-upgrade ddev",
+    { silent: !dryRun },
+  );
+}
+
+/**
  * What the upgrade sequence needs from the outside world.
  *
  * Injected so the orchestration can be tested without reaching npm, writing
@@ -113,6 +144,9 @@ export interface UpgradeIo {
   reExecNewBinary: (args: string[]) => never;
   restartAgentService: (dryRun: boolean) => void;
   runPendingMigrations: (dryRun: boolean) => void;
+  /** The installed DDEV version, or null when DDEV is absent. */
+  ddevVersion: () => string | null;
+  upgradeDdev: (dryRun: boolean) => void;
 }
 
 /** The real collaborators, used unless a caller passes their own. */
@@ -127,6 +161,8 @@ export function nodeUpgradeIo(): UpgradeIo {
     reExecNewBinary,
     restartAgentService,
     runPendingMigrations,
+    ddevVersion,
+    upgradeDdev,
   };
 }
 
@@ -136,7 +172,8 @@ export function nodeUpgradeIo(): UpgradeIo {
  *  2. Install it globally if one is found — then re-exec the new binary
  *     so that steps 3 and 4 run with the new migration registry
  *  3. Run pending migrations
- *  4. Restart the systemd service
+ *  4. Update DDEV from its apt repository
+ *  5. Restart the systemd service
  */
 export function runUpgrade(
   dryRun = false,
@@ -192,10 +229,51 @@ export function runUpgrade(
   step("Run pending migrations");
   io.runPendingMigrations(dryRun);
 
-  // ── Step 4: Restart service ───────────────────────────────────────────────
+  // ── Step 4: Update DDEV ──────────────────────────────────────────────────
+  step("Update DDEV");
+  upgradeDdevStep(dryRun, io);
+
+  // ── Step 5: Restart service ───────────────────────────────────────────────
   step("Restart trafic-agent service");
   io.restartAgentService(dryRun);
   if (!dryRun) {
     success("Service restarted");
+  }
+}
+
+/**
+ * Update DDEV, reporting the version on either side of the apt call.
+ *
+ * A failed apt run must not cost the server its service restart, so the
+ * error is warned about and the upgrade carries on.
+ */
+function upgradeDdevStep(dryRun: boolean, io: UpgradeIo): void {
+  const before = io.ddevVersion();
+
+  if (!dryRun && before === null) {
+    info("DDEV is not installed — skipping");
+    return;
+  }
+
+  if (before) {
+    info(`Current: ${before}`);
+  }
+
+  try {
+    io.upgradeDdev(dryRun);
+  } catch (err) {
+    warn(`DDEV update failed: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  if (dryRun) {
+    return;
+  }
+
+  const after = io.ddevVersion();
+  if (after && after !== before) {
+    success(`DDEV updated: ${after}`);
+  } else {
+    success("DDEV up to date");
   }
 }

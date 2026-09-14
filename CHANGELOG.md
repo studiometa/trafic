@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Agent**: Docker Engine security releases are now applied by `unattended-upgrades`. The `Allowed-Origins` list written by `setup` covered only Ubuntu's own release, security and ESM pockets, and Docker is installed from `download.docker.com`, which is none of them — so `docker-ce` was never upgraded unless someone ran `apt-get upgrade` by hand, and a Docker security release could sit unapplied on a server indefinitely. That repository's Release file carries `Origin: Docker` and `Label: Docker CE`, and its dist is the Ubuntu codename, so the entry added is `"origin=Docker,codename=${distro_codename}"` — pinned to the release the server actually runs rather than matching Docker's repository on every Ubuntu version at once. The trade-off is accepted rather than overlooked: a Docker Engine update restarts the daemon and so stops running preview containers, but the waiting page starts a project again on its next request, which is a cheaper price than an unpatched container runtime on a server hosting arbitrary previews. `Unattended-Upgrade::Automatic-Reboot "false"` is unchanged, so the server still never reboots on its own. Servers set up by an earlier release still carry the old list; migration `0014__unattended_upgrades_docker_origin` regenerates the file — Trafic generates and owns it, as its header comment states — so an upgraded server ends up with content identical to a fresh install. Run `trafic-agent upgrade` to apply it ([#57])
+- **Agent**: `trafic-agent upgrade` updates DDEV. A new step between the migrations and the service restart runs `apt-get install -y --only-upgrade ddev` and prints the DDEV version before and after. DDEV is deliberately absent from the `unattended-upgrades` allow list added above: it is installed from `pkg.ddev.com` and a DDEV major landing unattended can break running previews, so it is updated here instead, when an operator runs the command and can watch the result. The step cannot make things worse — `--only-upgrade` never installs DDEV on a server that does not already have it, the step is skipped with an informational line when `ddev` is not on the PATH, and a failing apt run is reported as a warning rather than aborting the upgrade, so the agent is still restarted ([#57])
+
 ## [0.1.42] - 2026.09.14
 
 ### Fixed
@@ -526,6 +533,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#54]: https://github.com/studiometa/trafic/pull/54
 [#55]: https://github.com/studiometa/trafic/pull/55
 [#56]: https://github.com/studiometa/trafic/pull/56
+[#57]: https://github.com/studiometa/trafic/pull/57
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
