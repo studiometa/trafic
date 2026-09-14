@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Agent**: Detect DDEV through its installed apt package during `trafic-agent upgrade` instead of running `ddev --version`. The upgrade command runs as root, which DDEV refuses, so the version probe returned no output and incorrectly reported `DDEV is not installed — skipping` even when the package was installed and running. Reading the package version with `dpkg-query` avoids executing DDEV as root and lets the upgrade continue ([9fbb16d], [#58])
+- **Agent**: Fix `trafic-agent upgrade` incorrectly skipping DDEV because its version check ran DDEV as root ([9fbb16d], [#58])
 
 ## [0.1.43] - 2026.09.14
 
