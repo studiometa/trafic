@@ -40,6 +40,23 @@ function buildSSHArgs(options: SSHOptions): string[] {
 }
 
 /**
+ * Quote an ssh argument for the rsync `-e` string.
+ *
+ * `-e` is joined into one string and re-split by rsync's own shell, not
+ * passed as an argv array. A token containing whitespace — an `-o` value
+ * with spaces, now legal since --ssh-options started accepting quoted
+ * values — would otherwise be re-split too, handing part of it to the
+ * outer ssh invocation. Seen on a bastion deploy where `ProxyCommand=ssh -W
+ * %h:%p bastion` split apart and `-W %h:%p` landed on the outer ssh, which
+ * failed with "Bad stdio forwarding specification '%h:%p'". A token cannot
+ * contain a double quote at this point (buildSSHArgs already strips them),
+ * so a backslash-escape is enough if one ever did.
+ */
+function quoteSshArg(arg: string): string {
+  return /\s/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg;
+}
+
+/**
  * Build the SSH destination string (user@host).
  */
 function buildDestination(options: SSHOptions): string {
@@ -278,10 +295,7 @@ export async function rsync(
 
   const isDirectory = kind === "directory";
 
-  const sshCmd = [
-    "ssh",
-    ...buildSSHArgs(options),
-  ].join(" ");
+  const sshCmd = ["ssh", ...buildSSHArgs(options).map(quoteSshArg)].join(" ");
 
   const args = [
     "-azv",

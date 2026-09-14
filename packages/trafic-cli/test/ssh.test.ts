@@ -286,6 +286,37 @@ describe("rsync", () => {
     expect(calls[0]!.args[index + 1]).toBe("mkdir -p ~/'www/my-app/web' && rsync");
   });
 
+  it("quotes an -e ssh option that contains spaces", async () => {
+    const { calls, runner } = recorder();
+
+    await rsync(
+      "web/index.php",
+      "/x/web/index.php",
+      {
+        ...defaultOptions,
+        sshOptions: '-o ProxyCommand="ssh -W %h:%p bastion"',
+      },
+      asFile,
+      runner,
+    );
+
+    const index = calls[0]!.args.indexOf("-e");
+    expect(calls[0]!.args[index + 1]).toBe(
+      'ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p 22 -o "ProxyCommand=ssh -W %h:%p bastion"',
+    );
+  });
+
+  it("leaves the -e ssh command unquoted for a plain option set", async () => {
+    const { calls, runner } = recorder();
+
+    await rsync("web/index.php", "/x/web/index.php", defaultOptions, asFile, runner);
+
+    const index = calls[0]!.args.indexOf("-e");
+    expect(calls[0]!.args[index + 1]).toBe(
+      "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -p 22",
+    );
+  });
+
   it("refuses a path that does not exist instead of reporting success", async () => {
     const { calls, runner } = recorder();
 
