@@ -280,6 +280,9 @@ export function readRouterPorts(io: SetupIo = nodeIo): RouterPorts {
 /** Where the agent writes the Traefik files it owns. */
 export const TRAEFIK_DIR = "/home/ddev/.ddev/traefik";
 
+/** Static config the agent owns, merged by DDEV into .static_config.yaml. */
+export const STATIC_CONFIG = `${TRAEFIK_DIR}/static_config.trafic.yaml`;
+
 /** Wildcard TLS store, read before DDEV's own default_config.yaml. */
 export const TLS_STORE_CONFIG = `${TRAEFIK_DIR}/custom-global-config/0-trafic-tls.yaml`;
 
@@ -349,10 +352,10 @@ ${web.map((port) => webEntryPoint(`http-${port}`)).join("")}${tools.map(toolEntr
 certificatesResolvers:
   ${DNS_RESOLVER}:
     acme:
-      email: "${tls.email}"
+      email: "${escapeYamlDouble(tls.email)}"
       storage: /mnt/ddev-global-cache/traefik/${DNS_RESOLVER}.json
-${tls.caServer ? `      caServer: "${tls.caServer}"\n` : ""}      dnsChallenge:
-        provider: ${tls.provider}
+${tls.caServer ? `      caServer: "${escapeYamlDouble(tls.caServer)}"\n` : ""}      dnsChallenge:
+        provider: "${escapeYamlDouble(tls.provider)}"
         resolvers:
 ${DNS_CHALLENGE_RESOLVERS.map((resolver) => `          - "${resolver}"`).join("\n")}
 `;
@@ -377,9 +380,9 @@ tls:
       defaultGeneratedCert:
         resolver: ${DNS_RESOLVER}
         domain:
-          main: "${tld}"
+          main: "${escapeYamlDouble(tld)}"
           sans:
-            - "*.${tld}"
+            - "*.${escapeYamlDouble(tld)}"
 `;
 }
 
@@ -564,19 +567,24 @@ export function configureTraefik(
     ? buildTlsResolverOptions(tls, io)
     : undefined;
 
+  // Read and check the TLD before anything is written: a static config that
+  // names the resolver without the TLS store behind it is a broken pairing,
+  // and there is no reason to leave one on disk when the TLD is missing.
+  const tld = resolver ? readWildcardTld(options.tld, io) : "";
+
   // Static configuration: attaches trafic-auth to every entry point DDEV
   // publishes, and trafic-errors to the web ones, so every request goes
   // through auth regardless of which project router handles it.
   // DDEV merges all static_config.*.yaml files into .static_config.yaml on start.
   const staticConfig = buildStaticConfig(readToolPorts(io), routerPorts, resolver);
 
-  io.writeFile(`${TRAEFIK_DIR}/static_config.trafic.yaml`, staticConfig);
-  io.exec(`chown ddev:ddev ${TRAEFIK_DIR}/static_config.trafic.yaml`, { silent: true });
+  io.writeFile(STATIC_CONFIG, staticConfig);
+  io.exec(`chown ddev:ddev ${STATIC_CONFIG}`, { silent: true });
 
   info(`Entry points: http-${routerPorts.http}, http-${routerPorts.https} (web) plus tool ports`);
 
   if (resolver) {
-    writeWildcardFiles(tls, options.tld || readProjectTld(io), io);
+    writeWildcardFiles(tls, tld, io);
   } else {
     removeWildcardFiles(io);
   }
@@ -638,21 +646,32 @@ function buildTlsResolverOptions(tls: TlsConfig, io: SetupIo): TlsResolverOption
   };
 }
 
-/** Write the wildcard TLS store and the router credentials. */
-function writeWildcardFiles(tls: TlsConfig, tld: string, io: SetupIo): void {
+/** Read the TLD the wildcard certificate covers, or fail before any write. */
+function readWildcardTld(configured: string | undefined, io: SetupIo): string {
+  const tld = configured || readProjectTld(io);
+
   if (!tld) {
     throw new Error(
       "Cannot configure the wildcard certificate: no project TLD is set in DDEV",
     );
   }
 
+  return tld;
+}
+
+/** Write the wildcard TLS store and the router credentials. */
+function writeWildcardFiles(tls: TlsConfig, tld: string, io: SetupIo): void {
   io.writeFile(TLS_STORE_CONFIG, buildTlsStoreConfig(tld));
   io.exec(`chown ddev:ddev ${TLS_STORE_CONFIG}`, { silent: true });
 
+  // Holds the provider token: created empty and mode 600 first, so the
+  // credentials never exist on disk under the umask default. `install`
+  // truncates an existing file and resets its mode, and the later write
+  // keeps it.
+  io.exec(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`, {
+    silent: true,
+  });
   io.writeFile(ROUTER_COMPOSE_OVERRIDE, buildRouterComposeOverride(tls.dnsEnv));
-  // Holds the provider token: readable by the ddev user only
-  io.exec(`chmod 600 ${ROUTER_COMPOSE_OVERRIDE}`, { silent: true });
-  io.exec(`chown ddev:ddev ${ROUTER_COMPOSE_OVERRIDE}`, { silent: true });
 
   success(`Wildcard certificate: *.${tld} via the ${tls.dnsProvider} DNS-01 provider`);
 }

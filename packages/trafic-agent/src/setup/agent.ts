@@ -119,11 +119,14 @@ export function createAgentConfig(
 
     if (tlsSection) {
       // Never rewrite an existing config — print what to add instead, or the
-      // DNS credentials would silently go nowhere
+      // DNS credentials would silently go nowhere. The values are masked:
+      // this output goes to a terminal and to the CI job log of whoever ran
+      // `trafic setup`, and a provider token does not belong in either.
       info("Add this to /etc/trafic/config.toml, then run `trafic-agent upgrade`:");
-      for (const line of tlsSection.trim().split("\n")) {
+      for (const line of buildTlsSection(dnsProvider, dnsEnv, true).trim().split("\n")) {
         info(`  ${line}`);
       }
+      info("Replace each REPLACE_ME with the value you passed to --dns-env.");
     }
 
     return;
@@ -180,26 +183,37 @@ ${tlsSection}`;
 function buildTlsSection(
   dnsProvider: string | undefined,
   dnsEnv: Record<string, string>,
+  redact = false,
 ): string {
   if (!dnsProvider) {
     return "";
   }
 
   const env = Object.entries(dnsEnv)
-    .map(([key, value]) => `${key} = "${value.replace(/(["\\])/g, "\\$1")}"`)
+    .map(([key, value]) => `${key} = "${redact ? "REPLACE_ME" : escapeTomlString(value)}"`)
     .join("\n");
 
   return `
 # Wildcard certificate (DNS-01). One *.<tld> certificate replaces the
 # per-hostname ones, so previews stop consuming the Let's Encrypt quota.
 [tls]
-dns_provider = "${dnsProvider}"
+dns_provider = "${escapeTomlString(dnsProvider)}"
 # ca_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 # Credentials the lego provider reads. Passed to the ddev-router container.
 [tls.dns_env]
 ${env}
 `;
+}
+
+/** Escape a value for a basic (double-quoted) TOML string. */
+function escapeTomlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
 }
 
 /**

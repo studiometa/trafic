@@ -43,7 +43,7 @@ describe("buildStaticConfig with a DNS-01 resolver", () => {
     expect(config).toContain("  http-443:");
     expect(config).toContain("certificatesResolvers:");
     expect(config).toContain("  acme-dns:");
-    expect(config).toContain("provider: cloudflare");
+    expect(config).toContain('provider: "cloudflare"');
     expect(config).toContain('email: "admin@example.com"');
   });
 
@@ -192,8 +192,21 @@ describe("configureTraefik with a DNS provider", () => {
     const io = configure();
 
     expect(io.written(ROUTER_COMPOSE_OVERRIDE)).toContain("CF_DNS_API_TOKEN=secret");
-    expect(io.ran(`chmod 600 ${ROUTER_COMPOSE_OVERRIDE}`)).toBe(true);
-    expect(io.ran(`chown ddev:ddev ${ROUTER_COMPOSE_OVERRIDE}`)).toBe(true);
+    // Created empty and restricted first: a chmod after the write would
+    // leave the token readable by everyone for as long as it takes
+    expect(
+      io.ran(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`),
+    ).toBe(true);
+  });
+
+  it("quotes the provider name in the static config", () => {
+    // The name is not validated, and an unquoted YAML scalar holding a colon
+    // or a newline would inject keys into the resolver
+    const io = createFakeIo({ output: { [GLOBAL_CONFIG]: LETS_ENCRYPT_ON } });
+
+    configureTraefik({ tls: { ...tls, dnsProvider: 'x", a: "b' } }, io);
+
+    expect(io.written(STATIC_CONFIG)).toContain('provider: "x\\", a: \\"b"');
   });
 
   it("uses the TLD it is given over DDEV's", () => {
@@ -280,6 +293,21 @@ describe("createAgentConfig with a DNS provider", () => {
     expect(io.written("/etc/trafic/config.toml")).not.toContain("[tls]");
   });
 
+  it("escapes the provider name it was given", () => {
+    // The name is never validated, and an unescaped quote would close the
+    // TOML string and let the rest of the value add keys of its own
+    const io = createFakeIo();
+
+    createAgentConfig(
+      { tld: "previews.example.com", dnsProvider: 'x"\nport = 1', dnsEnv: {} },
+      io,
+    );
+
+    expect(io.written("/etc/trafic/config.toml")).toContain(
+      'dns_provider = "x\\"\\nport = 1"',
+    );
+  });
+
   it("leaves an existing config alone", () => {
     const io = createFakeIo({ files: { "/etc/trafic/config.toml": "tld = 'x'\n" } });
 
@@ -289,6 +317,29 @@ describe("createAgentConfig with a DNS provider", () => {
     );
 
     expect(io.writes.has("/etc/trafic/config.toml")).toBe(false);
+  });
+
+  it("masks the credentials in the snippet printed for an existing config", () => {
+    // The snippet goes to the terminal and to the CI job log of whoever ran
+    // `trafic setup` — a provider token belongs in neither
+    const io = createFakeIo({ files: { "/etc/trafic/config.toml": "tld = 'x'\n" } });
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    createAgentConfig(
+      {
+        tld: "previews.example.com",
+        dnsProvider: "cloudflare",
+        dnsEnv: { CF_DNS_API_TOKEN: "secret" },
+      },
+      io,
+    );
+
+    const printed = log.mock.calls.map((call) => call.join(" ")).join("\n");
+    log.mockRestore();
+
+    expect(printed).toContain("[tls.dns_env]");
+    expect(printed).toContain("REPLACE_ME");
+    expect(printed).not.toContain("secret");
   });
 });
 

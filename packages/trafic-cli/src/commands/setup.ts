@@ -308,14 +308,14 @@ function buildAgentSetupArgs(options: SetupOptions): string[] {
     args.push(`--email=${options.email}`);
   }
 
+  // Quoted: a provider name or token can hold characters the remote shell
+  // would otherwise read, and the whole command goes through SSH
   if (options.dnsProvider) {
-    args.push(`--dns-provider=${options.dnsProvider}`);
+    args.push(`--dns-provider=${shellQuote(options.dnsProvider)}`);
   }
 
-  // Quoted: a provider token can hold characters the remote shell would
-  // otherwise read, and the whole command goes through SSH
   for (const entry of options.dnsEnv ?? []) {
-    args.push(`--dns-env='${entry.replace(/'/g, `'\\''`)}'`);
+    args.push(`--dns-env=${shellQuote(entry)}`);
   }
 
   if (options.noHardening) {
@@ -363,4 +363,9 @@ export function resolveSshUsers(options: SetupOptions): string[] {
   }
 
   return users;
+}
+
+/** Wrap a value in single quotes so the remote shell reads it verbatim. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
