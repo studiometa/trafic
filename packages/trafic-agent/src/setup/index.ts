@@ -77,6 +77,7 @@ export async function setup(options: SetupOptions): Promise<void> {
         tld: options.tld,
         tls: {
           dnsProvider: options.dnsProvider,
+          caServer: options.caServer,
           dnsEnv: options.dnsEnv ?? {},
         },
       });

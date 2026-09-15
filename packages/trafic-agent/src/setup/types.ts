@@ -43,6 +43,8 @@ export interface SetupOptions {
   dnsProvider?: string;
   /** Credentials for that provider, passed to the router container */
   dnsEnv?: Record<string, string>;
+  /** ACME CA directory URL, kept from the config on a re-run */
+  caServer?: string;
   /** Skip hardening steps */
   noHardening?: boolean;
   /** Skip Docker installation (already installed) */

@@ -226,6 +226,8 @@ async function runSetup(values: Record<string, unknown>): Promise<void> {
     tld,
     dnsProvider,
     dnsEnv,
+    // Not a flag: a CA override is a config-file decision, kept across re-runs
+    caServer: existingConfig.tls.caServer,
     trustedProxyHops: parseTrustedProxyHops(values["trusted-proxy-hops"] as string | undefined),
     email: values.email as string | undefined,
     noHardening: values["no-hardening"] as boolean | undefined,
