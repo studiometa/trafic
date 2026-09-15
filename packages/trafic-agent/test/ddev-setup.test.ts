@@ -115,7 +115,7 @@ describe("configureTraefik", () => {
   it("points forward auth at the gateway IP, not host.docker.internal", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     expect(config).toContain("http://172.20.0.1:9876/__auth__");
@@ -127,7 +127,7 @@ describe("configureTraefik", () => {
   it("attaches the middlewares to both entry points", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const staticConfig = fake.written(
       `${TRAEFIK_DIR}/static_config.trafic.yaml`,
@@ -143,7 +143,7 @@ describe("configureTraefik", () => {
   it("writes the dynamic config only where Traefik reads it", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     // DDEV 1.25 copies custom-global-config into the ddev-global-cache
     // volume. A second copy at the traefik root is never read, and having
@@ -157,7 +157,7 @@ describe("configureTraefik", () => {
   it("serves the waiting page on 502 and 503", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     expect(config).toContain('"502"');
@@ -168,7 +168,7 @@ describe("configureTraefik", () => {
   it("leaves the config owned by ddev", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     expect(
       fake.ran(`chown ddev:ddev ${TRAEFIK_DIR}/custom-global-config/trafic.yaml`),
@@ -276,7 +276,7 @@ describe("configureTraefik catch-all router", () => {
   it("defines a catch-all router so stopped projects reach the agent", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     // ddev stop removes the project's router, so without this Traefik answers
@@ -288,7 +288,7 @@ describe("configureTraefik catch-all router", () => {
   it("keeps it above DDEV's fallback routers but below project routers", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     // DDEV 1.25.4 ships its own catch-all at priority 1 with the same rule,
@@ -301,7 +301,7 @@ describe("configureTraefik catch-all router", () => {
   it("defines both a plain and a TLS catch-all", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     // A router carrying tls only matches HTTPS entry points, so one alone
@@ -313,7 +313,7 @@ describe("configureTraefik catch-all router", () => {
   it("puts tls on exactly one of them", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     const routers = config.slice(config.indexOf("routers:"), config.indexOf("services:"));
@@ -323,7 +323,7 @@ describe("configureTraefik catch-all router", () => {
   it("does not attach auth to the catch-all itself", () => {
     const fake = io();
 
-    configureTraefik(fake);
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
     const router = config.slice(config.indexOf("trafic-catchall"));
