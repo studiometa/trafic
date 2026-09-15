@@ -42,6 +42,9 @@ export async function setup(options: SetupOptions): Promise<void> {
   if (options.email) {
     info(`Let's Encrypt email: ${options.email}`);
   }
+  if (options.dnsProvider) {
+    info(`Wildcard certificate: DNS-01 via ${options.dnsProvider}`);
+  }
   if (options.noHardening) {
     info("Hardening: disabled");
   }
@@ -70,7 +73,13 @@ export async function setup(options: SetupOptions): Promise<void> {
     if (!options.noDdev) {
       installDdev();
       configureDdev(options.tld, options.email);
-      configureTraefik();
+      configureTraefik({
+        tld: options.tld,
+        tls: {
+          dnsProvider: options.dnsProvider,
+          dnsEnv: options.dnsEnv ?? {},
+        },
+      });
       // After DDEV, so the tool ports are known. UFW cannot reach these:
       // Docker's rules run before its chains.
       configureDockerFirewall(readToolPorts());
@@ -87,6 +96,8 @@ export async function setup(options: SetupOptions): Promise<void> {
     createAgentConfig({
       tld: options.tld,
       trustedProxyHops: options.trustedProxyHops,
+      dnsProvider: options.dnsProvider,
+      dnsEnv: options.dnsEnv,
     });
     createSystemdService();
 

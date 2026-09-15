@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { parse } from "smol-toml";
-import type { AgentConfig, AuthConfig, AuthRule } from "../types.js";
+import type { AgentConfig, AuthConfig, AuthRule, TlsConfig } from "../types.js";
 
 const DEFAULT_CONFIG_PATHS = [
   "/etc/trafic/config.toml",
@@ -23,6 +23,9 @@ const DEFAULT_CONFIG: AgentConfig = {
     basicAuth: [],
     rules: [],
     trustedProxyHops: 1,
+  },
+  tls: {
+    dnsEnv: {},
   },
 };
 
@@ -61,6 +64,7 @@ export function loadConfig(configPath?: string): AgentConfig {
 
   // Merge with defaults
   const auth = mergeAuthConfig(parsed.auth as Record<string, unknown>);
+  const tls = mergeTlsConfig(parsed.tls as Record<string, unknown>);
 
   return {
     tld: (parsed.tld as string) ?? DEFAULT_CONFIG.tld,
@@ -75,6 +79,32 @@ export function loadConfig(configPath?: string): AgentConfig {
       (parsed.idle_check_interval as string) ??
       DEFAULT_CONFIG.idleCheckInterval,
     auth,
+    tls,
+  };
+}
+
+/**
+ * Read the [tls] section.
+ *
+ * `dns_env` holds provider credentials, so its values are taken as-is and
+ * only checked for being strings — validateConfig reports the rest.
+ */
+function mergeTlsConfig(raw?: Record<string, unknown>): TlsConfig {
+  if (!raw) return DEFAULT_CONFIG.tls;
+
+  const env = (raw.dns_env as Record<string, unknown> | undefined) ?? {};
+  const dnsEnv: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(env)) {
+    // Kept as read: a number or a boolean here is a config mistake, and
+    // validateConfig says so rather than coercing it into a credential
+    dnsEnv[key] = value as string;
+  }
+
+  return {
+    dnsProvider: (raw.dns_provider as string | undefined) || undefined,
+    caServer: (raw.ca_server as string | undefined) || undefined,
+    dnsEnv,
   };
 }
 
@@ -157,6 +187,16 @@ export function validateConfig(config: AgentConfig): string[] {
     config.auth.defaultPolicy !== "token"
   ) {
     errors.push('auth.default_policy must be "allow", "deny", "basic", or "token"');
+  }
+
+  for (const [key, value] of Object.entries(config.tls.dnsEnv)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      errors.push(`tls.dns_env key "${key}" is not a valid environment variable name`);
+    }
+
+    if (typeof value !== "string") {
+      errors.push(`tls.dns_env.${key} must be a string`);
+    }
   }
 
   return errors;
