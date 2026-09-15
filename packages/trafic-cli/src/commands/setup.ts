@@ -43,6 +43,10 @@ export async function setup(
     info(`Trusted proxy hops: ${options.trustedProxyHops}`);
   }
 
+  if (options.dnsProvider) {
+    info(`Wildcard certificate: DNS-01 via ${options.dnsProvider}`);
+  }
+
   if (!options.noHardening) {
     const sshUsers = resolveSshUsers(options);
     const withRoot = options.noRootSsh ? "" : "root, ";
@@ -302,6 +306,16 @@ function buildAgentSetupArgs(options: SetupOptions): string[] {
 
   if (options.email) {
     args.push(`--email=${options.email}`);
+  }
+
+  if (options.dnsProvider) {
+    args.push(`--dns-provider=${options.dnsProvider}`);
+  }
+
+  // Quoted: a provider token can hold characters the remote shell would
+  // otherwise read, and the whole command goes through SSH
+  for (const entry of options.dnsEnv ?? []) {
+    args.push(`--dns-env='${entry.replace(/'/g, `'\\''`)}'`);
   }
 
   if (options.noHardening) {

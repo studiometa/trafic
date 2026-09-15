@@ -27,6 +27,10 @@ const HELP = `
   Setup options:
     --tld <domain>             TLD for DDEV projects (required)
     --email <email>            Email for Let's Encrypt certificates
+    --dns-provider <name>      DNS-01 provider (lego name, e.g. cloudflare). Asks for one
+                               wildcard *.<tld> certificate instead of one per preview.
+                               Requires --email
+    --dns-env <KEY=VALUE>      Credential for that provider, repeatable
     --agent-version <version>  Agent version to install (default: latest)
     --ssh-users <users>        SSH users to allow, comma-separated (default: ddev)
                                --user is always added, so hardening cannot lock you out
@@ -67,6 +71,8 @@ const HELP = `
     trafic setup --host server.example.com --tld previews.example.com
     trafic setup --host server.example.com --tld previews.example.com --email admin@example.com
     trafic setup --host server.example.com --tld previews.example.com --trusted-proxy-hops 2
+    trafic setup --host server.example.com --tld previews.example.com --email admin@example.com \
+      --dns-provider cloudflare --dns-env CF_DNS_API_TOKEN=xxx
     trafic deploy --host server.example.com --name my-app --branch main
     trafic deploy --host server.example.com --name my-app --preview 42 --sync "dist/"
     trafic deploy --host server.example.com --name my-app --env COMPOSER_AUTH --env CI=true
@@ -192,6 +198,8 @@ function main(): void {
         "ssh-options": { type: "string", default: "" },
         tld: { type: "string" },
         email: { type: "string" },
+        "dns-provider": { type: "string" },
+        "dns-env": { type: "string", multiple: true },
         "agent-version": { type: "string", default: "latest" },
         "ssh-users": { type: "string" },
         "trusted-proxy-hops": { type: "string" },
@@ -289,10 +297,18 @@ function main(): void {
         process.exit(1);
       }
 
+      if (values["dns-provider"] && !values.email) {
+        error("--dns-provider requires --email");
+        console.log("  Let's Encrypt refuses an ACME account without one");
+        process.exit(1);
+      }
+
       const setupOptions: SetupOptions = {
         ...sshBase,
         tld: values.tld,
         email: values.email,
+        dnsProvider: values["dns-provider"],
+        dnsEnv: values["dns-env"],
         agentVersion: values["agent-version"]!,
         noHardening: values["no-hardening"]!,
         noRootSsh: values["no-root-ssh"]!,
