@@ -602,7 +602,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [99bc7ba]: https://github.com/studiometa/trafic/commit/99bc7ba
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
-[#59]: https://github.com/studiometa/trafic/pull/59
+[#59]: https://github.com/studiometa/trafic/issues/59
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
 [f086115]: https://github.com/studiometa/trafic/commit/f086115
 [36bca6b]: https://github.com/studiometa/trafic/commit/36bca6b

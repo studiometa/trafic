@@ -4,13 +4,11 @@ import {
   configureTraefik,
   DNS_RESOLVER,
   ROUTER_COMPOSE_OVERRIDE,
+  STATIC_CONFIG,
   TLS_STORE_CONFIG,
-  TRAEFIK_DIR,
 } from "../ddev.js";
 import { loadConfig } from "../../utils/config.js";
 import type { Migration } from "../types.js";
-
-const STATIC_CONFIG = `${TRAEFIK_DIR}/static_config.trafic.yaml`;
 
 /**
  * Migration 0015: apply the wildcard DNS-01 certificate on servers that ask

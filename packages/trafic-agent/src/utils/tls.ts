@@ -1,11 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
+import { DNS_RESOLVER, STATIC_CONFIG } from "../setup/ddev.js";
 import type { AgentConfig } from "../types.js";
-
-/** The static config the agent owns, merged by DDEV on project start. */
-const STATIC_CONFIG = "/home/ddev/.ddev/traefik/static_config.trafic.yaml";
-
-/** Name of the DNS-01 resolver `configureTraefik` writes. */
-const DNS_RESOLVER = "acme-dns";
 
 /**
  * Warn when the config asks for a wildcard certificate that Traefik never got.
