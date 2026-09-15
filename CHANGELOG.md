@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **Agent**: Prevent search engines from indexing waiting pages ([#63])
+
 ## [0.1.45] - 2026.09.14
 
 ### Fixed
@@ -556,6 +562,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#58]: https://github.com/studiometa/trafic/pull/58
 [80c94ab]: https://github.com/studiometa/trafic/commit/80c94ab
 [#61]: https://github.com/studiometa/trafic/pull/61
+[#63]: https://github.com/studiometa/trafic/pull/63
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696
