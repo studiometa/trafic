@@ -1,14 +1,16 @@
-import { existsSync, readFileSync } from "node:fs";
-import { exec, execSilent, info } from "../steps.js";
+import { info } from "../steps.js";
 import {
   configureTraefik,
+  findRunningProject,
   DNS_RESOLVER,
   ROUTER_COMPOSE_OVERRIDE,
   STATIC_CONFIG,
   TLS_STORE_CONFIG,
 } from "../ddev.js";
+import { nodeIo, type SetupIo } from "../io.js";
 import { loadConfig } from "../../utils/config.js";
 import type { Migration } from "../types.js";
+import type { TlsConfig } from "../../types.js";
 
 /**
  * Migration 0016: apply the wildcard DNS-01 certificate on servers that ask
@@ -59,49 +61,59 @@ export const migration0016WildcardDnsChallenge: Migration = {
   description: "Apply the wildcard DNS-01 certificate where one is configured",
 
   run(): void {
-    const { tls } = loadConfig();
-
-    if (!tls.dnsProvider) {
-      // Per-host certificates stay as they are
-      return;
-    }
-
-    const resolverConfigured =
-      existsSync(STATIC_CONFIG) &&
-      readFileSync(STATIC_CONFIG, "utf-8").includes(`${DNS_RESOLVER}:`);
-
-    if (
-      resolverConfigured &&
-      existsSync(TLS_STORE_CONFIG) &&
-      existsSync(ROUTER_COMPOSE_OVERRIDE)
-    ) {
-      return;
-    }
-
-    configureTraefik({ tls });
-
-    const project = findRunningProject();
-
-    if (!project) {
-      info("No running project — the next deploy applies the wildcard certificate");
-      return;
-    }
-
-    // A running router keeps its environment: DDEV only re-reads the compose
-    // override when it recreates the container
-    const router = findRouterContainer();
-
-    if (router) {
-      execSilent(`docker rm -f ${router}`);
-    }
-
-    // Regenerates .static_config.yaml and the router compose from the files
-    // above, and recreates ddev-router with the provider credentials
-    exec(`su - ddev -c 'DDEV_NONINTERACTIVE=true ddev start ${project}'`, {
-      silent: true,
-    });
+    runWildcardMigration();
   },
 };
+
+/**
+ * The migration body, with its effects injected so tests can drive it.
+ *
+ * `tls` defaults to the server's own config: the migration runs after setup
+ * wrote /etc/trafic/config.toml, so that file is the only source.
+ */
+export function runWildcardMigration(
+  io: SetupIo = nodeIo,
+  tls: TlsConfig = loadConfig().tls,
+): void {
+  if (!tls.dnsProvider) {
+    // Per-host certificates stay as they are
+    return;
+  }
+
+  const resolverConfigured =
+    io.fileExists(STATIC_CONFIG) && io.readFile(STATIC_CONFIG).includes(`${DNS_RESOLVER}:`);
+
+  if (
+    resolverConfigured &&
+    io.fileExists(TLS_STORE_CONFIG) &&
+    io.fileExists(ROUTER_COMPOSE_OVERRIDE)
+  ) {
+    return;
+  }
+
+  configureTraefik({ tls }, io);
+
+  const project = findRunningProject(io);
+
+  if (!project) {
+    info("No running project — the next deploy applies the wildcard certificate");
+    return;
+  }
+
+  // A running router keeps its environment: DDEV only re-reads the compose
+  // override when it recreates the container
+  const router = findRouterContainer(io);
+
+  if (router) {
+    io.execSilent(`docker rm -f ${router}`);
+  }
+
+  // Regenerates .static_config.yaml and the router compose from the files
+  // above, and recreates ddev-router with the provider credentials
+  io.exec(`su - ddev -c 'DDEV_NONINTERACTIVE=true ddev start ${project}'`, {
+    silent: true,
+  });
+}
 
 /**
  * The ddev-router container id, whatever its current name.
@@ -109,36 +121,10 @@ export const migration0016WildcardDnsChallenge: Migration = {
  * Compose labels survive the `<id>_ddev-router` rename a recreation leaves
  * behind; the container name does not.
  */
-export function findRouterContainer(): string | undefined {
-  const id = execSilent(
-    "docker ps -aq --filter label=com.docker.compose.service=ddev-router",
-  ).trim();
+export function findRouterContainer(io: SetupIo = nodeIo): string | undefined {
+  const id = io
+    .execSilent("docker ps -aq --filter label=com.docker.compose.service=ddev-router")
+    .trim();
 
   return id.split("\n")[0] || undefined;
-}
-
-/**
- * Name one running DDEV project, or undefined when none is running.
- *
- * `ddev list -j` is the only source that reports a live status —
- * project_list.yaml records where a project lives, not whether it runs. A
- * stopped project is never started here: waking a scaled-to-zero preview is
- * not this migration's business.
- */
-function findRunningProject(): string | undefined {
-  const json = execSilent("su - ddev -c 'ddev list -j'");
-
-  if (!json) {
-    return undefined;
-  }
-
-  try {
-    const parsed = JSON.parse(json) as {
-      raw?: Array<{ name?: string; status?: string }>;
-    };
-
-    return parsed.raw?.find((project) => project.status === "running")?.name;
-  } catch {
-    return undefined;
-  }
 }
