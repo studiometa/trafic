@@ -243,13 +243,16 @@ them in the router container's environment where lego reads them.
 1. Add the `[tls]` section to `/etc/trafic/config.toml`
 2. Run `sudo trafic-agent upgrade`
 
-Migration `0015__wildcard_dns_challenge` writes the Traefik files, removes the
+Migration `0016__wildcard_dns_challenge` writes the Traefik files, removes the
 router container and starts one running project. DDEV regenerates the static
 config on any project start, but reads `router-compose.*.yaml` only when it
 recreates the router, so the removal is what gets the credentials into the
 container. The router is back within seconds. With no project running, the
 next deploy applies it. `trafic-agent audit` reports whether the certificate
 was issued.
+
+The first order takes about a minute after the router starts: lego waits for
+the challenge record to propagate before Let's Encrypt looks for it.
 
 **What the agent writes:**
 
@@ -288,10 +291,18 @@ zone rather than the production one.
 name with a dot in it falls back to per-host issuance.
 
 **A first test should use staging.** Set `ca_server` to
-`https://acme-staging-v02.api.letsencrypt.org/directory`, run the rollout,
-check the router log, then remove the line and run `sudo trafic-agent upgrade`
-again. Staging certificates are not trusted by browsers — that is the point:
-a wrong token or an unreachable zone costs nothing in quota.
+`https://acme-staging-v02.api.letsencrypt.org/directory`, run the rollout and
+check the router log. Staging certificates are not trusted by browsers — that
+is the point: a wrong token or an unreachable zone costs nothing in quota.
+Switching to production afterwards is the case below.
+
+**Changing `[tls]` later.** Editing `ca_server` or the DNS provider only
+changes the config file. The Traefik files carry the old values until they are
+rewritten, which today means re-running `setup` — the migration runs once per
+server and does nothing on a second `upgrade`. A staging certificate also has
+to be discarded before the switch to production: Traefik keeps it in
+`acme-dns.json` in the `ddev-global-cache` volume and serves it until renewal,
+so delete that file as well.
 
 ### Turning Let's Encrypt off
 
