@@ -292,9 +292,6 @@ export const ROUTER_COMPOSE_OVERRIDE = "/home/ddev/.ddev/router-compose.trafic.y
 /** Name of the DNS-01 resolver the agent adds to Traefik. */
 export const DNS_RESOLVER = "acme-dns";
 
-/** Recursive resolvers lego asks for the challenge record. */
-const DNS_CHALLENGE_RESOLVERS = ["1.1.1.1:53", "9.9.9.9:53"];
-
 /** What buildStaticConfig needs to emit the DNS-01 resolver. */
 export interface TlsResolverOptions {
   /** lego provider name, e.g. "cloudflare" */
@@ -317,6 +314,18 @@ export interface TlsResolverOptions {
  * `certResolver: acme-tlsChallenge` on every project router, and Traefik
  * skips those requests once the default store holds a certificate matching
  * the host with wildcard semantics.
+ *
+ * The propagation check is disabled on purpose. lego sets two TXT values at
+ * the same name, one for `<tld>` and one for `*.<tld>`, then asks public
+ * resolvers for each. A resolver that answered between the two writes caches
+ * the partial answer for the record TTL — 120s on Cloudflare, longer than
+ * lego's check window — and the order fails with "NS 9.9.9.9:53 did not
+ * return the expected TXT record" although both records were correct. That
+ * was seen on a live server; the staging run had passed by timing luck.
+ * Let's Encrypt resolves authoritatively itself, so the check adds a failure
+ * mode without adding safety. `PropagationWait(delay, skipCheck)` sleeps the
+ * delay and then skips the check, so the 30s covers propagation to the
+ * provider's edges before the CA looks.
  */
 export function buildStaticConfig(
   toolPorts: string[],
@@ -356,8 +365,9 @@ certificatesResolvers:
       storage: /mnt/ddev-global-cache/traefik/${DNS_RESOLVER}.json
 ${tls.caServer ? `      caServer: "${escapeYamlDouble(tls.caServer)}"\n` : ""}      dnsChallenge:
         provider: "${escapeYamlDouble(tls.provider)}"
-        resolvers:
-${DNS_CHALLENGE_RESOLVERS.map((resolver) => `          - "${resolver}"`).join("\n")}
+        propagation:
+          delayBeforeChecks: 30s
+          disableChecks: true
 `;
 }
 

@@ -54,11 +54,15 @@ describe("buildStaticConfig with a DNS-01 resolver", () => {
     );
   });
 
-  it("asks public resolvers for the challenge record", () => {
+  it("waits instead of checking the challenge record itself", () => {
+    // Public resolvers cache the first of the two TXT values lego writes and
+    // fail the order; Let's Encrypt resolves authoritatively anyway
     const config = buildStaticConfig([], undefined, tls);
 
-    expect(config).toContain('- "1.1.1.1:53"');
-    expect(config).toContain('- "9.9.9.9:53"');
+    expect(config).toContain("        propagation:");
+    expect(config).toContain("          delayBeforeChecks: 30s");
+    expect(config).toContain("          disableChecks: true");
+    expect(config).not.toContain("        resolvers:");
   });
 
   it("omits caServer unless one is configured", () => {
