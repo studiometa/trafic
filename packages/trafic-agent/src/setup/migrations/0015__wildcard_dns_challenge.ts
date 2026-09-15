@@ -20,12 +20,21 @@ import type { Migration } from "../types.js";
  * TLS store in `custom-global-config/0-trafic-tls.yaml`, and the provider
  * credentials in `router-compose.trafic.yaml`.
  *
- * Why a project start rather than a router restart alone (the 0010
- * rationale): Traefik reads its configuration from the ddev-global-cache
- * volume, and DDEV only copies `~/.ddev/traefik` into that volume — and only
- * merges `static_config.*.yaml` into `.static_config.yaml`, and
- * `router-compose.*.yaml` into the router compose — when a project starts. A
- * `docker restart ddev-router` alone would reload the old files.
+ * Why the router is removed and a project started, rather than restarted
+ * (the 0010 rationale, plus one more): Traefik reads its configuration from
+ * the ddev-global-cache volume, and DDEV only copies `~/.ddev/traefik` into
+ * that volume and merges `static_config.*.yaml` into `.static_config.yaml`
+ * when a project starts. And DDEV 1.25 reads `router-compose.*.yaml` only
+ * when it *recreates* the router: a running, healthy router just gets the
+ * Traefik config pushed (StartDdevRouter, `needsRecreation`). Seen on a live
+ * server — the static config was merged, the credentials never reached the
+ * container. Removing the router first forces the recreation; `ddev start`
+ * brings it back within seconds with the new environment.
+ *
+ * The container is found by its compose label, not by name: when compose
+ * recreates a container it renames the old one `<id>_ddev-router`, and a
+ * failed recreation can leave it that way. `docker restart ddev-router` then
+ * silently does nothing — also seen on that server.
  *
  * Two details this depends on:
  * - Traefik's file provider keeps the FIRST `tls.stores.default` it reads in
@@ -78,17 +87,35 @@ export const migration0015WildcardDnsChallenge: Migration = {
       return;
     }
 
+    // A running router keeps its environment: DDEV only re-reads the compose
+    // override when it recreates the container
+    const router = findRouterContainer();
+
+    if (router) {
+      execSilent(`docker rm -f ${router}`);
+    }
+
     // Regenerates .static_config.yaml and the router compose from the files
     // above, and recreates ddev-router with the provider credentials
     exec(`su - ddev -c 'DDEV_NONINTERACTIVE=true ddev start ${project}'`, {
       silent: true,
     });
-
-    // The router that comes back reads the new static config; restart it so
-    // the resolver is picked up even when DDEV reused the container
-    execSilent("docker restart ddev-router");
   },
 };
+
+/**
+ * The ddev-router container id, whatever its current name.
+ *
+ * Compose labels survive the `<id>_ddev-router` rename a recreation leaves
+ * behind; the container name does not.
+ */
+export function findRouterContainer(): string | undefined {
+  const id = execSilent(
+    "docker ps -aq --filter label=com.docker.compose.service=ddev-router",
+  ).trim();
+
+  return id.split("\n")[0] || undefined;
+}
 
 /**
  * Name one running DDEV project, or undefined when none is running.

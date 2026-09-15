@@ -243,10 +243,13 @@ them in the router container's environment where lego reads them.
 1. Add the `[tls]` section to `/etc/trafic/config.toml`
 2. Run `sudo trafic-agent upgrade`
 
-Migration `0015__wildcard_dns_challenge` writes the Traefik files and starts
-one running project, which is what makes DDEV regenerate the static config and
-recreate the router. With no project running, the next deploy applies it.
-`trafic-agent audit` reports whether the certificate was issued.
+Migration `0015__wildcard_dns_challenge` writes the Traefik files, removes the
+router container and starts one running project. DDEV regenerates the static
+config on any project start, but reads `router-compose.*.yaml` only when it
+recreates the router, so the removal is what gets the credentials into the
+container. The router is back within seconds. With no project running, the
+next deploy applies it. `trafic-agent audit` reports whether the certificate
+was issued.
 
 **What the agent writes:**
 
