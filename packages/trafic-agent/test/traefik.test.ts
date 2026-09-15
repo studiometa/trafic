@@ -306,13 +306,16 @@ describe("buildDynamicConfig", () => {
     expect(config).toContain("http://10.1.2.3:9876");
   });
 
-  it("keeps the catch-all at the lowest priority", () => {
-    // A project router must always outrank it, or auth policy per project breaks
+  it("keeps the catch-all just above DDEV's own fallback routers", () => {
+    // A project router must always outrank it, or auth policy per project
+    // breaks. But DDEV 1.25.4 adds ddev-router-fallback-http/https with the
+    // same PathPrefix(`/`) rule at priority 1, and Traefik picked DDEV's on a
+    // tie — so 2 is the lowest priority that still wins.
     const priorities = [...buildDynamicConfig("172.18.0.1").matchAll(/priority: (\d+)/g)].map(
       (m) => Number(m[1]),
     );
 
-    expect(priorities).toEqual([1, 1]);
+    expect(priorities).toEqual([2, 2]);
   });
 });
 

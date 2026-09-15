@@ -6,6 +6,7 @@ import {
   installDnsmasq,
   getDockerGatewayIp,
   configureTraefik,
+  findRunningProject,
 } from "../src/setup/ddev.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
@@ -284,13 +285,17 @@ describe("configureTraefik catch-all router", () => {
     expect(config).toContain("service: trafic-service");
   });
 
-  it("gives it the lowest priority so project routers always win", () => {
+  it("keeps it above DDEV's fallback routers but below project routers", () => {
     const fake = io();
 
     configureTraefik(fake);
 
     const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`);
-    expect(config).toContain("priority: 1");
+    // DDEV 1.25.4 ships its own catch-all at priority 1 with the same rule,
+    // and Traefik picked that one on a tie — stopped projects got DDEV's 404
+    // instead of the waiting page, so scale-to-zero never restarted them
+    expect(config).toContain("priority: 2");
+    expect(config).not.toContain("priority: 1");
   });
 
   it("defines both a plain and a TLS catch-all", () => {
@@ -325,5 +330,33 @@ describe("configureTraefik catch-all router", () => {
     // Auth lives on the entry point. Attaching it here was the arrangement
     // that let project routers bypass it, which #27 fixed.
     expect(router).not.toContain("middlewares");
+  });
+});
+
+describe("findRunningProject", () => {
+  const listed = (raw: unknown) =>
+    createFakeIo({ output: { "ddev list -j": JSON.stringify({ raw }) } });
+
+  it("returns the first running project", () => {
+    const fake = listed([
+      { name: "stopped-one", status: "stopped" },
+      { name: "live-one", status: "running" },
+      { name: "live-two", status: "running" },
+    ]);
+
+    expect(findRunningProject(fake)).toBe("live-one");
+  });
+
+  it("returns null when nothing runs", () => {
+    expect(findRunningProject(listed([{ name: "a", status: "stopped" }]))).toBeNull();
+  });
+
+  it("returns null when DDEV answers nothing or answers garbage", () => {
+    // project_list.yaml has no live status, so this is the only source —
+    // but a failing probe must not abort the caller
+    expect(findRunningProject(createFakeIo())).toBeNull();
+    expect(
+      findRunningProject(createFakeIo({ output: { "ddev list -j": "not json" } })),
+    ).toBeNull();
   });
 });

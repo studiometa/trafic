@@ -14,6 +14,7 @@ import { migration0011PurgeAcmeWhenDisabled } from "./0011__purge_acme_when_disa
 import { migration0012DockerUserToolPorts } from "./0012__docker_user_tool_ports.js";
 import { migration0013SshKexDefaults } from "./0013__ssh_kex_defaults.js";
 import { migration0014UnattendedUpgradesDockerOrigin } from "./0014__unattended_upgrades_docker_origin.js";
+import { migration0015CatchallPriority } from "./0015__catchall_priority.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -34,6 +35,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0012DockerUserToolPorts,
   migration0013SshKexDefaults,
   migration0014UnattendedUpgradesDockerOrigin,
+  migration0015CatchallPriority,
 ];
 
 // ---------------------------------------------------------------------------
