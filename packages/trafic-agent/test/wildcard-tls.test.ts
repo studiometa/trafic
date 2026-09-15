@@ -15,7 +15,11 @@ import {
 import { createAgentConfig } from "../src/setup/agent.js";
 import { warnIfWildcardNotApplied } from "../src/utils/tls.js";
 import { hasCertificateFor } from "../src/setup/audit.js";
-import { loadConfig } from "../src/utils/config.js";
+import {
+  findRouterContainer,
+  runWildcardMigration,
+} from "../src/setup/migrations/0016__wildcard_dns_challenge.js";
+import { loadConfig, validateConfig } from "../src/utils/config.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 beforeEach(() => {
@@ -368,6 +372,41 @@ describe("loadConfig tls section", () => {
     expect(load("").tls).toEqual({ dnsEnv: {} });
   });
 
+  it("keeps the defaults when the table holds nothing usable", () => {
+    // An empty [tls] is not a provider: the resolver must stay off
+    const { tls } = load("[tls]");
+
+    expect(tls).toEqual({ dnsProvider: undefined, caServer: undefined, dnsEnv: {} });
+  });
+
+  it("leaves ca_server unset when none is given", () => {
+    // Traefik then uses lego's default, which is the production CA
+    const { tls } = load(['[tls]', 'dns_provider = "cloudflare"'].join("\n"));
+
+    expect(tls.caServer).toBeUndefined();
+  });
+
+  it("rejects a credential that is not a string", () => {
+    // Taken as read rather than coerced, so the error names the key
+    const config = load(["[tls.dns_env]", "CF_DNS_API_TOKEN = 1234"].join("\n"));
+
+    expect(validateConfig(config)).toContain("tls.dns_env.CF_DNS_API_TOKEN must be a string");
+  });
+
+  it("rejects a key that is not an environment variable name", () => {
+    const config = load(["[tls.dns_env]", '"CF-TOKEN" = "secret"'].join("\n"));
+
+    expect(validateConfig(config)).toContain(
+      'tls.dns_env key "CF-TOKEN" is not a valid environment variable name',
+    );
+  });
+
+  it("accepts a well-formed credential", () => {
+    const config = load(["[tls.dns_env]", 'CF_DNS_API_TOKEN = "secret"'].join("\n"));
+
+    expect(validateConfig(config)).toEqual([]);
+  });
+
   it("reads the provider, the CA server and the credentials", () => {
     const { tls } = load(
       [
@@ -450,5 +489,107 @@ describe("hasCertificateFor", () => {
     expect(hasCertificateFor("", "example.com")).toBe(false);
     expect(hasCertificateFor("{}", "example.com")).toBe(false);
     expect(hasCertificateFor('{"acme-dns":{}}', "example.com")).toBe(false);
+  });
+});
+
+describe("findRouterContainer", () => {
+  const PS = "docker ps -aq --filter label=com.docker.compose.service=ddev-router";
+
+  it("takes the first id the compose label matches", () => {
+    // The name is not usable: a failed recreation leaves `<id>_ddev-router`
+    const io = createFakeIo({ output: { [PS]: "abc123\ndef456\n" } });
+
+    expect(findRouterContainer(io)).toBe("abc123");
+  });
+
+  it("reports nothing when no router container exists", () => {
+    expect(findRouterContainer(createFakeIo())).toBeUndefined();
+  });
+});
+
+describe("migration 0016", () => {
+  const tls = { dnsProvider: "cloudflare", dnsEnv: { CF_DNS_API_TOKEN: "secret" } };
+  const LIST = "ddev list -j";
+  const PS = "docker ps -aq --filter label=com.docker.compose.service=ddev-router";
+
+  const running = JSON.stringify({ raw: [{ name: "preview-1", status: "running" }] });
+
+  function fakeIo(extra: Parameters<typeof createFakeIo>[0] = {}) {
+    return createFakeIo({
+      ...extra,
+      output: { [GLOBAL_CONFIG]: LETS_ENCRYPT_ON, ...extra.output },
+    });
+  }
+
+  it("writes nothing without a DNS provider", () => {
+    const io = fakeIo();
+
+    runWildcardMigration(io, { dnsEnv: {} });
+
+    expect(io.writes.size).toBe(0);
+    expect(io.commands).toEqual([]);
+  });
+
+  it("does nothing once the three files are in place", () => {
+    const io = fakeIo({
+      files: {
+        [STATIC_CONFIG]: "certificatesResolvers:\n  acme-dns:\n",
+        [TLS_STORE_CONFIG]: "tls:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: "services:\n",
+      },
+    });
+
+    runWildcardMigration(io, tls);
+
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("runs again when the static config names no resolver", () => {
+    // The pairing is what matters: a store without its resolver is broken
+    const io = fakeIo({
+      files: {
+        [STATIC_CONFIG]: "entryPoints:\n",
+        [TLS_STORE_CONFIG]: "tls:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: "services:\n",
+      },
+      output: { [LIST]: running },
+    });
+
+    runWildcardMigration(io, tls);
+
+    expect(io.written(STATIC_CONFIG)).toContain("acme-dns:");
+  });
+
+  it("writes the files, recreates the router and starts a running project", () => {
+    const io = fakeIo({ output: { [LIST]: running, [PS]: "abc123" } });
+
+    runWildcardMigration(io, tls);
+
+    expect(io.written(TLS_STORE_CONFIG)).toContain('main: "previews.example.com"');
+    expect(io.written(ROUTER_COMPOSE_OVERRIDE)).toContain("CF_DNS_API_TOKEN=secret");
+    // Removed, not restarted: DDEV reads router-compose.*.yaml only when it
+    // recreates the container
+    expect(io.ran("docker rm -f abc123")).toBe(true);
+    expect(io.ran("ddev start preview-1")).toBe(true);
+  });
+
+  it("starts the project even when no router container is found", () => {
+    const io = fakeIo({ output: { [LIST]: running } });
+
+    runWildcardMigration(io, tls);
+
+    expect(io.ran("docker rm -f")).toBe(false);
+    expect(io.ran("ddev start preview-1")).toBe(true);
+  });
+
+  it("writes the files but starts nothing when no project is running", () => {
+    const io = fakeIo({
+      output: { [LIST]: JSON.stringify({ raw: [{ name: "x", status: "stopped" }] }) },
+    });
+
+    runWildcardMigration(io, tls);
+
+    expect(io.written(TLS_STORE_CONFIG)).toContain("previews.example.com");
+    expect(io.ran("ddev start")).toBe(false);
   });
 });
