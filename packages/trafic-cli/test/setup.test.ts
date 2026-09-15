@@ -308,6 +308,21 @@ describe("setup", () => {
     expect(setupCommand).toContain("--ssh-users=ddev,deploy");
   });
 
+  it("quotes the DNS provider options for the remote shell", async () => {
+    // The whole setup call is one shell command sent over SSH: an unquoted
+    // provider name or token would be read by that shell
+    await setup({
+      ...baseOptions,
+      email: "admin@example.com",
+      dnsProvider: "cloud; touch /tmp/pwned",
+      dnsEnv: ["CF_DNS_API_TOKEN=a b$(id)"],
+    }, io);
+
+    const setupCommand = io.commands.find((c) => c.includes(" setup "))!;
+    expect(setupCommand).toContain("--dns-provider='cloud; touch /tmp/pwned'");
+    expect(setupCommand).toContain("--dns-env='CF_DNS_API_TOKEN=a b$(id)'");
+  });
+
   it("prefixes privileged commands with sudo for a non-root user", async () => {
     io = fakeServer({ "id -u": "1000" });
 

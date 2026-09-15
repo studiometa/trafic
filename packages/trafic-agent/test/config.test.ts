@@ -46,6 +46,10 @@ describe("validateConfig", () => {
       tokens: [],
       basicAuth: [],
       rules: [],
+      trustedProxyHops: 1,
+    },
+    tls: {
+      dnsEnv: {},
     },
   };
 

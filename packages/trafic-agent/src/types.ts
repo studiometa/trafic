@@ -18,6 +18,28 @@ export interface AgentConfig {
   idleCheckInterval: string;
   /** Auth configuration */
   auth: AuthConfig;
+  /** TLS configuration */
+  tls: TlsConfig;
+}
+
+/**
+ * TLS configuration.
+ *
+ * Without `dnsProvider`, Traefik keeps DDEV's per-host TLS-ALPN challenge and
+ * asks Let's Encrypt for one certificate per project hostname. With it, the
+ * agent adds a DNS-01 resolver and a wildcard default certificate, and the
+ * per-host requests stop as soon as that wildcard is in the default store.
+ */
+export interface TlsConfig {
+  /**
+   * DNS-01 provider name from the Traefik/lego provider list, e.g.
+   * "cloudflare". Setting it turns the wildcard certificate on.
+   */
+  dnsProvider?: string;
+  /** ACME CA directory URL. Use the staging CA for a first test. */
+  caServer?: string;
+  /** Credentials the lego provider reads, passed to the router container. */
+  dnsEnv: Record<string, string>;
 }
 
 /**

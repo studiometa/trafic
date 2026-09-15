@@ -28,6 +28,10 @@ export interface SetupOptions extends SSHOptions {
   tld: string;
   /** Email for Let's Encrypt certificates */
   email?: string;
+  /** DNS-01 provider name (lego), e.g. "cloudflare" — turns on the wildcard */
+  dnsProvider?: string;
+  /** Credentials for that provider, as KEY=VALUE entries */
+  dnsEnv?: string[];
   /** Version of @studiometa/trafic-agent to install (default: "latest") */
   agentVersion: string;
   /** Whether to skip server hardening */

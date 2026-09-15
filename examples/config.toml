@@ -22,6 +22,29 @@ idle_timeout = "4h"
 # How often to check for idle projects (default: 5m)
 idle_check_interval = "5m"
 
+# TLS: one wildcard certificate instead of one per preview hostname.
+#
+# Without this section Traefik asks Let's Encrypt for a certificate per
+# project hostname, and Let's Encrypt allows 50 new certificates per
+# registered domain per 7 days. With it, a single *.<tld> certificate is
+# obtained through a DNS-01 challenge and served to every host.
+#
+# Needs setup --email: Let's Encrypt refuses an ACME account without one.
+# Apply a change here with `sudo trafic-agent upgrade`.
+#
+# [tls]
+# Provider name from the Traefik/lego DNS provider list
+# dns_provider = "cloudflare"
+#
+# ACME CA directory URL. Use the staging CA for a first test — its
+# certificates are untrusted, but a wrong token then costs no quota.
+# ca_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
+#
+# Credentials the provider reads. Passed to the ddev-router container
+# through /home/ddev/.ddev/router-compose.trafic.yaml, which is mode 600.
+# [tls.dns_env]
+# CF_DNS_API_TOKEN = "your-token-here"
+
 # Authentication configuration
 [auth]
 # Default policy: "allow", "deny", or "basic" (default: basic)

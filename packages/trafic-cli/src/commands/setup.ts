@@ -43,6 +43,10 @@ export async function setup(
     info(`Trusted proxy hops: ${options.trustedProxyHops}`);
   }
 
+  if (options.dnsProvider) {
+    info(`Wildcard certificate: DNS-01 via ${options.dnsProvider}`);
+  }
+
   if (!options.noHardening) {
     const sshUsers = resolveSshUsers(options);
     const withRoot = options.noRootSsh ? "" : "root, ";
@@ -304,6 +308,16 @@ function buildAgentSetupArgs(options: SetupOptions): string[] {
     args.push(`--email=${options.email}`);
   }
 
+  // Quoted: a provider name or token can hold characters the remote shell
+  // would otherwise read, and the whole command goes through SSH
+  if (options.dnsProvider) {
+    args.push(`--dns-provider=${shellQuote(options.dnsProvider)}`);
+  }
+
+  for (const entry of options.dnsEnv ?? []) {
+    args.push(`--dns-env=${shellQuote(entry)}`);
+  }
+
   if (options.noHardening) {
     args.push("--no-hardening");
   }
@@ -349,4 +363,9 @@ export function resolveSshUsers(options: SetupOptions): string[] {
   }
 
   return users;
+}
+
+/** Wrap a value in single quotes so the remote shell reads it verbatim. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }

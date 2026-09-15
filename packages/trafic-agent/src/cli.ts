@@ -33,6 +33,9 @@ Start options:
 Setup options:
   --tld <domain>          TLD for DDEV projects (required on first run, reused from config on re-runs)
   --email <email>         Email for Let's Encrypt certificates
+  --dns-provider <name>   DNS-01 provider (lego name, e.g. cloudflare). Turns on the
+                          wildcard *.<tld> certificate; requires --email
+  --dns-env KEY=VALUE     Credential for that provider, repeatable
   --no-hardening          Skip server hardening steps
   --no-root-ssh           Disable root SSH login (recovery via rescue mode only)
   --no-docker             Skip Docker installation
@@ -55,6 +58,11 @@ Examples:
   sudo trafic-agent setup --tld=previews.example.com
   sudo trafic-agent setup --tld=previews.example.com --trusted-proxy-hops=2
   sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com
+
+  # Setup with one wildcard certificate instead of one per preview
+  sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com \\
+    --dns-provider=cloudflare --dns-env=CF_DNS_API_TOKEN=xxx
+
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
 
   # Upgrade: install latest version, run migrations, restart service
@@ -164,6 +172,30 @@ function parseTrustedProxyHops(raw?: string): number | undefined {
   return hops;
 }
 
+/**
+ * Parse repeated --dns-env KEY=VALUE pairs.
+ *
+ * A bad entry stops setup: a provider silently missing its token fails much
+ * later, as an ACME error in the router log.
+ */
+function parseDnsEnv(entries?: string[]): Record<string, string> {
+  const env: Record<string, string> = {};
+
+  for (const entry of entries ?? []) {
+    const separator = entry.indexOf("=");
+    const key = separator === -1 ? entry : entry.slice(0, separator);
+
+    if (separator === -1 || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      console.error(`Error: --dns-env must be KEY=VALUE, got "${entry}"`);
+      process.exit(1);
+    }
+
+    env[key] = entry.slice(separator + 1);
+  }
+
+  return env;
+}
+
 async function runSetup(values: Record<string, unknown>): Promise<void> {
   // Load existing config to use as defaults on re-runs
   const existingConfig = loadConfig();
@@ -175,8 +207,27 @@ async function runSetup(values: Record<string, unknown>): Promise<void> {
     process.exit(1);
   }
 
+  // Re-runs keep what the config already says, so a setup run for another
+  // reason cannot silently drop the wildcard certificate
+  const dnsProvider =
+    (values["dns-provider"] as string | undefined) ?? existingConfig.tls.dnsProvider;
+  const dnsEnv = {
+    ...existingConfig.tls.dnsEnv,
+    ...parseDnsEnv(values["dns-env"] as string[] | undefined),
+  };
+
+  if (dnsProvider && !values.email) {
+    console.error("Error: --dns-provider requires --email");
+    console.error("  Let's Encrypt refuses an ACME account without one");
+    process.exit(1);
+  }
+
   await setup({
     tld,
+    dnsProvider,
+    dnsEnv,
+    // Not a flag: a CA override is a config-file decision, kept across re-runs
+    caServer: existingConfig.tls.caServer,
     trustedProxyHops: parseTrustedProxyHops(values["trusted-proxy-hops"] as string | undefined),
     email: values.email as string | undefined,
     noHardening: values["no-hardening"] as boolean | undefined,
@@ -209,6 +260,8 @@ async function main(): Promise<void> {
       "no-docker": { type: "boolean" },
       "no-ddev": { type: "boolean" },
       "ssh-users": { type: "string" },
+      "dns-provider": { type: "string" },
+      "dns-env": { type: "string", multiple: true },
       "trusted-proxy-hops": { type: "string" },
       "dry-run": { type: "boolean" },
 

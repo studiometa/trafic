@@ -1,5 +1,7 @@
 import { nodeIo, type SetupIo } from "./io.js";
 import { step, success, info } from "./steps.js";
+import { loadConfig } from "../utils/config.js";
+import type { TlsConfig } from "../types.js";
 
 /**
  * Install system dependencies required by Trafic
@@ -275,16 +277,60 @@ export function readRouterPorts(io: SetupIo = nodeIo): RouterPorts {
   };
 }
 
+/** Where the agent writes the Traefik files it owns. */
+export const TRAEFIK_DIR = "/home/ddev/.ddev/traefik";
+
+/** Static config the agent owns, merged by DDEV into .static_config.yaml. */
+export const STATIC_CONFIG = `${TRAEFIK_DIR}/static_config.trafic.yaml`;
+
+/** Wildcard TLS store, read before DDEV's own default_config.yaml. */
+export const TLS_STORE_CONFIG = `${TRAEFIK_DIR}/custom-global-config/0-trafic-tls.yaml`;
+
+/** Router compose override carrying the DNS provider credentials. */
+export const ROUTER_COMPOSE_OVERRIDE = "/home/ddev/.ddev/router-compose.trafic.yaml";
+
+/** Name of the DNS-01 resolver the agent adds to Traefik. */
+export const DNS_RESOLVER = "acme-dns";
+
+/** What buildStaticConfig needs to emit the DNS-01 resolver. */
+export interface TlsResolverOptions {
+  /** lego provider name, e.g. "cloudflare" */
+  provider: string;
+  /** Account email — Let's Encrypt refuses a registration without one */
+  email: string;
+  /** ACME CA directory URL; the provider default is used when omitted */
+  caServer?: string;
+}
+
 /**
  * Build the static config attaching forward auth to every entry point.
  *
  * The error page middleware stays on the web entry points only: a 502 from a
  * stopped project should show the waiting page, while a tool port has nothing
  * to wait for.
+ *
+ * With `tls`, a DNS-01 certificate resolver is added. It is only ever used by
+ * the default TLS store (see buildTlsStoreConfig): DDEV keeps writing
+ * `certResolver: acme-tlsChallenge` on every project router, and Traefik
+ * skips those requests once the default store holds a certificate matching
+ * the host with wildcard semantics.
+ *
+ * The propagation check is disabled on purpose. lego sets two TXT values at
+ * the same name, one for `<tld>` and one for `*.<tld>`, then asks public
+ * resolvers for each. A resolver that answered between the two writes caches
+ * the partial answer for the record TTL — 120s on Cloudflare, longer than
+ * lego's check window — and the order fails with "NS 9.9.9.9:53 did not
+ * return the expected TXT record" although both records were correct. That
+ * was seen on a live server; the staging run had passed by timing luck.
+ * Let's Encrypt resolves authoritatively itself, so the check adds a failure
+ * mode without adding safety. `PropagationWait(delay, skipCheck)` sleeps the
+ * delay and then skips the check, so the 30s covers propagation to the
+ * provider's edges before the CA looks.
  */
 export function buildStaticConfig(
   toolPorts: string[],
   routerPorts: RouterPorts = DEFAULT_ROUTER_PORTS,
+  tls?: TlsResolverOptions,
 ): string {
   const webEntryPoint = (name: string) => `  ${name}:
     http:
@@ -304,8 +350,75 @@ export function buildStaticConfig(
   const web = [routerPorts.http, routerPorts.https];
   const tools = toolPorts.filter((port) => !web.includes(port));
 
-  return `entryPoints:
+  const entryPoints = `entryPoints:
 ${web.map((port) => webEntryPoint(`http-${port}`)).join("")}${tools.map(toolEntryPoint).join("")}`;
+
+  if (!tls) {
+    return entryPoints;
+  }
+
+  return `${entryPoints}
+certificatesResolvers:
+  ${DNS_RESOLVER}:
+    acme:
+      email: "${escapeYamlDouble(tls.email)}"
+      storage: /mnt/ddev-global-cache/traefik/${DNS_RESOLVER}.json
+${tls.caServer ? `      caServer: "${escapeYamlDouble(tls.caServer)}"\n` : ""}      dnsChallenge:
+        provider: "${escapeYamlDouble(tls.provider)}"
+        propagation:
+          delayBeforeChecks: 30s
+          disableChecks: true
+`;
+}
+
+/**
+ * Build the default TLS store holding the wildcard certificate.
+ *
+ * Traefik's file provider keeps the first `tls.stores.default` it reads in
+ * directory order and logs "TLS store default already configured, skipping"
+ * for every later file. DDEV writes an empty one in `default_config.yaml`,
+ * so this has to be read first — hence the `0-` prefix on the file name.
+ */
+export function buildTlsStoreConfig(tld: string): string {
+  return `# Trafic: wildcard certificate served to every host without its own
+#
+# Read before DDEV's default_config.yaml — Traefik keeps the first default
+# store it sees, so the file name has to sort first.
+tls:
+  stores:
+    default:
+      defaultGeneratedCert:
+        resolver: ${DNS_RESOLVER}
+        domain:
+          main: "${escapeYamlDouble(tld)}"
+          sans:
+            - "*.${escapeYamlDouble(tld)}"
+`;
+}
+
+/**
+ * Build the router compose override carrying the provider credentials.
+ *
+ * lego reads them from the router container's environment, so they cannot be
+ * passed through a config file. DDEV merges `~/.ddev/router-compose.*.yaml`
+ * into the router compose and recreates the container when it changes, on the
+ * next `ddev start`.
+ */
+export function buildRouterComposeOverride(env: Record<string, string>): string {
+  const entries = Object.entries(env);
+
+  return `# Trafic: DNS-01 provider credentials for the Traefik router
+# Contains secrets — this file is mode 600.
+services:
+  ddev-router:
+    environment:
+${entries.map(([key, value]) => `      - "${key}=${escapeYamlDouble(value)}"`).join("\n")}
+`;
+}
+
+/** Escape a value for a double-quoted YAML scalar. */
+function escapeYamlDouble(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 /**
@@ -385,14 +498,61 @@ http:
 `;
 }
 
+/** What DDEV knows about Let's Encrypt, read from its global config. */
+export interface LetsEncryptSettings {
+  enabled: boolean;
+  email?: string;
+}
+
 /**
- * Configure Traefik for forward auth
+ * Read DDEV's Let's Encrypt settings.
+ *
+ * DDEV owns them — `ddev config global --use-letsencrypt --letsencrypt-email`
+ * — so they are the single source of truth for the ACME account, wildcard
+ * mode included.
  */
-export function configureTraefik(io: SetupIo = nodeIo): void {
+export function readLetsEncryptSettings(io: SetupIo = nodeIo): LetsEncryptSettings {
+  const output = io.execSilent("su - ddev -c 'ddev config global'");
+
+  return {
+    enabled: /^use-letsencrypt=true$/m.test(output),
+    email: /^letsencrypt-email=(.+)$/m.exec(output)?.[1]?.trim() || undefined,
+  };
+}
+
+/** Read the project TLD from DDEV's global config. */
+export function readProjectTld(io: SetupIo = nodeIo): string {
+  const output = io.execSilent("su - ddev -c 'ddev config global'");
+
+  return /^project-tld=(.+)$/m.exec(output)?.[1]?.trim() ?? "";
+}
+
+/** Options for configureTraefik. */
+export interface ConfigureTraefikOptions {
+  /**
+   * TLS settings. Read from /etc/trafic/config.toml when omitted, which is
+   * what migrations do — setup passes them, since it writes that file later.
+   */
+  tls?: TlsConfig;
+  /** Project TLD. Read from DDEV's global config when omitted. */
+  tld?: string;
+}
+
+/**
+ * Configure Traefik for forward auth, and for the wildcard certificate when
+ * a DNS provider is configured.
+ *
+ * Everything the agent owns in Traefik's configuration is written here, so
+ * setup and the migrations share one code path and cannot drift apart.
+ */
+export function configureTraefik(
+  options: ConfigureTraefikOptions = {},
+  io: SetupIo = nodeIo,
+): void {
   step("Configure Traefik for forward auth");
 
   // Create custom Traefik config directories
-  io.exec("mkdir -p /home/ddev/.ddev/traefik/custom-global-config", { silent: true });
+  io.exec(`mkdir -p ${TRAEFIK_DIR}/custom-global-config`, { silent: true });
   io.exec("chown -R ddev:ddev /home/ddev/.ddev", { silent: true });
 
   // Use the Docker bridge gateway IP instead of host.docker.internal —
@@ -409,19 +569,35 @@ export function configureTraefik(io: SetupIo = nodeIo): void {
   // reads that copy on 1.25, and having two made debugging harder.
   const dynamicConfig = buildDynamicConfig(gatewayIp, routerPorts);
 
-  io.writeFile("/home/ddev/.ddev/traefik/custom-global-config/trafic.yaml", dynamicConfig);
-  io.exec("chown ddev:ddev /home/ddev/.ddev/traefik/custom-global-config/trafic.yaml", { silent: true });
+  io.writeFile(`${TRAEFIK_DIR}/custom-global-config/trafic.yaml`, dynamicConfig);
+  io.exec(`chown ddev:ddev ${TRAEFIK_DIR}/custom-global-config/trafic.yaml`, { silent: true });
+
+  const tls = options.tls ?? loadConfig().tls;
+  const resolver = tls.dnsProvider
+    ? buildTlsResolverOptions(tls, io)
+    : undefined;
+
+  // Read and check the TLD before anything is written: a static config that
+  // names the resolver without the TLS store behind it is a broken pairing,
+  // and there is no reason to leave one on disk when the TLD is missing.
+  const tld = resolver ? readWildcardTld(options.tld, io) : "";
 
   // Static configuration: attaches trafic-auth to every entry point DDEV
   // publishes, and trafic-errors to the web ones, so every request goes
   // through auth regardless of which project router handles it.
   // DDEV merges all static_config.*.yaml files into .static_config.yaml on start.
-  const staticConfig = buildStaticConfig(readToolPorts(io), routerPorts);
+  const staticConfig = buildStaticConfig(readToolPorts(io), routerPorts, resolver);
 
-  io.writeFile("/home/ddev/.ddev/traefik/static_config.trafic.yaml", staticConfig);
-  io.exec("chown ddev:ddev /home/ddev/.ddev/traefik/static_config.trafic.yaml", { silent: true });
+  io.writeFile(STATIC_CONFIG, staticConfig);
+  io.exec(`chown ddev:ddev ${STATIC_CONFIG}`, { silent: true });
 
   info(`Entry points: http-${routerPorts.http}, http-${routerPorts.https} (web) plus tool ports`);
+
+  if (resolver) {
+    writeWildcardFiles(tls, tld, io);
+  } else {
+    removeWildcardFiles(io);
+  }
 
   success("Traefik configured with Trafic middleware");
 }
@@ -453,5 +629,70 @@ export function findRunningProject(io: SetupIo = nodeIo): string | null {
   } catch {
     // A DDEV that answers something other than JSON is not worth guessing at
     return null;
+  }
+}
+
+/**
+ * Turn the agent's TLS config into what the static config needs.
+ *
+ * The ACME account comes from DDEV: a resolver without an email is refused by
+ * Let's Encrypt, and `use_letsencrypt=false` means DDEV is also stripping the
+ * certificate resolver from the project routers.
+ */
+function buildTlsResolverOptions(tls: TlsConfig, io: SetupIo): TlsResolverOptions {
+  const letsEncrypt = readLetsEncryptSettings(io);
+
+  if (!letsEncrypt.enabled || !letsEncrypt.email) {
+    throw new Error(
+      "tls.dns_provider needs Let's Encrypt enabled in DDEV with an account email.\n" +
+        "  Run setup again with --email=<address>, or unset tls.dns_provider.",
+    );
+  }
+
+  return {
+    provider: tls.dnsProvider!,
+    email: letsEncrypt.email,
+    caServer: tls.caServer,
+  };
+}
+
+/** Read the TLD the wildcard certificate covers, or fail before any write. */
+function readWildcardTld(configured: string | undefined, io: SetupIo): string {
+  const tld = configured || readProjectTld(io);
+
+  if (!tld) {
+    throw new Error(
+      "Cannot configure the wildcard certificate: no project TLD is set in DDEV",
+    );
+  }
+
+  return tld;
+}
+
+/** Write the wildcard TLS store and the router credentials. */
+function writeWildcardFiles(tls: TlsConfig, tld: string, io: SetupIo): void {
+  io.writeFile(TLS_STORE_CONFIG, buildTlsStoreConfig(tld));
+  io.exec(`chown ddev:ddev ${TLS_STORE_CONFIG}`, { silent: true });
+
+  // Holds the provider token: created empty and mode 600 first, so the
+  // credentials never exist on disk under the umask default. `install`
+  // truncates an existing file and resets its mode, and the later write
+  // keeps it.
+  io.exec(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`, {
+    silent: true,
+  });
+  io.writeFile(ROUTER_COMPOSE_OVERRIDE, buildRouterComposeOverride(tls.dnsEnv));
+
+  success(`Wildcard certificate: *.${tld} via the ${tls.dnsProvider} DNS-01 provider`);
+}
+
+/** Remove the wildcard files where no DNS provider is configured. */
+function removeWildcardFiles(io: SetupIo): void {
+  if (io.fileExists(TLS_STORE_CONFIG)) {
+    io.exec(`rm -f ${TLS_STORE_CONFIG}`, { silent: true });
+  }
+
+  if (io.fileExists(ROUTER_COMPOSE_OVERRIDE)) {
+    io.exec(`rm -f ${ROUTER_COMPOSE_OVERRIDE}`, { silent: true });
   }
 }

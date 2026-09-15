@@ -20,6 +20,7 @@ import {
 } from "./utils/db.js";
 import { loadProjectConfig } from "./utils/project-config.js";
 import { syncForwardAuthAddress } from "./utils/traefik.js";
+import { warnIfWildcardNotApplied } from "./utils/tls.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -332,6 +333,10 @@ export function startServer(agentConfig: AgentConfig): void {
   // setup wrote the forward auth address before any DDEV network existed, so
   // correct it now that one may have appeared
   syncForwardAuthAddress(config.projectListPath);
+
+  // A DNS provider in the config that never reached Traefik means the
+  // wildcard certificate is not being requested at all
+  warnIfWildcardNotApplied(config);
 
   // Load projects
   reloadProjects();

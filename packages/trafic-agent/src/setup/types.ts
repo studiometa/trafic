@@ -34,6 +34,17 @@ export interface SetupOptions {
   tld: string;
   /** Email for Let's Encrypt certificates */
   email?: string;
+  /**
+   * DNS-01 provider name (lego), e.g. "cloudflare".
+   *
+   * Turns on the wildcard certificate: Traefik asks for `*.<tld>` once and
+   * serves it to every host, instead of one certificate per preview.
+   */
+  dnsProvider?: string;
+  /** Credentials for that provider, passed to the router container */
+  dnsEnv?: Record<string, string>;
+  /** ACME CA directory URL, kept from the config on a re-run */
+  caServer?: string;
   /** Skip hardening steps */
   noHardening?: boolean;
   /** Skip Docker installation (already installed) */
