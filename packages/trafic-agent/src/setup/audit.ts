@@ -1,6 +1,8 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import type { AuditCheck } from "./types.js";
+import { loadConfig } from "../utils/config.js";
+import { ROUTER_COMPOSE_OVERRIDE } from "./ddev.js";
 
 /**
  * Run a command silently and return output
@@ -222,6 +224,121 @@ function auditPermissions(): AuditCheck[] {
 }
 
 /**
+ * Audit the wildcard certificate, where one is configured.
+ *
+ * Two things go wrong silently: the certificate is never issued (a wrong
+ * token, a zone the token cannot edit), and the token file ends up readable
+ * by everyone.
+ */
+export function auditWildcardTls(): AuditCheck[] {
+  const config = loadConfig();
+
+  if (!config.tls.dnsProvider) {
+    return [];
+  }
+
+  const checks: AuditCheck[] = [];
+
+  checks.push(wildcardCertificateCheck(config.tld));
+
+  if (existsSync(ROUTER_COMPOSE_OVERRIDE)) {
+    const mode = execSilent(`stat -c '%a' ${ROUTER_COMPOSE_OVERRIDE}`);
+    const isSecure = mode === "600";
+
+    checks.push({
+      name: "DNS credentials permissions",
+      status: isSecure ? "pass" : "warn",
+      message: isSecure
+        ? "Router compose override is readable by its owner only"
+        : `Router compose override permissions: ${mode} (should be 600)`,
+      fix: `Run: chmod 600 ${ROUTER_COMPOSE_OVERRIDE}`,
+    });
+  }
+
+  return checks;
+}
+
+/** Look for the wildcard certificate in Traefik's DNS-01 ACME storage. */
+function wildcardCertificateCheck(tld: string): AuditCheck {
+  const fix =
+    "Check the router log for ACME errors: docker logs ddev-router 2>&1 | grep -i acme";
+
+  const mountpoint = execSilent(
+    "docker volume inspect ddev-global-cache --format '{{.Mountpoint}}'",
+  );
+
+  if (!mountpoint) {
+    return {
+      name: "Wildcard certificate",
+      status: "warn",
+      message: "Traefik's storage volume (ddev-global-cache) was not found",
+      fix,
+    };
+  }
+
+  const storage = `${mountpoint}/traefik/acme-dns.json`;
+
+  if (!existsSync(storage)) {
+    return {
+      name: "Wildcard certificate",
+      status: "warn",
+      message: "No DNS-01 certificate has been issued yet",
+      fix,
+    };
+  }
+
+  const issued = hasCertificateFor(readFileSync(storage, "utf-8"), tld);
+
+  return {
+    name: "Wildcard certificate",
+    status: issued ? "pass" : "warn",
+    message: issued
+      ? `Wildcard certificate issued for *.${tld}`
+      : `No certificate for ${tld} in Traefik's DNS-01 storage`,
+    fix: issued ? undefined : fix,
+  };
+}
+
+/**
+ * Whether Traefik's ACME storage holds a certificate whose main domain is the
+ * TLD — which is the wildcard one, since that is what the default store asks
+ * for.
+ *
+ * The file is keyed by resolver name, each with a Certificates array.
+ */
+export function hasCertificateFor(storage: string, tld: string): boolean {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(storage);
+  } catch {
+    return false;
+  }
+
+  if (parsed === null || typeof parsed !== "object") {
+    return false;
+  }
+
+  for (const resolver of Object.values(parsed as Record<string, unknown>)) {
+    const certificates = (resolver as { Certificates?: unknown }).Certificates;
+
+    if (!Array.isArray(certificates)) {
+      continue;
+    }
+
+    for (const certificate of certificates) {
+      const main = (certificate as { domain?: { main?: unknown } }).domain?.main;
+
+      if (main === tld) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Run all audit checks
  */
 export function runAudit(): AuditCheck[] {
@@ -231,6 +348,7 @@ export function runAudit(): AuditCheck[] {
     ...auditServices(),
     ...auditDocker(),
     ...auditPermissions(),
+    ...auditWildcardTls(),
   ];
 }
 
