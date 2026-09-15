@@ -1,43 +1,32 @@
-import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
 import type { AuditCheck } from "./types.js";
+import { nodeIo, type SetupIo } from "./io.js";
 import { loadConfig } from "../utils/config.js";
 import { ROUTER_COMPOSE_OVERRIDE } from "./ddev.js";
-
-/**
- * Run a command silently and return output
- */
-function execSilent(command: string): string {
-  try {
-    return execSync(command, { encoding: "utf-8", stdio: "pipe" }).trim();
-  } catch {
-    return "";
-  }
-}
+import type { AgentConfig } from "../types.js";
 
 /**
  * Check if a service is active
  */
-function isServiceActive(service: string): boolean {
-  const status = execSilent(`systemctl is-active ${service}`);
-  return status === "active";
+function isServiceActive(service: string, io: SetupIo): boolean {
+  return io.execSilent(`systemctl is-active ${service}`) === "active";
+}
+
+/** Read a file, or "" when it does not exist. */
+function readOrEmpty(path: string, io: SetupIo): string {
+  return io.fileExists(path) ? io.readFile(path) : "";
 }
 
 /**
  * Audit SSH configuration
  */
-function auditSsh(): AuditCheck[] {
+export function auditSsh(io: SetupIo = nodeIo): AuditCheck[] {
   const checks: AuditCheck[] = [];
 
   // Check root login
-  const sshdConfig = existsSync("/etc/ssh/sshd_config")
-    ? readFileSync("/etc/ssh/sshd_config", "utf-8")
-    : "";
-  const traficConfig = existsSync("/etc/ssh/sshd_config.d/trafic.conf")
-    ? readFileSync("/etc/ssh/sshd_config.d/trafic.conf", "utf-8")
-    : "";
-
-  const config = sshdConfig + "\n" + traficConfig;
+  const config =
+    readOrEmpty("/etc/ssh/sshd_config", io) +
+    "\n" +
+    readOrEmpty("/etc/ssh/sshd_config.d/trafic.conf", io);
 
   const rootLoginDisabled =
     config.includes("PermitRootLogin no") ||
@@ -67,10 +56,10 @@ function auditSsh(): AuditCheck[] {
 /**
  * Audit firewall configuration
  */
-function auditFirewall(): AuditCheck[] {
+export function auditFirewall(io: SetupIo = nodeIo): AuditCheck[] {
   const checks: AuditCheck[] = [];
 
-  const ufwStatus = execSilent("ufw status");
+  const ufwStatus = io.execSilent("ufw status");
   const isActive = ufwStatus.includes("Status: active");
 
   checks.push({
@@ -107,11 +96,11 @@ function auditFirewall(): AuditCheck[] {
 /**
  * Audit security services
  */
-function auditServices(): AuditCheck[] {
+export function auditServices(io: SetupIo = nodeIo): AuditCheck[] {
   const checks: AuditCheck[] = [];
 
   // Fail2ban
-  const fail2banActive = isServiceActive("fail2ban");
+  const fail2banActive = isServiceActive("fail2ban", io);
   checks.push({
     name: "Fail2ban",
     status: fail2banActive ? "pass" : "warn",
@@ -120,7 +109,7 @@ function auditServices(): AuditCheck[] {
   });
 
   // Unattended upgrades
-  const unattendedActive = isServiceActive("unattended-upgrades");
+  const unattendedActive = isServiceActive("unattended-upgrades", io);
   checks.push({
     name: "Automatic updates",
     status: unattendedActive ? "pass" : "warn",
@@ -131,7 +120,7 @@ function auditServices(): AuditCheck[] {
   });
 
   // Trafic agent
-  const agentActive = isServiceActive("trafic-agent");
+  const agentActive = isServiceActive("trafic-agent", io);
   checks.push({
     name: "Trafic agent",
     status: agentActive ? "pass" : "fail",
@@ -147,11 +136,11 @@ function auditServices(): AuditCheck[] {
 /**
  * Audit Docker
  */
-function auditDocker(): AuditCheck[] {
+export function auditDocker(io: SetupIo = nodeIo): AuditCheck[] {
   const checks: AuditCheck[] = [];
 
   // Docker running
-  const dockerActive = isServiceActive("docker");
+  const dockerActive = isServiceActive("docker", io);
   checks.push({
     name: "Docker",
     status: dockerActive ? "pass" : "fail",
@@ -160,9 +149,7 @@ function auditDocker(): AuditCheck[] {
   });
 
   // Dangling images
-  const danglingImages = execSilent(
-    "docker images -f dangling=true -q | wc -l",
-  );
+  const danglingImages = io.execSilent("docker images -f dangling=true -q | wc -l");
   const count = parseInt(danglingImages, 10) || 0;
   if (count > 0) {
     checks.push({
@@ -174,7 +161,7 @@ function auditDocker(): AuditCheck[] {
   }
 
   // Disk usage
-  const diskUsage = execSilent("df -h / | awk 'NR==2{print $5}'");
+  const diskUsage = io.execSilent("df -h / | awk 'NR==2{print $5}'");
   const usagePercent = parseInt(diskUsage, 10) || 0;
   checks.push({
     name: "Disk usage",
@@ -189,12 +176,12 @@ function auditDocker(): AuditCheck[] {
 /**
  * Audit file permissions
  */
-function auditPermissions(): AuditCheck[] {
+export function auditPermissions(io: SetupIo = nodeIo): AuditCheck[] {
   const checks: AuditCheck[] = [];
 
   // Config file
-  if (existsSync("/etc/trafic/config.toml")) {
-    const stats = execSilent("stat -c '%a' /etc/trafic/config.toml");
+  if (io.fileExists("/etc/trafic/config.toml")) {
+    const stats = io.execSilent("stat -c '%a' /etc/trafic/config.toml");
     const isSecure = stats === "640" || stats === "600";
     checks.push({
       name: "Config permissions",
@@ -207,8 +194,8 @@ function auditPermissions(): AuditCheck[] {
   }
 
   // Projects directory
-  if (existsSync("/home/ddev/www")) {
-    const owner = execSilent("stat -c '%U:%G' /home/ddev/www");
+  if (io.fileExists("/home/ddev/www")) {
+    const owner = io.execSilent("stat -c '%U:%G' /home/ddev/www");
     const isCorrect = owner === "ddev:ddev";
     checks.push({
       name: "Projects directory",
@@ -230,19 +217,20 @@ function auditPermissions(): AuditCheck[] {
  * token, a zone the token cannot edit), and the token file ends up readable
  * by everyone.
  */
-export function auditWildcardTls(): AuditCheck[] {
-  const config = loadConfig();
-
+export function auditWildcardTls(
+  config: AgentConfig,
+  io: SetupIo = nodeIo,
+): AuditCheck[] {
   if (!config.tls.dnsProvider) {
     return [];
   }
 
   const checks: AuditCheck[] = [];
 
-  checks.push(wildcardCertificateCheck(config.tld));
+  checks.push(wildcardCertificateCheck(config.tld, io));
 
-  if (existsSync(ROUTER_COMPOSE_OVERRIDE)) {
-    const mode = execSilent(`stat -c '%a' ${ROUTER_COMPOSE_OVERRIDE}`);
+  if (io.fileExists(ROUTER_COMPOSE_OVERRIDE)) {
+    const mode = io.execSilent(`stat -c '%a' ${ROUTER_COMPOSE_OVERRIDE}`);
     const isSecure = mode === "600";
 
     checks.push({
@@ -259,11 +247,11 @@ export function auditWildcardTls(): AuditCheck[] {
 }
 
 /** Look for the wildcard certificate in Traefik's DNS-01 ACME storage. */
-function wildcardCertificateCheck(tld: string): AuditCheck {
+function wildcardCertificateCheck(tld: string, io: SetupIo): AuditCheck {
   const fix =
     "Check the router log for ACME errors: docker logs ddev-router 2>&1 | grep -i acme";
 
-  const mountpoint = execSilent(
+  const mountpoint = io.execSilent(
     "docker volume inspect ddev-global-cache --format '{{.Mountpoint}}'",
   );
 
@@ -278,7 +266,7 @@ function wildcardCertificateCheck(tld: string): AuditCheck {
 
   const storage = `${mountpoint}/traefik/acme-dns.json`;
 
-  if (!existsSync(storage)) {
+  if (!io.fileExists(storage)) {
     return {
       name: "Wildcard certificate",
       status: "warn",
@@ -287,7 +275,7 @@ function wildcardCertificateCheck(tld: string): AuditCheck {
     };
   }
 
-  const issued = hasCertificateFor(readFileSync(storage, "utf-8"), tld);
+  const issued = hasCertificateFor(io.readFile(storage), tld);
 
   return {
     name: "Wildcard certificate",
@@ -341,14 +329,14 @@ export function hasCertificateFor(storage: string, tld: string): boolean {
 /**
  * Run all audit checks
  */
-export function runAudit(): AuditCheck[] {
+export function runAudit(io: SetupIo = nodeIo, config: AgentConfig = loadConfig()): AuditCheck[] {
   return [
-    ...auditSsh(),
-    ...auditFirewall(),
-    ...auditServices(),
-    ...auditDocker(),
-    ...auditPermissions(),
-    ...auditWildcardTls(),
+    ...auditSsh(io),
+    ...auditFirewall(io),
+    ...auditServices(io),
+    ...auditDocker(io),
+    ...auditPermissions(io),
+    ...auditWildcardTls(config, io),
   ];
 }
 
