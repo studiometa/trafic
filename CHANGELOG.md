@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- **Agent**: Wildcard TLS certificate through a DNS-01 provider. Setting `tls.dns_provider` (with the provider's credentials in `[tls.dns_env]`) makes Traefik obtain a single `<tld>` + `*.<tld>` certificate and serve it to every host that has none of its own, instead of one Let's Encrypt certificate per preview hostname. Let's Encrypt allows 50 new certificates per registered domain per 7 days, and a server churning previews hits that ceiling — on a live server 42 of 91 hosts were left on Traefik's self-signed default certificate until the window cleared. DDEV's `use_letsencrypt` stays on and its per-host `certResolver` stays on every project router: Traefik skips a per-host ACME request once the default store already holds a certificate matching the host with wildcard semantics, so the quota use stops by itself. The agent writes three files — the `acme-dns` resolver in `static_config.trafic.yaml`, the default TLS store in `custom-global-config/0-trafic-tls.yaml`, and the provider credentials in `router-compose.trafic.yaml` (mode 600). The `0-` prefix is required: Traefik's file provider keeps the first `tls.stores.default` it reads in directory order and DDEV writes an empty one in `default_config.yaml`. `setup` gains `--dns-provider` and a repeatable `--dns-env KEY=VALUE`, and refuses a DNS provider without `--email`. On an existing server, add the `[tls]` section and run `trafic-agent upgrade`: migration `0015__wildcard_dns_challenge` writes the files and starts one running project, which is what makes DDEV regenerate the static config and recreate the router — a router restart alone would reload the old files out of the `ddev-global-cache` volume. `audit` reports a certificate that was never issued and a credentials file that is not mode 600, and the agent warns at start when the config asks for a wildcard Traefik never got ([#59])
+- **CLI**: `setup` passes `--dns-provider` and `--dns-env` through to the agent ([#59])
+
 ### Fixed
 
 - **Agent**: Prevent search engines from indexing waiting pages ([#63])
@@ -597,6 +602,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [99bc7ba]: https://github.com/studiometa/trafic/commit/99bc7ba
 [0.1.0]: https://github.com/studiometa/trafic/releases/tag/0.1.0
 
+[#59]: https://github.com/studiometa/trafic/pull/59
 [1012821]: https://github.com/studiometa/trafic/commit/1012821
 [f086115]: https://github.com/studiometa/trafic/commit/f086115
 [36bca6b]: https://github.com/studiometa/trafic/commit/36bca6b

@@ -120,6 +120,14 @@ policy = "allow"
 [[auth.rules]]
 match = "admin.*"
 policy = "basic"
+
+# Optional: one wildcard certificate instead of one per preview.
+# See the TLS section below.
+[tls]
+dns_provider = "cloudflare"
+
+[tls.dns_env]
+CF_DNS_API_TOKEN = "..."
 ```
 
 ## Per-project configuration
@@ -181,26 +189,113 @@ trafic setup --host server.example.com --tld previews.example.com \
   --email admin@example.com
 ```
 
-With an email, DDEV sets `use_letsencrypt=true` and Traefik requests a
-certificate per project hostname on first use — previews included, since each
-one gets its own router. Without an email, projects are served with a locally
-trusted mkcert certificate, which is fine behind a proxy that terminates TLS
-itself but shows a browser warning if used directly.
+Without an email, projects are served with a locally trusted mkcert
+certificate, which is fine behind a proxy that terminates TLS itself but shows
+a browser warning if used directly.
 
-Two limits worth knowing before you rely on it:
+There are two modes.
 
-- Let's Encrypt allows **50 new certificates per registered domain per week**.
-  Each preview hostname is a new certificate, so environments that churn fast
-  can hit the ceiling. Renewals do not count against it.
-- Turning Let's Encrypt off does not discard certificates already issued.
-  Traefik keeps them in `acme.json` in the `ddev-global-cache` volume and
-  serves them again after a restart, so `configureDdev` deletes that storage
-  when Let's Encrypt is disabled.
+### Per-host certificates (default)
 
-Wildcard certificates would avoid the per-hostname limit but need a DNS-01
-challenge, which DDEV does not do. If you churn tens of previews a week, put a
-proxy in front that can (Caddy or Traefik with a DNS provider) and disable
-Let's Encrypt in DDEV so the two do not both try.
+DDEV puts `certResolver: acme-tlsChallenge` on every project router, so
+Traefik asks Let's Encrypt for one certificate per project hostname on first
+use — previews included.
+
+Let's Encrypt allows **50 new certificates per registered domain per 7 days**.
+Each preview hostname is a new certificate, so an environment that churns fast
+hits the ceiling, and every host that misses out is served with Traefik's
+self-signed default certificate until the window clears. Renewals do not count
+against the limit.
+
+### Wildcard certificate (DNS-01)
+
+One `*.<tld>` certificate covers every preview, so the per-hostname quota
+stops being a factor. It needs a DNS-01 challenge, which needs an API token
+for the DNS zone.
+
+```toml
+[tls]
+# Provider name from the Traefik/lego DNS provider list
+dns_provider = "cloudflare"
+
+# Optional: use the Let's Encrypt staging CA for a first test
+# ca_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+[tls.dns_env]
+CF_DNS_API_TOKEN = "..."
+```
+
+`setup` can write that section for you:
+
+```bash
+trafic setup --host server.example.com --tld previews.example.com \
+  --email admin@example.com \
+  --dns-provider cloudflare --dns-env CF_DNS_API_TOKEN=...
+```
+
+`--email` is required with `--dns-provider`: Let's Encrypt refuses an ACME
+account without one. The credentials land in
+`/home/ddev/.ddev/router-compose.trafic.yaml` (mode 600), which is what puts
+them in the router container's environment where lego reads them.
+
+**Rollout on an existing server:**
+
+1. Add the `[tls]` section to `/etc/trafic/config.toml`
+2. Run `sudo trafic-agent upgrade`
+
+Migration `0015__wildcard_dns_challenge` writes the Traefik files and starts
+one running project, which is what makes DDEV regenerate the static config and
+recreate the router. With no project running, the next deploy applies it.
+`trafic-agent audit` reports whether the certificate was issued.
+
+**What the agent writes:**
+
+| File | Purpose |
+|------|---------|
+| `~/.ddev/traefik/static_config.trafic.yaml` | The `acme-dns` resolver, its storage and the DNS challenge settings |
+| `~/.ddev/traefik/custom-global-config/0-trafic-tls.yaml` | The default TLS store asking for `<tld>` and `*.<tld>` |
+| `~/.ddev/router-compose.trafic.yaml` | The provider credentials on the router container |
+
+The `0-` prefix is load-bearing. Traefik's file provider keeps the **first**
+`tls.stores.default` it reads in directory order and logs "TLS store default
+already configured, skipping" for every later file — and DDEV writes an empty
+one in `default_config.yaml`.
+
+`use_letsencrypt` stays on, and DDEV keeps writing a certificate resolver on
+every project router. That costs nothing: Traefik skips a per-host ACME
+request once the default store already holds a certificate matching the host,
+wildcards included. So the quota use stops on its own as soon as the wildcard
+is issued.
+
+**Token scope, and the spare-zone pattern.** For Cloudflare the token needs
+`Zone:DNS:Edit` on the zone holding the TXT record. That is a token that can
+rewrite DNS for a production zone, sitting on a preview server. lego follows
+CNAMEs when it looks for `_acme-challenge`, so the challenge can be delegated
+to a zone nothing else uses:
+
+```
+_acme-challenge.previews.example.com.  CNAME  _acme-challenge.example-acme.net.
+```
+
+Scope the token to `example-acme.net` alone. A leak then costs a throwaway
+zone rather than the production one.
+
+**`*.<tld>` covers one label only.** `*.previews.example.com` matches
+`my-app.previews.example.com` but not `a.b.previews.example.com`. A preview
+name with a dot in it falls back to per-host issuance.
+
+**A first test should use staging.** Set `ca_server` to
+`https://acme-staging-v02.api.letsencrypt.org/directory`, run the rollout,
+check the router log, then remove the line and run `sudo trafic-agent upgrade`
+again. Staging certificates are not trusted by browsers — that is the point:
+a wrong token or an unreachable zone costs nothing in quota.
+
+### Turning Let's Encrypt off
+
+Disabling it does not discard certificates already issued. Traefik keeps them
+in `acme.json` in the `ddev-global-cache` volume and serves them again after a
+restart, so `configureDdev` deletes that storage when Let's Encrypt is
+disabled.
 
 ## Network exposure
 

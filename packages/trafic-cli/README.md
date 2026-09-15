@@ -25,6 +25,17 @@ trafic setup \
   --email admin@example.com
 ```
 
+With a DNS provider token, one wildcard certificate replaces the per-hostname ones:
+
+```bash
+trafic setup \
+  --host server.example.com \
+  --tld previews.example.com \
+  --email admin@example.com \
+  --dns-provider cloudflare \
+  --dns-env CF_DNS_API_TOKEN=...
+```
+
 **Options:**
 
 | Option | Description | Default |
@@ -32,6 +43,8 @@ trafic setup \
 | `--host` | SSH host (required) | - |
 | `--tld` | TLD for DDEV projects (required) | - |
 | `--email` | Email for Let's Encrypt certificates | - |
+| `--dns-provider` | DNS-01 provider name from the Traefik/lego list, e.g. `cloudflare`. Asks for one wildcard `*.<tld>` certificate instead of one per preview hostname, which is what avoids the Let's Encrypt per-domain quota. Requires `--email`. See [TLS](../trafic-agent/README.md#tls) | - |
+| `--dns-env` | Credential for that provider as `KEY=VALUE`, repeatable — e.g. `--dns-env CF_DNS_API_TOKEN=...`. Written to the agent config and passed to the router container | - |
 | `--user` | SSH user | `root` |
 | `--port` | SSH port | `22` |
 | `--agent-version` | Agent version to install | `latest` |
