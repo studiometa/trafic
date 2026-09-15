@@ -11,7 +11,7 @@ import { loadConfig } from "../../utils/config.js";
 import type { Migration } from "../types.js";
 
 /**
- * Migration 0015: apply the wildcard DNS-01 certificate on servers that ask
+ * Migration 0016: apply the wildcard DNS-01 certificate on servers that ask
  * for one in their config.
  *
  * `tls.dns_provider` is read by `configureTraefik`, which setup runs on a
@@ -54,8 +54,8 @@ import type { Migration } from "../types.js";
  * Idempotent: skipped when no DNS provider is configured, and when all three
  * files are already in place.
  */
-export const migration0015WildcardDnsChallenge: Migration = {
-  id: "0015__wildcard_dns_challenge",
+export const migration0016WildcardDnsChallenge: Migration = {
+  id: "0016__wildcard_dns_challenge",
   description: "Apply the wildcard DNS-01 certificate where one is configured",
 
   run(): void {

@@ -5,7 +5,7 @@ import type { AgentConfig } from "../types.js";
 /**
  * Warn when the config asks for a wildcard certificate that Traefik never got.
  *
- * The files are written by setup and by migration 0015, not by the running
+ * The files are written by setup and by migration 0016, not by the running
  * agent: writing them needs root, and applying them needs a project start.
  * So this only reports, and says which command fixes it.
  */
