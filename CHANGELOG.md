@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Agent**: Prevent search engines from indexing waiting pages ([#63])
+- **Agent**: The Trafic catch-all routers outrank DDEV's own fallback routers. DDEV 1.25.4's router image defines `ddev-router-fallback-http` and `ddev-router-fallback-https` in its `default_config.yaml`, both with the rule `` PathPrefix(`/`) `` at **priority 1** on every router entry point, pointing at a socat responder that answers 404. Trafic's catch-all routers used priority 1 as well, and on a tie between identical rules Traefik picked DDEV's — so a request for a stopped project got DDEV's 404 page instead of the Trafic waiting page, and because the waiting page is what triggers a restart, scale-to-zero never brought the project back. Seen in the access log of a live server: `"GET /rien-a-mettre.html HTTP/2.0" 404 ... "http-443-ddev-router-fallback-https@file"`. `trafic-agent upgrade` installs DDEV 1.25.4, so every upgraded server was affected. Both catch-all routers now use priority 2 — the lowest value that still wins, and far below any project router, so per-project routing and auth are unchanged. Servers configured by an earlier release keep the old priority in `~/.ddev/traefik/custom-global-config/trafic.yaml`; migration `0015__catchall_priority` rewrites it and pushes it into the running router by starting one already-running project, which is how DDEV copies the global Traefik config into the router — no `ddev poweroff`, so nothing serving traffic is stopped. Run `trafic-agent upgrade` to apply it ([#64])
 
 ## [0.1.45] - 2026.09.14
 
@@ -563,6 +564,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [80c94ab]: https://github.com/studiometa/trafic/commit/80c94ab
 [#61]: https://github.com/studiometa/trafic/pull/61
 [#63]: https://github.com/studiometa/trafic/pull/63
+[#64]: https://github.com/studiometa/trafic/pull/64
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

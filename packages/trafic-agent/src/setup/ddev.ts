@@ -342,12 +342,20 @@ http:
         query: "/"
 
   routers:
-    # Lowest priority, so a DDEV project router always wins. These only match
-    # when none does — which is what a stopped project produces, because DDEV
-    # removes that project's router and Traefik would otherwise answer 404.
-    # Without them the waiting page never appears and scale-to-zero never
-    # restarts anything. Auth is unaffected: it is attached at the entry
-    # point, not here, so this cannot reintroduce the bypass that #27 fixed.
+    # The lowest priority above DDEV's own fallback routers, which sit at
+    # priority 1 since DDEV 1.25.4, and still far below any project router —
+    # so a DDEV project router always wins. These only match when none does —
+    # which is what a stopped project produces, because DDEV removes that
+    # project's router and Traefik would otherwise answer 404. Without them
+    # the waiting page never appears and scale-to-zero never restarts
+    # anything. Auth is unaffected: it is attached at the entry point, not
+    # here, so this cannot reintroduce the bypass that #27 fixed.
+    #
+    # Priority 1 is not enough any more: DDEV 1.25.4 ships
+    # ddev-router-fallback-http and ddev-router-fallback-https with the same
+    # PathPrefix(\`/\`) rule at priority 1, pointing at a 404 responder. With
+    # equal priority and identical rules Traefik picked DDEV's, so a stopped
+    # project answered DDEV's 404 page instead of the waiting page.
     #
     # Each names exactly one entry point. Leaving entryPoints out attaches a
     # router to all of them, which breaks DDEV's router health check — it
@@ -356,7 +364,7 @@ http:
       rule: "PathPrefix(\`/\`)"
       entryPoints:
         - http-${routerPorts.http}
-      priority: 1
+      priority: 2
       service: trafic-service
 
     # Carries tls, so it only matches the https entry point. The plain one
@@ -365,7 +373,7 @@ http:
       rule: "PathPrefix(\`/\`)"
       entryPoints:
         - http-${routerPorts.https}
-      priority: 1
+      priority: 2
       service: trafic-service
       tls: {}
 
@@ -416,4 +424,34 @@ export function configureTraefik(io: SetupIo = nodeIo): void {
   info(`Entry points: http-${routerPorts.http}, http-${routerPorts.https} (web) plus tool ports`);
 
   success("Traefik configured with Trafic middleware");
+}
+
+/**
+ * Name of one running DDEV project, or null when none runs.
+ *
+ * `ddev list -j` is the only source that knows: `project_list.yaml`, which the
+ * agent watches for discovery, records every project DDEV has ever seen but
+ * carries no live status — a project stopped an hour ago still sits there.
+ * `ddev list -j` asks Docker, and wraps the entries in a `raw` array.
+ *
+ * Used to push a changed global Traefik config into the running router: DDEV
+ * copies `custom-global-config/*.yaml` into it on any `ddev start`, so
+ * starting a project that is already running is enough, and nothing that is
+ * serving traffic has to be stopped.
+ */
+export function findRunningProject(io: SetupIo = nodeIo): string | null {
+  const output = io.execSilent("su - ddev -c 'ddev list -j'");
+
+  if (!output) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(output) as { raw?: { name?: string; status?: string }[] };
+    const running = (parsed.raw ?? []).find((project) => project.status === "running");
+    return running?.name ?? null;
+  } catch {
+    // A DDEV that answers something other than JSON is not worth guessing at
+    return null;
+  }
 }
