@@ -8,6 +8,12 @@ import {
   MIGRATIONS_STATE_FILE,
 } from "../src/setup/migrations/index.js";
 import { migration0001DdevAptRepo } from "../src/setup/migrations/0001__ddev_apt_repo.js";
+import {
+  migration0017DdevAptCloudsmith,
+  runDdevAptCloudsmithMigration,
+} from "../src/setup/migrations/0017__ddev_apt_cloudsmith.js";
+import { DDEV_KEYRING, DDEV_SOURCES } from "../src/setup/ddev.js";
+import { createFakeIo } from "./helpers/fake-io.js";
 
 // ---------------------------------------------------------------------------
 // Temp-dir helper
@@ -301,5 +307,58 @@ describe("0001__ddev_apt_repo migration", () => {
 
   it("exposes a run() function", () => {
     expect(typeof migration0001DdevAptRepo.run).toBe("function");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0017__ddev_apt_cloudsmith migration
+// ---------------------------------------------------------------------------
+
+const OLD_SOURCES = "/etc/apt/sources.list.d/ddev.list";
+const OLD_KEYRING = "/etc/apt/keyrings/ddev.gpg";
+
+describe("0017__ddev_apt_cloudsmith migration", () => {
+  it("is registered last, after 0016", () => {
+    expect(ALL_MIGRATIONS.at(-1)).toBe(migration0017DdevAptCloudsmith);
+    expect(migration0017DdevAptCloudsmith.id).toBe("0017__ddev_apt_cloudsmith");
+  });
+
+  it("does nothing once the Cloudsmith source is in place", () => {
+    const io = createFakeIo({ files: { [DDEV_SOURCES]: "Types: deb\n" } });
+
+    runDdevAptCloudsmithMigration(io);
+
+    expect(io.commands).toEqual([]);
+  });
+
+  it("removes the Gemfury source and its keyring", () => {
+    const io = createFakeIo({
+      files: { [OLD_SOURCES]: "deb ...", [OLD_KEYRING]: "key" },
+    });
+
+    runDdevAptCloudsmithMigration(io);
+
+    expect(io.ran(`rm -f ${OLD_SOURCES}`)).toBe(true);
+    expect(io.ran(`rm -f ${OLD_KEYRING}`)).toBe(true);
+  });
+
+  it("writes the Cloudsmith source and refreshes the package lists", () => {
+    const io = createFakeIo({ files: { [OLD_SOURCES]: "deb ..." } });
+
+    runDdevAptCloudsmithMigration(io);
+
+    const source = io.commands.find((c) => c.includes(DDEV_SOURCES))!;
+    expect(source).toContain("URIs: https://packages.ddev.com/public/deb/ubuntu");
+    expect(source).toContain(`Signed-By: ${DDEV_KEYRING}`);
+    expect(io.ran("apt-get update -qq")).toBe(true);
+  });
+
+  it("removes nothing on a server that has neither old file", () => {
+    const io = createFakeIo();
+
+    runDdevAptCloudsmithMigration(io);
+
+    expect(io.ran("rm -f")).toBe(false);
+    expect(io.ran(DDEV_SOURCES)).toBe(true);
   });
 });

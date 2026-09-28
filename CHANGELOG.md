@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- **Agent**: DDEV is installed from its Cloudsmith apt repository instead of the Gemfury one. DDEV 1.25.4 moved its Debian and RPM packages to Cloudsmith ([ddev/ddev#8698]) and its install documentation now names `https://packages.ddev.com/public/deb/ubuntu` with the signing key at `https://packages.ddev.com/public/gpg.key`. The former host, `pkg.ddev.com`, still receives packages and DDEV has announced no retirement date, so nothing is broken today — but a server left on it stops seeing new DDEV releases the day it is switched off, and `trafic-agent upgrade` runs `apt-get install --only-upgrade ddev` against whatever repository is configured. `setup` now writes the deb822 source `/etc/apt/sources.list.d/ddev.sources` (`Types: deb`, `Suites: stable`, `Components: main`) signed by the armoured key at `/etc/apt/keyrings/ddev.asc`, and no longer writes `/etc/apt/sources.list.d/ddev.list` or the dearmoured `/etc/apt/keyrings/ddev.gpg`. The old files are removed rather than kept alongside the new ones, as DDEV's own instructions do: two sources offering the same package leave apt picking by version, and the Gemfury host would stay in the picture for as long as it answers. Servers set up by an earlier release still carry the old source; migration `0017__ddev_apt_cloudsmith` removes it with its keyring, writes the new one and refreshes the package lists, so an upgraded server ends up identical to a fresh install. Run `trafic-agent upgrade` to apply it ([#66])
+
 ## [0.1.47] - 2026.10.05
 
 ### Fixed
@@ -579,6 +585,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#61]: https://github.com/studiometa/trafic/pull/61
 [#63]: https://github.com/studiometa/trafic/pull/63
 [#65]: https://github.com/studiometa/trafic/pull/65
+[#66]: https://github.com/studiometa/trafic/pull/66
+[ddev/ddev#8698]: https://github.com/ddev/ddev/pull/8698
 [#31]: https://github.com/studiometa/trafic/pull/31
 [GHSA-mw96-cpmx-2vgc]: https://github.com/advisories/GHSA-mw96-cpmx-2vgc
 [ddev/ddev#2696]: https://github.com/ddev/ddev/issues/2696

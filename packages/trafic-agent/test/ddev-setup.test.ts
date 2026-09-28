@@ -7,6 +7,8 @@ import {
   getDockerGatewayIp,
   configureTraefik,
   findRunningProject,
+  DDEV_KEYRING,
+  DDEV_SOURCES,
 } from "../src/setup/ddev.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
@@ -19,16 +21,31 @@ const DDEV_NETWORK = "docker network inspect ddev_default";
 const BRIDGE_NETWORK = "docker network inspect bridge";
 
 describe("addDdevAptRepo", () => {
-  it("writes the keyring and a signed-by repository line", () => {
+  it("writes the keyring and a deb822 source signed by it", () => {
     const io = createFakeIo();
 
     addDdevAptRepo(io);
 
     expect(io.ran("install -m 0755 -d /etc/apt/keyrings")).toBe(true);
-    const repoLine = io.commands.find((c) =>
-      c.includes("/etc/apt/sources.list.d/ddev.list"),
-    )!;
-    expect(repoLine).toContain("signed-by=/etc/apt/keyrings/ddev.gpg");
+    expect(
+      io.ran("curl -fsSL https://packages.ddev.com/public/gpg.key -o /etc/apt/keyrings/ddev.asc"),
+    ).toBe(true);
+    expect(io.ran("chmod a+r /etc/apt/keyrings/ddev.asc")).toBe(true);
+
+    const source = io.commands.find((c) => c.includes(DDEV_SOURCES))!;
+    expect(source).toContain("Types: deb");
+    expect(source).toContain("URIs: https://packages.ddev.com/public/deb/ubuntu");
+    expect(source).toContain("Suites: stable");
+    expect(source).toContain("Components: main");
+    expect(source).toContain(`Signed-By: ${DDEV_KEYRING}`);
+  });
+
+  it("uses the Cloudsmith repository, not the former Gemfury one", () => {
+    const io = createFakeIo();
+
+    addDdevAptRepo(io);
+
+    expect(io.ran("pkg.ddev.com")).toBe(false);
   });
 });
 
@@ -49,7 +66,7 @@ describe("installDdev", () => {
 
     installDdev(io);
 
-    expect(io.ran("/etc/apt/sources.list.d/ddev.list")).toBe(true);
+    expect(io.ran(DDEV_SOURCES)).toBe(true);
     expect(io.ran("apt-get install -y ddev")).toBe(true);
   });
 

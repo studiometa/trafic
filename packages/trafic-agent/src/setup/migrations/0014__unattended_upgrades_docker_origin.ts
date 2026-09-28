@@ -13,9 +13,9 @@ import type { Migration } from "../types.js";
  * and its dist is the Ubuntu codename, so
  * `"origin=Docker,codename=${distro_codename}"` is the entry that matches it.
  *
- * DDEV, installed from pkg.ddev.com, is deliberately not added: a DDEV major
- * landing unattended can break running previews. DDEV is updated by
- * `trafic-agent upgrade` instead, when an operator is there to see it.
+ * DDEV, installed from its own apt repository, is deliberately not added: a
+ * DDEV major landing unattended can break running previews. DDEV is updated
+ * by `trafic-agent upgrade` instead, when an operator is there to see it.
  *
  * `configureUnattendedUpgrades` now writes the Docker entry, which covers
  * fresh installs. Servers set up by an earlier release still carry the old
