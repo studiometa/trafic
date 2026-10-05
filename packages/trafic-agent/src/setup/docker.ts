@@ -30,6 +30,51 @@ export function installDocker(io: SetupIo = nodeIo): void {
   success("Added ddev user to docker group");
 }
 
+/** Docker daemon config file */
+export const DAEMON_CONFIG = "/etc/docker/daemon.json";
+
+/**
+ * Address pools for the networks Docker creates.
+ *
+ * Every DDEV project gets its own network. Docker's built-in pools hold only
+ * about 31 of them (15 × /16 in 172.17–31.x, 16 × /20 in 192.168.x), so a
+ * server with ~30 projects fails with "all predefined address pools have
+ * been fully subnetted". /24 subnets in 172.16.0.0/12 give 4096 networks,
+ * and keep every network inside the range the firewall rules already allow
+ * (hardening.ts, docker-firewall.ts) — the built-in 192.168.x pools are not.
+ */
+export const DOCKER_ADDRESS_POOLS = [{ base: "172.16.0.0/12", size: 24 }];
+
+/**
+ * Add the address pools to an existing daemon config.
+ *
+ * Returns true when the config was changed. Leaves a config that already
+ * sets pools alone (an operator choice), and one it cannot parse.
+ */
+export function addDockerAddressPools(io: SetupIo = nodeIo): boolean {
+  let config: Record<string, unknown> = {};
+
+  if (io.fileExists(DAEMON_CONFIG)) {
+    try {
+      config = JSON.parse(io.readFile(DAEMON_CONFIG));
+    } catch {
+      warn("Could not parse existing Docker config, skipping");
+      return false;
+    }
+  }
+
+  if ("default-address-pools" in config) {
+    return false;
+  }
+
+  io.exec("mkdir -p /etc/docker");
+  io.writeFile(
+    DAEMON_CONFIG,
+    JSON.stringify({ ...config, "default-address-pools": DOCKER_ADDRESS_POOLS }, null, 2),
+  );
+  return true;
+}
+
 /**
  * Configure Docker for production use
  */
@@ -45,11 +90,12 @@ export function configureDocker(io: SetupIo = nodeIo): void {
     },
     "storage-driver": "overlay2",
     "live-restore": true,
+    "default-address-pools": DOCKER_ADDRESS_POOLS,
   };
 
   io.exec("mkdir -p /etc/docker");
 
-  const configPath = "/etc/docker/daemon.json";
+  const configPath = DAEMON_CONFIG;
 
   // Check if config already exists
   if (io.fileExists(configPath)) {
@@ -67,8 +113,9 @@ export function configureDocker(io: SetupIo = nodeIo): void {
     io.writeFile(configPath, JSON.stringify(daemonConfig, null, 2));
   }
 
-  // Reload Docker to apply config
-  io.exec("systemctl reload docker || systemctl restart docker");
+  // A reload does not apply default-address-pools, so restart.
+  // live-restore keeps running containers up.
+  io.exec("systemctl restart docker");
   success("Docker configured with production settings");
 }
 

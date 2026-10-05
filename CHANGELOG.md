@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **Agent**: Docker no longer runs out of network subnets. Each DDEV project creates its own `ddev-<name>_default` network, and Docker's built-in address pools hold only about 31 networks (15 × `/16` in `172.17–31.x`, 16 × `/20` in `192.168.x`). A server with about 30 projects failed to start the next one with "all predefined address pools have been fully subnetted". The `192.168.x` networks were also outside the `172.16.0.0/12` range the firewall allows to reach the agent on port 9876. `setup` now sets `default-address-pools` to `/24` subnets in `172.16.0.0/12` (4096 networks) and restarts Docker instead of reloading it, because a reload does not apply this key. Servers set up by an earlier release get the pools from migration `0018__docker_address_pools`, which adds the key to `/etc/docker/daemon.json` when it is not set and restarts Docker. `live-restore` keeps running containers up, and existing networks keep their subnets. Run `trafic-agent upgrade` to apply it ([#67])
+
 ## [0.1.46] - 2026.09.15
 
 ### Added
@@ -457,6 +463,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.46]: https://github.com/studiometa/trafic/compare/0.1.45...0.1.46
 [0.1.45]: https://github.com/studiometa/trafic/compare/0.1.44...0.1.45
 [2eb2953]: https://github.com/studiometa/trafic/commit/2eb2953
+[#67]: https://github.com/studiometa/trafic/pull/67
 [#62]: https://github.com/studiometa/trafic/pull/62
 [0.1.44]: https://github.com/studiometa/trafic/compare/0.1.43...0.1.44
 [0.1.43]: https://github.com/studiometa/trafic/compare/0.1.42...0.1.43
