@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.1.48] - 2026.10.05
 
 ### Changed
 
@@ -469,7 +469,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitLab CI and GitHub Actions deployment examples
 - Agent TOML configuration example
 
-[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.47...HEAD
+[Unreleased]: https://github.com/studiometa/trafic/compare/0.1.48...HEAD
+[0.1.48]: https://github.com/studiometa/trafic/compare/0.1.47...0.1.48
 [0.1.47]: https://github.com/studiometa/trafic/compare/0.1.46...0.1.47
 [0.1.46]: https://github.com/studiometa/trafic/compare/0.1.45...0.1.46
 [0.1.45]: https://github.com/studiometa/trafic/compare/0.1.44...0.1.45
