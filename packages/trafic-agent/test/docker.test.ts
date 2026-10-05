@@ -3,14 +3,16 @@ import {
   installDocker,
   configureDocker,
   setupDockerPrune,
+  addDockerAddressPools,
+  DAEMON_CONFIG,
+  DOCKER_ADDRESS_POOLS,
 } from "../src/setup/docker.js";
+import { runDockerAddressPoolsMigration } from "../src/setup/migrations/0018__docker_address_pools.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {});
 });
-
-const DAEMON_CONFIG = "/etc/docker/daemon.json";
 
 describe("installDocker", () => {
   it("skips the install when Docker is already present", () => {
@@ -105,15 +107,93 @@ describe("configureDocker", () => {
 
     // Overwriting a config we cannot read could break the daemon
     expect(io.writes.has(DAEMON_CONFIG)).toBe(false);
-    expect(io.ran("systemctl reload docker")).toBe(false);
+    expect(io.ran("systemctl restart docker")).toBe(false);
   });
 
-  it("reloads Docker to apply the config", () => {
+  it("gives Docker room for one network per project", () => {
     const io = createFakeIo();
 
     configureDocker(io);
 
-    expect(io.ran("systemctl reload docker")).toBe(true);
+    // The built-in pools run out at about 31 networks
+    const config = JSON.parse(io.written(DAEMON_CONFIG));
+    expect(config["default-address-pools"]).toEqual([{ base: "172.16.0.0/12", size: 24 }]);
+  });
+
+  it("restarts Docker to apply the config", () => {
+    const io = createFakeIo();
+
+    configureDocker(io);
+
+    // A reload does not apply default-address-pools
+    expect(io.ran("systemctl restart docker")).toBe(true);
+    expect(io.ran("systemctl reload docker")).toBe(false);
+  });
+});
+
+describe("addDockerAddressPools", () => {
+  it("adds the pools to an existing config", () => {
+    const io = createFakeIo({
+      files: { [DAEMON_CONFIG]: JSON.stringify({ "live-restore": true }) },
+    });
+
+    expect(addDockerAddressPools(io)).toBe(true);
+
+    const config = JSON.parse(io.written(DAEMON_CONFIG));
+    expect(config["live-restore"]).toBe(true);
+    expect(config["default-address-pools"]).toEqual(DOCKER_ADDRESS_POOLS);
+  });
+
+  it("writes a config when there is none", () => {
+    const io = createFakeIo();
+
+    expect(addDockerAddressPools(io)).toBe(true);
+
+    const config = JSON.parse(io.written(DAEMON_CONFIG));
+    expect(config["default-address-pools"]).toEqual(DOCKER_ADDRESS_POOLS);
+  });
+
+  it("keeps pools an operator already set", () => {
+    const pools = [{ base: "10.10.0.0/16", size: 24 }];
+    const io = createFakeIo({
+      files: { [DAEMON_CONFIG]: JSON.stringify({ "default-address-pools": pools }) },
+    });
+
+    expect(addDockerAddressPools(io)).toBe(false);
+
+    expect(io.writes.has(DAEMON_CONFIG)).toBe(false);
+  });
+
+  it("leaves an unparseable config alone", () => {
+    const io = createFakeIo({ files: { [DAEMON_CONFIG]: "{ not json" } });
+
+    expect(addDockerAddressPools(io)).toBe(false);
+
+    expect(io.writes.has(DAEMON_CONFIG)).toBe(false);
+  });
+});
+
+describe("0018__docker_address_pools migration", () => {
+  it("restarts Docker after adding the pools", () => {
+    const io = createFakeIo({ files: { [DAEMON_CONFIG]: "{}" } });
+
+    runDockerAddressPoolsMigration(io);
+
+    expect(JSON.parse(io.written(DAEMON_CONFIG))["default-address-pools"]).toEqual(
+      DOCKER_ADDRESS_POOLS,
+    );
+    expect(io.ran("systemctl restart docker")).toBe(true);
+  });
+
+  it("does not restart Docker when the pools are already set", () => {
+    const io = createFakeIo({
+      files: { [DAEMON_CONFIG]: JSON.stringify({ "default-address-pools": DOCKER_ADDRESS_POOLS }) },
+    });
+
+    runDockerAddressPoolsMigration(io);
+
+    // A restart briefly drops the router, so skip it when nothing changed
+    expect(io.ran("systemctl restart docker")).toBe(false);
   });
 });
 
