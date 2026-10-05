@@ -1,4 +1,4 @@
-import { addDockerAddressPools } from "../docker.js";
+import { addDockerAddressPools, restartDocker } from "../docker.js";
 import { nodeIo, type SetupIo } from "../io.js";
 import type { Migration } from "../types.js";
 
@@ -21,6 +21,13 @@ import type { Migration } from "../types.js";
  * networks keep their subnets; only new networks get a /24, and Docker skips
  * subnets an existing network already uses.
  *
+ * Changed after release: the first version ran `systemctl restart docker`
+ * directly. On servers set up before 0.1.47 that restart also switched the
+ * storage driver, which `live-restore` cannot survive, and orphaned every
+ * running container (see restartDocker). The result on a server is the same
+ * either way; only servers that have not run it yet get the safe restart.
+ * Servers that already ran it are repaired by migration 0019.
+ *
  * Idempotent: does nothing when the config already sets pools.
  */
 export const migration0018DockerAddressPools: Migration = {
@@ -37,6 +44,6 @@ export const migration0018DockerAddressPools: Migration = {
  */
 export function runDockerAddressPoolsMigration(io: SetupIo = nodeIo): void {
   if (addDockerAddressPools(io)) {
-    io.exec("systemctl restart docker");
+    restartDocker(io);
   }
 }

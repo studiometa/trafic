@@ -7,6 +7,7 @@ import {
   getDockerGatewayIp,
   configureTraefik,
   findRunningProject,
+  findRunningProjects,
   DDEV_KEYRING,
   DDEV_SOURCES,
 } from "../src/setup/ddev.js";
@@ -347,6 +348,31 @@ describe("configureTraefik catch-all router", () => {
     // Auth lives on the entry point. Attaching it here was the arrangement
     // that let project routers bypass it, which #27 fixed.
     expect(router).not.toContain("middlewares");
+  });
+});
+
+describe("findRunningProjects", () => {
+  it("returns every running project", () => {
+    const fake = createFakeIo({
+      output: {
+        "ddev list -j": JSON.stringify({
+          raw: [
+            { name: "a", status: "running" },
+            { name: "b", status: "stopped" },
+            { name: "c", status: "running" },
+          ],
+        }),
+      },
+    });
+
+    expect(findRunningProjects(fake)).toEqual(["a", "c"]);
+  });
+
+  it("returns nothing when DDEV answers nothing or answers garbage", () => {
+    expect(findRunningProjects(createFakeIo())).toEqual([]);
+    expect(
+      findRunningProjects(createFakeIo({ output: { "ddev list -j": "not json" } })),
+    ).toEqual([]);
   });
 });
 

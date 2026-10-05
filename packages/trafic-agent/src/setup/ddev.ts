@@ -623,12 +623,33 @@ export function configureTraefik(
 }
 
 /**
- * Name of one running DDEV project, or null when none runs.
+ * Names of the running DDEV projects.
  *
  * `ddev list -j` is the only source that knows: `project_list.yaml`, which the
  * agent watches for discovery, records every project DDEV has ever seen but
  * carries no live status — a project stopped an hour ago still sits there.
  * `ddev list -j` asks Docker, and wraps the entries in a `raw` array.
+ */
+export function findRunningProjects(io: SetupIo = nodeIo): string[] {
+  const output = io.execSilent("su - ddev -c 'ddev list -j'");
+
+  if (!output) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(output) as { raw?: { name?: string; status?: string }[] };
+    return (parsed.raw ?? [])
+      .filter((project) => project.status === "running" && project.name)
+      .map((project) => project.name as string);
+  } catch {
+    // A DDEV that answers something other than JSON is not worth guessing at
+    return [];
+  }
+}
+
+/**
+ * Name of one running DDEV project, or null when none runs.
  *
  * Used to push a changed global Traefik config into the running router: DDEV
  * copies `custom-global-config/*.yaml` into it on any `ddev start`, so
@@ -636,20 +657,7 @@ export function configureTraefik(
  * serving traffic has to be stopped.
  */
 export function findRunningProject(io: SetupIo = nodeIo): string | null {
-  const output = io.execSilent("su - ddev -c 'ddev list -j'");
-
-  if (!output) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(output) as { raw?: { name?: string; status?: string }[] };
-    const running = (parsed.raw ?? []).find((project) => project.status === "running");
-    return running?.name ?? null;
-  } catch {
-    // A DDEV that answers something other than JSON is not worth guessing at
-    return null;
-  }
+  return findRunningProjects(io)[0] ?? null;
 }
 
 /**
