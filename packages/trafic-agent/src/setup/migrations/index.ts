@@ -16,6 +16,7 @@ import { migration0013SshKexDefaults } from "./0013__ssh_kex_defaults.js";
 import { migration0014UnattendedUpgradesDockerOrigin } from "./0014__unattended_upgrades_docker_origin.js";
 import { migration0015CatchallPriority } from "./0015__catchall_priority.js";
 import { migration0016WildcardDnsChallenge } from "./0016__wildcard_dns_challenge.js";
+import { migration0017DdevAptCloudsmith } from "./0017__ddev_apt_cloudsmith.js";
 import { migration0018DockerAddressPools } from "./0018__docker_address_pools.js";
 
 /** Path to the persisted migration state file */
@@ -40,6 +41,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0015CatchallPriority,
   migration0016WildcardDnsChallenge,
   migration0018DockerAddressPools,
+  migration0017DdevAptCloudsmith,
 ];
 
 // ---------------------------------------------------------------------------

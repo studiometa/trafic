@@ -20,19 +20,39 @@ export function installSystemDeps(io: SetupIo = nodeIo): void {
   success("System dependencies installed: jq, curl, rsync, gnupg, ca-certificates");
 }
 
+/** Where the DDEV signing key is installed. */
+export const DDEV_KEYRING = "/etc/apt/keyrings/ddev.asc";
+
+/** The deb822 source file naming the DDEV repository. */
+export const DDEV_SOURCES = "/etc/apt/sources.list.d/ddev.sources";
+
 /**
- * Add the official DDEV apt repository and GPG key.
+ * Add the official DDEV apt repository and signing key.
+ *
+ * The repository is the Cloudsmith one DDEV 1.25.4 moved to
+ * (ddev/ddev#8698). The former Gemfury host, `pkg.ddev.com`, still serves
+ * packages and carries no retirement date, but DDEV now tells Linux users to
+ * switch, so this follows the documented install.
+ *
+ * Two differences from the copy/paste block in DDEV's docs, both deliberate:
+ * the key is written by curl rather than piped into `tee`, so a failed
+ * download exits non-zero here instead of surfacing as a confusing GPG error
+ * on the next `apt-get update` (the same reasoning as the NodeSource key);
+ * and the docs' `sudo` is dropped because setup already runs as root.
+ *
+ * The key is served armoured and stays that way — `.asc` rather than a
+ * dearmoured `.gpg` — which is what `Signed-By` in the source file names.
+ *
  * Idempotent: safe to call even if the repository is already configured.
  */
 export function addDdevAptRepo(io: SetupIo = nodeIo): void {
   io.exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
+  io.exec(`curl -fsSL https://packages.ddev.com/public/gpg.key -o ${DDEV_KEYRING}`, {
+    silent: true,
+  });
+  io.exec(`chmod a+r ${DDEV_KEYRING}`, { silent: true });
   io.exec(
-    "curl -fsSL https://pkg.ddev.com/apt/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/ddev.gpg > /dev/null",
-    { silent: true },
-  );
-  io.exec("chmod a+r /etc/apt/keyrings/ddev.gpg", { silent: true });
-  io.exec(
-    "echo \"deb [signed-by=/etc/apt/keyrings/ddev.gpg] https://pkg.ddev.com/apt/ * *\" | tee /etc/apt/sources.list.d/ddev.list > /dev/null",
+    `printf "Types: deb\\nURIs: https://packages.ddev.com/public/deb/ubuntu\\nSuites: stable\\nComponents: main\\nSigned-By: ${DDEV_KEYRING}\\n" | tee ${DDEV_SOURCES} > /dev/null`,
     { silent: true },
   );
 }
