@@ -318,8 +318,11 @@ const OLD_SOURCES = "/etc/apt/sources.list.d/ddev.list";
 const OLD_KEYRING = "/etc/apt/keyrings/ddev.gpg";
 
 describe("0017__ddev_apt_cloudsmith migration", () => {
-  it("is registered last, after 0016", () => {
-    expect(ALL_MIGRATIONS.at(-1)).toBe(migration0017DdevAptCloudsmith);
+  it("is registered after 0018, which shipped first", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf("0017__ddev_apt_cloudsmith")).toBeGreaterThan(
+      ids.indexOf("0018__docker_address_pools"),
+    );
     expect(migration0017DdevAptCloudsmith.id).toBe("0017__ddev_apt_cloudsmith");
   });
 

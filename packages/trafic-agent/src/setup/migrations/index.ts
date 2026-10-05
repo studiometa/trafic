@@ -18,6 +18,7 @@ import { migration0015CatchallPriority } from "./0015__catchall_priority.js";
 import { migration0016WildcardDnsChallenge } from "./0016__wildcard_dns_challenge.js";
 import { migration0017DdevAptCloudsmith } from "./0017__ddev_apt_cloudsmith.js";
 import { migration0018DockerAddressPools } from "./0018__docker_address_pools.js";
+import { migration0019RecoverOrphanContainers } from "./0019__recover_orphan_containers.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -42,6 +43,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0016WildcardDnsChallenge,
   migration0018DockerAddressPools,
   migration0017DdevAptCloudsmith,
+  migration0019RecoverOrphanContainers,
 ];
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import {
   configureDocker,
   setupDockerPrune,
   addDockerAddressPools,
+  restartDocker,
   DAEMON_CONFIG,
   DOCKER_ADDRESS_POOLS,
 } from "../src/setup/docker.js";
@@ -131,6 +132,96 @@ describe("configureDocker", () => {
   });
 });
 
+describe("restartDocker", () => {
+  const overlay2 = { [DAEMON_CONFIG]: JSON.stringify({ "storage-driver": "overlay2" }) };
+  const projects = JSON.stringify({
+    raw: [
+      { name: "alpha", status: "running" },
+      { name: "beta", status: "stopped" },
+      { name: "gamma", status: "running" },
+    ],
+  });
+
+  it("restarts in place when the storage driver stays the same", () => {
+    const io = createFakeIo({
+      present: ["ddev"],
+      files: overlay2,
+      output: { "docker info": "overlay2" },
+    });
+
+    restartDocker(io);
+
+    // live-restore keeps the containers up, so nothing is stopped
+    expect(io.commands).toContain("systemctl restart docker");
+    expect(io.ran("ddev poweroff")).toBe(false);
+  });
+
+  it("stops the projects before a restart that switches the storage driver", () => {
+    const io = createFakeIo({
+      present: ["ddev"],
+      files: overlay2,
+      output: { "docker info": "overlayfs", "ddev list -j": projects },
+    });
+
+    restartDocker(io);
+
+    // dockerd forgets containers made with another driver, while live-restore
+    // keeps their processes holding the database volumes
+    const poweroff = io.commands.findIndex((c) => c.includes("ddev poweroff"));
+    const restart = io.commands.indexOf("systemctl restart docker");
+    expect(poweroff).toBeGreaterThan(-1);
+    expect(poweroff).toBeLessThan(restart);
+  });
+
+  it("starts the projects that were running again after the switch", () => {
+    const io = createFakeIo({
+      present: ["ddev"],
+      files: overlay2,
+      output: { "docker info": "overlayfs", "ddev list -j": projects },
+    });
+
+    restartDocker(io);
+
+    const start = io.commands.findIndex((c) => c.includes("ddev start alpha gamma"));
+    expect(start).toBeGreaterThan(io.commands.indexOf("systemctl restart docker"));
+    expect(io.ran("beta")).toBe(false);
+  });
+
+  it("does not compare when the config sets no storage driver", () => {
+    const io = createFakeIo({
+      present: ["ddev"],
+      files: { [DAEMON_CONFIG]: "{}" },
+      output: { "docker info": "overlayfs" },
+    });
+
+    restartDocker(io);
+
+    // Docker keeps its current driver, so containers survive the restart
+    expect(io.ran("ddev poweroff")).toBe(false);
+    expect(io.commands).toContain("systemctl restart docker");
+  });
+
+  it("restarts in place when Docker does not answer", () => {
+    const io = createFakeIo({ present: ["ddev"], files: overlay2, fails: ["docker info"] });
+
+    restartDocker(io);
+
+    expect(io.ran("ddev poweroff")).toBe(false);
+    expect(io.commands).toContain("systemctl restart docker");
+  });
+
+  it("skips DDEV on a fresh server where it is not installed yet", () => {
+    const io = createFakeIo({ files: overlay2, output: { "docker info": "overlayfs" } });
+
+    restartDocker(io);
+
+    // setup configures Docker before it installs DDEV
+    expect(io.ran("ddev poweroff")).toBe(false);
+    expect(io.ran("ddev start")).toBe(false);
+    expect(io.commands).toContain("systemctl restart docker");
+  });
+});
+
 describe("addDockerAddressPools", () => {
   it("adds the pools to an existing config", () => {
     const io = createFakeIo({
@@ -194,6 +285,19 @@ describe("0018__docker_address_pools migration", () => {
 
     // A restart briefly drops the router, so skip it when nothing changed
     expect(io.ran("systemctl restart docker")).toBe(false);
+  });
+
+  it("stops the projects first when the restart switches the storage driver", () => {
+    const io = createFakeIo({
+      present: ["ddev"],
+      files: { [DAEMON_CONFIG]: JSON.stringify({ "storage-driver": "overlay2" }) },
+      output: { "docker info": "overlayfs" },
+    });
+
+    runDockerAddressPoolsMigration(io);
+
+    // Servers set up before 0.1.47 ran the containerd store until this restart
+    expect(io.ran("ddev poweroff")).toBe(true);
   });
 });
 

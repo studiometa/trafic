@@ -1,5 +1,6 @@
 import { nodeIo, type SetupIo } from "./io.js";
 import { step, success, info, warn } from "./steps.js";
+import { findRunningProjects } from "./ddev.js";
 
 /**
  * Install Docker using the official script
@@ -113,10 +114,73 @@ export function configureDocker(io: SetupIo = nodeIo): void {
     io.writeFile(configPath, JSON.stringify(daemonConfig, null, 2));
   }
 
-  // A reload does not apply default-address-pools, so restart.
-  // live-restore keeps running containers up.
-  io.exec("systemctl restart docker");
+  // A reload applies neither default-address-pools nor storage-driver
+  restartDocker(io);
   success("Docker configured with production settings");
+}
+
+/**
+ * Restart Docker to apply daemon.json, without orphaning running containers.
+ *
+ * `live-restore` keeps containers running across a restart, but only when
+ * the storage driver stays the same. Before 0.1.47, setup applied daemon.json
+ * with a reload, and a reload does not apply `storage-driver`. Docker 29
+ * defaults a fresh install to the containerd image store (`overlayfs`), so
+ * such a server runs `overlayfs` while daemon.json says `overlay2`. The first
+ * full restart switches the driver, and dockerd silently skips every
+ * container created with the other one. Their processes keep running and
+ * keep the locks on the database volumes. DDEV then creates new containers
+ * that exit at once on "Can't lock aria control file". Seen on a live server
+ * after migration 0018: 66 containers lost, 27 of them databases.
+ *
+ * So when the driver is about to change, the DDEV projects are stopped first,
+ * which shuts their databases down cleanly, and the projects that were running
+ * are started again on the new driver. Volumes do not depend on the storage
+ * driver, so no data moves. Images are pulled again for the new driver.
+ */
+export function restartDocker(io: SetupIo = nodeIo): void {
+  if (!switchesStorageDriver(io)) {
+    io.exec("systemctl restart docker");
+    return;
+  }
+
+  const running = findRunningProjects(io);
+
+  warn("Docker changes its storage driver on restart, stopping DDEV projects first");
+
+  if (io.commandExists("ddev")) {
+    io.exec("su - ddev -c 'DDEV_NONINTERACTIVE=true ddev poweroff'", { silent: true });
+  }
+
+  io.exec("systemctl restart docker");
+
+  if (running.length > 0) {
+    info(`Starting ${running.length} project(s) again: ${running.join(", ")}`);
+    io.exec(`su - ddev -c 'DDEV_NONINTERACTIVE=true ddev start ${running.join(" ")}'`, {
+      silent: true,
+    });
+  }
+}
+
+/**
+ * Whether a restart makes Docker use another storage driver.
+ *
+ * Compares the driver the daemon runs now with the one daemon.json asks for.
+ * A config without `storage-driver` keeps the current one.
+ */
+function switchesStorageDriver(io: SetupIo): boolean {
+  const active = io.execSilent("docker info --format '{{.Driver}}'");
+
+  if (!active || !io.fileExists(DAEMON_CONFIG)) {
+    return false;
+  }
+
+  try {
+    const configured = JSON.parse(io.readFile(DAEMON_CONFIG))["storage-driver"];
+    return typeof configured === "string" && configured !== active;
+  } catch {
+    return false;
+  }
 }
 
 /**
