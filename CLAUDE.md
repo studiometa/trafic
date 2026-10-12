@@ -16,23 +16,22 @@ packages/
 
 - Commit messages: English, simple verb-first sentences (e.g., "Add...", "Fix...", "Update...")
 - Always add `Co-authored-by: Claude <claude@anthropic.com>` trailer
-- **Tags**: Do NOT use `v` prefix (use `1.0.0` not `v1.0.0`)
-- **Releases**: Created automatically by GitHub Actions when a tag is pushed
+- **Releases**: Do NOT tag or create GitHub releases manually — run the `Release` workflow (see Versioning)
 
 ## Changelog
 
-- **Single changelog** at root (`CHANGELOG.md`) for the entire monorepo
-- Prefix entries with package name when relevant: `**CLI**: ...`, `**Agent**: ...`
-- Use `[hash]` format for commit references
-- Use `[#N]` format for PR references (GitHub style)
-- Add link definitions at the bottom of the file
+- **Never edit `CHANGELOG.md` directly.** Each PR adds a fragment `.changelog/<slug>.md` (slug = branch name without its prefix, e.g. `feature/ssh-sync` → `ssh-sync.md`)
+- A fragment only contains `### Added|Changed|Deprecated|Removed|Fixed|Security|Dependencies` headings, each followed by its entries — no `#`/`##` heading
+- **Do not write the PR number**: the `Release` workflow appends `[[#N]]` and the link definition from the merged PR that added the fragment
+- Prefix entries with package name when relevant: `**CLI**: ...`, `**Agent**: ...`, `**Dev**: ...`
+- Commit references are optional: `[hash]` in the entry plus its `[hash]: https://github.com/studiometa/trafic/commit/hash` link definition in the fragment
+- The `Changelog` check fails when a PR changes `packages/**` without a fragment; set the `no-changelog` label for changes users do not see (tests, refactors, tooling)
+- Format and tooling: [`weareikko/changelog`](https://github.com/weareikko/changelog)
 
 ## Versioning
 
-- Use root npm scripts to bump version across all packages:
-  - `npm run version:patch`
-  - `npm run version:minor`
-  - `npm run version:major`
+- Release with the `Release` workflow: `gh workflow run publish.yml -f bump=patch` (or `minor` / `major`). It runs the tests, bumps all packages, folds `.changelog/` into `CHANGELOG.md`, commits `Release <version>`, tags (no `v` prefix), then publishes to npm and creates the GitHub release
+- The root npm scripts `version:patch|minor|major` bump all packages; the workflow uses them
 
 ## Tech Stack
 
