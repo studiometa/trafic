@@ -31,7 +31,9 @@ packages/
 ## Versioning
 
 - Release with the `Release` workflow: `gh workflow run publish.yml -f bump=patch` (or `minor` / `major`). It runs the tests, bumps all packages, folds `.changelog/` into `CHANGELOG.md`, commits `Release <version>`, tags (no `v` prefix), then publishes to npm and creates the GitHub release
-- The root npm scripts `version:patch|minor|major` bump all packages; the workflow uses them
+- Prereleases: `gh workflow run publish.yml -f bump=prerelease -f preid=beta` (bumps `prepatch|preminor|premajor|prerelease`, preids `alpha|beta|rc`). A version that contains `-` goes to the `next` npm dist-tag and is a GitHub prerelease; any other version goes to `latest`. The stable release after a prerelease can have no fragment
+- npm trusted publishing (OIDC, no npm token) is bound to `publish.yml`: keep the publish job in that file, never call it from another workflow
+- Each package has its own `JS-DevTools/npm-publish` step, which skips a version npm already has: after a failed publish, use "Re-run failed jobs"
 
 ## Tech Stack
 

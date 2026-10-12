@@ -138,6 +138,24 @@ gh workflow run publish.yml -f bump=patch   # or minor / major
 
 It runs the tests, bumps the version of all packages, folds the changelog fragments into `CHANGELOG.md`, commits `Release X.Y.Z`, tags `X.Y.Z` (no `v` prefix), publishes to npm and creates the GitHub release. It fails when `.changelog/` has no fragment.
 
+### Prereleases
+
+The `prepatch`, `preminor`, `premajor` and `prerelease` bumps make a prerelease, with the `preid` input as identifier (`alpha`, `beta` or `rc`):
+
+```bash
+gh workflow run publish.yml -f bump=preminor -f preid=beta    # 0.1.48 → 0.2.0-beta.0
+gh workflow run publish.yml -f bump=prerelease -f preid=beta  # 0.2.0-beta.0 → 0.2.0-beta.1
+gh workflow run publish.yml -f bump=minor                     # 0.2.0-beta.1 → 0.2.0
+```
+
+A version with a prerelease part (`0.2.0-beta.0`) is published on the `next` npm dist-tag and as a GitHub prerelease. Any other version is published on `latest` and becomes the latest GitHub release. Install a prerelease with `npm install @studiometa/trafic-cli@next`.
+
+A prerelease folds the changelog fragments like any release. The stable release that follows a prerelease can have no fragment: then `CHANGELOG.md` gets no new section and the GitHub release says `Stable release of <prerelease version>.`
+
+### Publishing
+
+npm trusted publishing (OIDC) publishes the packages from `publish.yml`: there is no npm token. Keep the publish job in that file. Each package has its own publish step, and a step skips a version that npm already has. When a publish fails (for example on a network error), use "Re-run failed jobs" on the run: it publishes the packages that are still missing and creates the GitHub release.
+
 ## Getting Help
 
 - Open an issue for bugs or feature requests

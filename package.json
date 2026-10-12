@@ -31,9 +31,6 @@
     "format:check": "oxfmt --check .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules",
-    "version:patch": "npm version --include-workspace-root --workspaces --no-git-tag-version patch",
-    "version:minor": "npm version --include-workspace-root --workspaces --no-git-tag-version minor",
-    "version:major": "npm version --include-workspace-root --workspaces --no-git-tag-version major",
     "prepare": "husky"
   },
   "devDependencies": {

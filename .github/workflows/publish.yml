@@ -1,15 +1,20 @@
 name: Release
 
-# Release and npm publish stay in this file: the npm trusted publisher, when
-# set, is bound to the workflow file name.
+# Release and npm publish stay in this file: npm trusted publishing (OIDC, no
+# npm token) is bound to the workflow file name.
 on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump"
+        description: "Version bump (pre* and prerelease publish on the `next` npm tag)"
         type: choice
-        options: [patch, minor, major]
+        options: [patch, minor, major, prepatch, preminor, premajor, prerelease]
         default: patch
+      preid:
+        description: "Prerelease identifier, used by pre* and prerelease bumps"
+        type: choice
+        options: [alpha, beta, rc]
+        default: alpha
 
 concurrency: release
 
@@ -43,7 +48,10 @@ jobs:
       pull-requests: read
     outputs:
       version: ${{ steps.version.outputs.version }}
-      body: ${{ steps.changelog.outputs.body }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      dist-tag: ${{ steps.version.outputs.dist-tag }}
+      # A promoted prerelease can have no fragment, so no changelog section.
+      body: ${{ steps.changelog.outputs.changed == 'true' && steps.changelog.outputs.body || format('Stable release of {0}.', steps.version.outputs.previous) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,13 +63,37 @@ jobs:
           cache: "npm"
       - run: npm ci
 
+      # Bumps the root and all packages, and their versions in package-lock.json.
+      # A version with a prerelease part (1.2.0-beta.0) goes to the `next` npm
+      # dist-tag, any other version to `latest`.
       - name: Bump version
         id: version
         env:
           BUMP: ${{ inputs.bump }}
+          PREID: ${{ inputs.preid }}
         run: |
-          npm run "version:$BUMP"
-          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+          PREVIOUS=$(node -p 'require("./package.json").version')
+          npm version "$BUMP" --preid "$PREID" --workspaces --include-workspace-root --no-git-tag-version
+          VERSION=$(node -p 'require("./package.json").version')
+          if [[ $VERSION == *-* ]]; then
+            PRERELEASE=true
+            DIST_TAG=next
+          else
+            PRERELEASE=false
+            DIST_TAG=latest
+          fi
+          if [[ $PREVIOUS == *-* && $PRERELEASE == false ]]; then
+            PROMOTION=true
+          else
+            PROMOTION=false
+          fi
+          {
+            echo "previous=$PREVIOUS"
+            echo "version=$VERSION"
+            echo "prerelease=$PRERELEASE"
+            echo "dist-tag=$DIST_TAG"
+            echo "promotion=$PROMOTION"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Fold changelog fragments
         id: changelog
@@ -70,8 +102,10 @@ jobs:
           command: release
           version: ${{ steps.version.outputs.version }}
 
+      # Promoting a prerelease (1.0.0-rc.1 to 1.0.0) can have no fragment: its
+      # changes are in the prerelease section of the changelog.
       - name: Fail when there is nothing to release
-        if: steps.changelog.outputs.changed != 'true'
+        if: steps.changelog.outputs.changed != 'true' && steps.version.outputs.promotion != 'true'
         run: |
           echo "::error::No fragment in .changelog/: nothing to release."
           exit 1
@@ -89,6 +123,8 @@ jobs:
 
   # A tag pushed with GITHUB_TOKEN does not start other workflows, so the
   # publish job runs in the same run, on the release tag.
+  # Each publish step skips a version that npm already has, so "Re-run failed
+  # jobs" publishes the packages that a failed run did not publish.
   publish:
     name: Publish to npm
     needs: release
@@ -104,21 +140,28 @@ jobs:
         with:
           node-version: "24"
           cache: "npm"
-          registry-url: https://registry.npmjs.org/
       - run: npm ci
+      # The publish steps run `npm publish --ignore-scripts`: build first.
       - run: npm run build
       - name: Publish @studiometa/trafic-cli
-        run: npm publish --provenance --access public
-        working-directory: packages/trafic-cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        uses: JS-DevTools/npm-publish@0fd2f4369c5d6bcfcde6091a7c527d810b9b5c3f # v4.1.5
+        with:
+          package: packages/trafic-cli
+          access: public
+          provenance: true
+          tag: ${{ needs.release.outputs.dist-tag }}
       - name: Publish @studiometa/trafic-agent
-        run: npm publish --provenance --access public
-        working-directory: packages/trafic-agent
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        uses: JS-DevTools/npm-publish@0fd2f4369c5d6bcfcde6091a7c527d810b9b5c3f # v4.1.5
+        with:
+          package: packages/trafic-agent
+          access: public
+          provenance: true
+          tag: ${{ needs.release.outputs.dist-tag }}
       - uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
         with:
           tag: ${{ needs.release.outputs.version }}
           name: ${{ needs.release.outputs.version }}
           body: ${{ needs.release.outputs.body }}
+          prerelease: ${{ needs.release.outputs.prerelease }}
+          # GitHub's latest release follows the `latest` npm dist-tag.
+          makeLatest: ${{ needs.release.outputs.prerelease != 'true' }}
