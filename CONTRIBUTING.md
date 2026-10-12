@@ -102,47 +102,41 @@ Co-authored-by: Claude <claude@anthropic.com>
 3. Make your changes with clear, atomic commits
 4. Ensure all tests pass: `npm test`
 5. Ensure code is formatted: `npm run format`
-6. Push and open a PR against `main`
+6. Add a changelog fragment in `.changelog/` (see [Changelog](#changelog))
+7. Push and open a PR against `main`
 
 ### PR Checklist
 
 - [ ] Tests added/updated for new functionality
 - [ ] Documentation updated if needed
-- [ ] Changelog entry added (if user-facing change)
+- [ ] Changelog fragment added in `.changelog/` (if user-facing change), or the `no-changelog` label set
 - [ ] All CI checks pass
 
 ## Changelog
 
-We maintain a single `CHANGELOG.md` at the root of the monorepo. When adding entries:
+Do not edit `CHANGELOG.md`. Add a fragment in `.changelog/<slug>.md`, where the slug is your branch name without its prefix. Use `###` Keep a Changelog sections and prefix entries with the package name:
 
-- Prefix with package name: `**CLI**: ...`, `**Agent**: ...`
-- Use `[hash]` format for commit references
-- Use `[#N]` format for PR references
-- Add link definitions at the bottom of the file
+```markdown
+### Added
 
-## Versioning
+- **CLI**: Add a `--dry-run` option to `deploy`
 
-Version bumps are done from the root and sync across all packages:
+### Fixed
 
-```bash
-npm run version:patch  # 0.1.0 → 0.1.1
-npm run version:minor  # 0.1.0 → 0.2.0
-npm run version:major  # 0.1.0 → 1.0.0
+- **Agent**: Fix the idle timeout of a project with a custom config
 ```
 
-Tags are created without `v` prefix: `1.0.0`, not `v1.0.0`.
+Do not write the pull request number: the release adds it. A pull request that changes `packages/` needs a fragment, unless it has the `no-changelog` label. See [`weareikko/changelog`](https://github.com/weareikko/changelog) for the format.
 
 ## Releases
 
-Releases are automated via GitHub Actions when a tag is pushed:
+All packages share one version. Maintainers release with the `Release` workflow (`.github/workflows/publish.yml`), from the Actions tab or with:
 
 ```bash
-# After bumping version
-git add .
-git commit -m "Bump version to X.Y.Z"
-git tag X.Y.Z
-git push && git push --tags
+gh workflow run publish.yml -f bump=patch   # or minor / major
 ```
+
+It runs the tests, bumps the version of all packages, folds the changelog fragments into `CHANGELOG.md`, commits `Release X.Y.Z`, tags `X.Y.Z` (no `v` prefix), publishes to npm and creates the GitHub release. It fails when `.changelog/` has no fragment.
 
 ## Getting Help
 
