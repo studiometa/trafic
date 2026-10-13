@@ -16,13 +16,13 @@ packages/
 
 - Commit messages: English, simple verb-first sentences (e.g., "Add...", "Fix...", "Update...")
 - Always add `Co-authored-by: Claude <claude@anthropic.com>` trailer
-- **Releases**: Do NOT tag or create GitHub releases manually — run the `Release` workflow (see Versioning)
+- **Releases**: Do NOT tag or create GitHub releases manually — each merge into `main` releases (see Versioning)
 
 ## Changelog
 
 - **Never edit `CHANGELOG.md` directly.** Each PR adds a fragment `.changelog/<slug>.md` (slug = branch name without its prefix, e.g. `feature/ssh-sync` → `ssh-sync.md`)
 - A fragment only contains `### Added|Changed|Deprecated|Removed|Fixed|Security|Dependencies` headings, each followed by its entries — no `#`/`##` heading
-- **Do not write the PR number**: the `Release` workflow appends `[[#N]]` and the link definition from the merged PR that added the fragment
+- **Do not write the PR number**: the `Release` workflow appends `([#N])` and the link definition from the merged PR that added the fragment
 - Prefix entries with package name when relevant: `**CLI**: ...`, `**Agent**: ...`, `**Dev**: ...`
 - Commit references are optional: `[hash]` in the entry plus its `[hash]: https://github.com/studiometa/trafic/commit/hash` link definition in the fragment
 - The `Changelog` check fails when a PR changes `packages/**` without a fragment; set the `no-changelog` label for changes users do not see (tests, refactors, tooling)
@@ -30,8 +30,11 @@ packages/
 
 ## Versioning
 
-- Release with the `Release` workflow: `gh workflow run publish.yml -f bump=patch` (or `minor` / `major`). It runs the tests, bumps all packages, folds `.changelog/` into `CHANGELOG.md`, commits `Release <version>`, tags (no `v` prefix), then publishes to npm and creates the GitHub release
-- The root npm scripts `version:patch|minor|major` bump all packages; the workflow uses them
+- Each merge into `main` releases: the `Release` workflow (`publish.yml`, `weareikko/changelog` action) runs the tests, computes the version from the fragments, folds `.changelog/` into `CHANGELOG.md`, bumps all packages, commits `Release <version>`, tags (no `v` prefix), creates the GitHub release, then publishes to npm. Without a fragment, nothing is released
+- Version from the fragments: on 0.x, a breaking entry gives a minor bump, any other entry a patch bump. Force a bump with `gh workflow run publish.yml -f version=major` (or `patch` / `minor`)
+- Prereleases: add `.changelog/prerelease` with one identifier (`alpha`, `beta`, `rc`); each merge with fragments then releases a prerelease on the `next` npm dist-tag. Delete the file to release the stable version. See [Prereleases](https://github.com/weareikko/changelog#prereleases)
+- npm trusted publishing (OIDC, no npm token) is bound to `publish.yml`: keep the publish job in that file, never call it from another workflow
+- Each package has its own `JS-DevTools/npm-publish` step, which skips a version npm already has: after a failed publish, use "Re-run failed jobs"
 
 ## Tech Stack
 

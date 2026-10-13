@@ -130,13 +130,23 @@ Do not write the pull request number: the release adds it. A pull request that c
 
 ## Releases
 
-All packages share one version. Maintainers release with the `Release` workflow (`.github/workflows/publish.yml`), from the Actions tab or with:
+All packages share one version. Each merge into `main` releases what its fragments describe: the `Release` workflow (`.github/workflows/publish.yml`) runs the tests, then the [`weareikko/changelog`](https://github.com/weareikko/changelog#release-1) action computes the next version, folds the fragments into `CHANGELOG.md`, bumps the version of all packages, commits `Release X.Y.Z`, tags `X.Y.Z` (no `v` prefix), pushes and creates the GitHub release. The workflow then publishes the packages to npm. Merged Renovate pull requests become `Dependencies` entries. Without a fragment or a Renovate pull request since the last release, nothing is released.
+
+The version comes from the entries. On 0.x, a breaking entry (`- **CLI**: Breaking: …`) gives a minor version and any other entry a patch version. To force a bump, run the workflow from the Actions tab or with:
 
 ```bash
-gh workflow run publish.yml -f bump=patch   # or minor / major
+gh workflow run publish.yml -f version=minor   # or patch / major
 ```
 
-It runs the tests, bumps the version of all packages, folds the changelog fragments into `CHANGELOG.md`, commits `Release X.Y.Z`, tags `X.Y.Z` (no `v` prefix), publishes to npm and creates the GitHub release. It fails when `.changelog/` has no fragment.
+### Prereleases
+
+A pull request that adds `.changelog/prerelease` with one identifier (`alpha`, `beta` or `rc`) starts prereleases: each next merge with entries releases a prerelease (`0.1.49-beta.0`, then `0.1.49-beta.1`, …). A pull request that deletes the file releases the stable version on its merge. See [Prereleases](https://github.com/weareikko/changelog#prereleases).
+
+A prerelease is published on the `next` npm dist-tag and as a GitHub prerelease. Any other version is published on `latest`. Install a prerelease with `npm install @studiometa/trafic-cli@next`.
+
+### Publishing
+
+npm trusted publishing (OIDC) publishes the packages from `publish.yml`: there is no npm token. Keep the publish job in that file. Each package has its own publish step, and a step skips a version that npm already has. When a publish fails (for example on a network error), use "Re-run failed jobs" on the run: it publishes the packages that are still missing.
 
 ## Getting Help
 
