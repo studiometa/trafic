@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.49 - 2026-10-13
+
+### Changed
+
+- **Dev**: Replace direct edits of `CHANGELOG.md` with `.changelog/` fragments checked on pull requests by `weareikko/changelog`, and release on each merge into `main` from the `Release` workflow, which computes the version from the fragments, folds them into `CHANGELOG.md`, tags, creates the GitHub release and publishes to npm ([#69])
+
+### Security
+
+- **Agent**: Update `smol-toml` to 1.9.0 to fix quadratic-time parsing of TOML keys ([GHSA-r4xh-jqrq-34v2](https://github.com/advisories/GHSA-r4xh-jqrq-34v2)) ([#70])
+- **Dev**: Update `source-map-js` to 1.2.2 to fix an event-loop denial of service through indexed source-map section offsets ([GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)) ([#70])
+
+[#69]: https://github.com/studiometa/trafic/pull/69
+[#70]: https://github.com/studiometa/trafic/pull/70
+
 ## [0.1.48] - 2026.10.05
 
 ### Changed
