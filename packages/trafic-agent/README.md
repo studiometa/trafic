@@ -59,7 +59,7 @@ Steps:
 2. **Directory** — removes the project directory
 3. **Database** — deletes the project's rows from the agent database (`projects` and `access_logs`)
 
-The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning and changes nothing. The command refuses a directory that is not inside `projects_dir`, and refuses an empty name, `.`, `..` or a name with a `/`.
+The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning and changes nothing. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
 
 `trafic destroy` runs this command over SSH.
 

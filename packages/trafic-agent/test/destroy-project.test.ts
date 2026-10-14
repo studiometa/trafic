@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { destroyProject, resolveProjectDir } from "../src/tasks/destroy-project.js";
@@ -142,6 +150,48 @@ describe("destroyProject", () => {
 
     expect(calls).toEqual([]);
     expect(existsSync(config.projectsDir)).toBe(true);
+  });
+
+  it("refuses a project directory that is a symbolic link", async () => {
+    const outside = join(root, "outside");
+    mkdirSync(outside);
+    writeFileSync(join(outside, "keep"), "");
+    symlinkSync(outside, join(config.projectsDir, "app"));
+    const calls: { args: string[]; cwd?: string }[] = [];
+
+    await expect(destroyProject("app", config, recordingRunner(true, calls))).rejects.toThrow(
+      /is a symbolic link/,
+    );
+
+    expect(calls).toEqual([]);
+    expect(existsSync(join(outside, "keep"))).toBe(true);
+    expect(lstatSync(join(config.projectsDir, "app")).isSymbolicLink()).toBe(true);
+  });
+
+  it("refuses a project directory that a symlinked parent takes outside", async () => {
+    const outside = join(root, "outside");
+    mkdirSync(join(outside, "app"), { recursive: true });
+    writeFileSync(join(outside, "app", "keep"), "");
+    symlinkSync(outside, join(config.projectsDir, "link"));
+    writeProjectList({ app: join(config.projectsDir, "link", "app") });
+    const calls: { args: string[]; cwd?: string }[] = [];
+
+    await expect(destroyProject("app", config, recordingRunner(true, calls))).rejects.toThrow(
+      /resolves to .*outside.*not inside the projects directory/,
+    );
+
+    expect(calls).toEqual([]);
+    expect(existsSync(join(outside, "app", "keep"))).toBe(true);
+  });
+
+  it("follows a projects directory that is itself a symbolic link", async () => {
+    const dir = createProject("app");
+    config.projectsDir = join(root, "www-link");
+    symlinkSync(join(root, "www"), config.projectsDir);
+
+    await expect(destroyProject("app", config, recordingRunner(true, []))).resolves.toBe(true);
+
+    expect(existsSync(dir)).toBe(false);
   });
 
   describe("resolveProjectDir", () => {

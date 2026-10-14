@@ -1,6 +1,6 @@
 ### Added
 
-- **Agent**: Add the `trafic-agent destroy <name>` command. It deletes the DDEV project (`ddev delete -Oy`), removes the project directory and deletes the project's rows from the agent database. It refuses a directory outside `projects_dir`, and refuses to run as root.
+- **Agent**: Add the `trafic-agent destroy <name>` command. It deletes the DDEV project (`ddev delete -Oy`), removes the project directory and deletes the project's rows from the agent database. It refuses a directory outside `projects_dir` (also after it follows symbolic links) or a project directory that is a symbolic link, and refuses to run as root.
 
 ### Changed
 

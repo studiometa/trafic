@@ -1,4 +1,4 @@
-import { rmSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { deleteProject } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
@@ -6,6 +6,12 @@ import type { AgentConfig } from "../types.js";
 
 /** Removing containers and volumes is slower than a stop. */
 const DELETE_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Whether `child` is strictly inside `parent`. */
+function isInside(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return Boolean(path) && !isAbsolute(path) && path.split(sep)[0] !== "..";
+}
 
 /**
  * Find the directory of a project, and refuse one outside the projects
@@ -17,6 +23,10 @@ const DELETE_TIMEOUT_MS = 5 * 60 * 1000;
  *
  * The check stands between a name typed on a command line and an
  * `rm -rf`: an empty name, `..` or an app root of `/` must never reach it.
+ * The path is checked as written, then, when it exists, with its symbolic
+ * links followed: a symlinked project directory or parent directory could
+ * otherwise point `ddev delete` and the removal at a directory outside the
+ * projects directory.
  */
 export function resolveProjectDir(name: string, config: AgentConfig): string {
   if (!name.trim() || name === "." || name === ".." || name.includes("/")) {
@@ -26,16 +36,52 @@ export function resolveProjectDir(name: string, config: AgentConfig): string {
   const projectsDir = resolve(config.projectsDir);
   const appRoot = loadProjectList(config.projectListPath).get(name);
   const dir = resolve(appRoot || join(projectsDir, name));
-  const path = relative(projectsDir, dir);
 
-  if (!path || isAbsolute(path) || path.split(sep)[0] === "..") {
+  if (!isInside(projectsDir, dir)) {
     throw new Error(
       `Refusing to remove ${dir}: it is not inside the projects directory ${projectsDir}. ` +
         "Set projects_dir in the agent config to the directory that `trafic deploy` uses",
     );
   }
 
+  checkRealPath(dir, projectsDir);
+
   return dir;
+}
+
+/**
+ * Refuse an existing project directory that is a symbolic link, or that a
+ * symbolic link in its path takes outside the projects directory. A path
+ * that does not exist is left to the caller: there is nothing to remove.
+ */
+function checkRealPath(dir: string, projectsDir: string): void {
+  let stats;
+
+  try {
+    stats = lstatSync(dir);
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return;
+    }
+
+    throw error;
+  }
+
+  if (stats.isSymbolicLink()) {
+    throw new Error(`Refusing to remove ${dir}: it is a symbolic link`);
+  }
+
+  const realDir = realpathSync(dir);
+  const realProjectsDir = realpathSync(projectsDir);
+
+  if (!isInside(realProjectsDir, realDir)) {
+    throw new Error(
+      `Refusing to remove ${dir}: it resolves to ${realDir}, ` +
+        `which is not inside the projects directory ${realProjectsDir}`,
+    );
+  }
 }
 
 /** Whether a path is an existing directory. */
