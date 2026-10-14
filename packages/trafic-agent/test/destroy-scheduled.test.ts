@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   destroyScheduledProjects,
   scheduleProjectDestroy,
+  startScheduledDestroyScheduler,
 } from "../src/tasks/destroy-scheduled.js";
 import {
   initDb,
@@ -228,6 +229,34 @@ describe("scheduled removals", () => {
       expect(getScheduledDestroys()).toEqual([{ name: "app", destroyAt: NOW + HOUR, backup: false }]);
     });
 
+    it("runs one sweep at a time", async () => {
+      const dir = createProject("app");
+      scheduleDestroy("app", NOW, false);
+      const calls: string[][] = [];
+      let finishDelete = () => {};
+
+      // The first sweep waits in ddev delete
+      const first = destroyScheduledProjects(config, clock, (args) => {
+        calls.push(args);
+        return new Promise((resolve) => {
+          finishDelete = () => resolve({ ok: true, stdout: "" });
+        });
+      });
+
+      await vi.waitFor(() => expect(calls).toHaveLength(1));
+
+      // A second sweep started meanwhile does nothing
+      const second: string[][] = [];
+      await destroyScheduledProjects(config, clock, recordingRunner(second));
+      expect(second).toEqual([]);
+
+      finishDelete();
+      await first;
+
+      expect(calls).toEqual([["delete", "-Oy"]]);
+      expect(existsSync(dir)).toBe(false);
+    });
+
     it("clears the schedule of a project that is already gone", async () => {
       scheduleDestroy("gone", NOW, false);
       const calls: string[][] = [];
@@ -236,6 +265,58 @@ describe("scheduled removals", () => {
 
       expect(calls).toEqual([]);
       expect(getScheduledDestroys()).toEqual([]);
+    });
+  });
+
+  describe("startScheduledDestroyScheduler", () => {
+    let timer: NodeJS.Timeout | undefined;
+
+    /** Let a sweep the timer started finish; setImmediate is not faked. */
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+      vi.setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      clearInterval(timer);
+      vi.useRealTimers();
+    });
+
+    it("sweeps on start, then every idle_check_interval", async () => {
+      // Projects already gone: the sweep clears their schedule without ddev
+      scheduleDestroy("first", NOW, false);
+
+      timer = startScheduledDestroyScheduler(config);
+
+      await settle();
+      expect(getScheduledDestroys()).toEqual([]);
+
+      scheduleDestroy("second", NOW, false);
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 1);
+      expect(getScheduledDestroys().map((s) => s.name)).toEqual(["second"]);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await settle();
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("reports a failed sweep and keeps the scheduler running", async () => {
+      const error = vi.spyOn(console, "error");
+      // No database: each sweep throws before it removes anything
+      closeDb();
+
+      expect(() => {
+        timer = startScheduledDestroyScheduler(config);
+      }).not.toThrow();
+      await settle();
+      expect(error).toHaveBeenCalledWith("Scheduled removal sweep failed:", expect.any(Error));
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      await settle();
+      expect(error).toHaveBeenCalledTimes(2);
+      error.mockRestore();
     });
   });
 });
