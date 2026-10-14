@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   initDb,
   getDb,
@@ -16,6 +20,8 @@ import {
   startScheduledDestroy,
   getScheduledDestroy,
   getScheduledDestroys,
+  isProcessAlive,
+  releaseStaleStatuses,
 } from "../src/utils/db.js";
 
 const NOW = new Date("2026-09-07T12:00:00Z").getTime();
@@ -56,6 +62,51 @@ describe("db", () => {
       // A fresh :memory: database is a new one, so this asserts only that
       // re-initialising does not throw on CREATE TABLE
       expect(() => getDb()).not.toThrow();
+    });
+  });
+
+  describe("initDb over a database from an older agent", () => {
+    let root: string;
+
+    beforeEach(() => {
+      closeDb();
+      root = mkdtempSync(join(tmpdir(), "trafic-db-"));
+    });
+
+    afterEach(() => {
+      closeDb();
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it("adds the status_pid column and keeps the rows", () => {
+      const path = join(root, "trafic.db");
+      const old = new DatabaseSync(path);
+      old.exec(`
+        CREATE TABLE projects (
+          name TEXT PRIMARY KEY,
+          last_access INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'stopped'
+        );
+        INSERT INTO projects VALUES ('app', 1, 'starting');
+      `);
+      old.close();
+
+      initDb(path);
+
+      // A row from before has no process: its busy status is stale
+      expect(getProject("app")?.status).toBe("starting");
+      expect(releaseStaleStatuses(() => true)).toEqual(["app"]);
+      setProjectStatus("app", "destroying");
+      expect(getProject("app")?.status).toBe("destroying");
+    });
+
+    it("can open the same database again", () => {
+      // The service and trafic-agent destroy both open it
+      const path = join(root, "trafic.db");
+      initDb(path);
+      closeDb();
+
+      expect(() => initDb(path)).not.toThrow();
     });
   });
 
@@ -124,6 +175,81 @@ describe("db", () => {
       // Otherwise stopping a project would look like activity and defer the
       // next idle sweep
       expect(getProject("scalian")?.lastAccess).toBe(NOW);
+    });
+  });
+
+  describe("releaseStaleStatuses", () => {
+    /** The process id recorded with a project's status. */
+    function statusPid(name: string): number | null {
+      const row = getDb()
+        .prepare("SELECT status_pid AS pid FROM projects WHERE name = ?")
+        .get(name) as { pid: number | null };
+      return row.pid;
+    }
+
+    it("records this process with a busy status only", () => {
+      setProjectStatus("starting", "starting", clock);
+      setProjectStatus("destroying", "destroying", clock);
+      setProjectStatus("running", "destroying", clock);
+      setProjectStatus("running", "running", clock);
+
+      expect(statusPid("starting")).toBe(process.pid);
+      expect(statusPid("destroying")).toBe(process.pid);
+      expect(statusPid("running")).toBeNull();
+    });
+
+    it("sets a busy status back to running when its process is gone", () => {
+      // A trafic-agent destroy killed with its CI job, or a start that a
+      // restart of the service cut short
+      updateProjectAccess("removed", clock);
+      setProjectStatus("removed", "destroying", clock);
+      setProjectStatus("started", "starting", clock);
+
+      expect(releaseStaleStatuses(() => false).sort()).toEqual(["removed", "started"]);
+      expect(getProject("removed")).toEqual({ name: "removed", lastAccess: NOW, status: "running" });
+      expect(getProject("started")?.status).toBe("running");
+      expect(statusPid("removed")).toBeNull();
+    });
+
+    it("keeps a busy status while its process lives", () => {
+      setProjectStatus("removing", "destroying", clock);
+      setProjectStatus("starting", "starting", clock);
+
+      expect(releaseStaleStatuses()).toEqual([]);
+      expect(getProject("removing")?.status).toBe("destroying");
+      expect(getProject("starting")?.status).toBe("starting");
+    });
+
+    it("leaves the other statuses alone", () => {
+      updateProjectAccess("running", clock);
+      setProjectStatus("stopped", "stopped", clock);
+
+      expect(releaseStaleStatuses(() => false)).toEqual([]);
+      expect(getProject("running")?.status).toBe("running");
+      expect(getProject("stopped")?.status).toBe("stopped");
+    });
+
+    it("asks about the process that set the status", () => {
+      setProjectStatus("app", "destroying", clock);
+      const asked: number[] = [];
+
+      releaseStaleStatuses((pid) => {
+        asked.push(pid);
+        return true;
+      });
+
+      expect(asked).toEqual([process.pid]);
+    });
+  });
+
+  describe("isProcessAlive", () => {
+    it("says this process is alive", () => {
+      expect(isProcessAlive(process.pid)).toBe(true);
+    });
+
+    it("says an id no process has is not", () => {
+      // kill(2) refuses ids over pid_max
+      expect(isProcessAlive(2 ** 30)).toBe(false);
     });
   });
 

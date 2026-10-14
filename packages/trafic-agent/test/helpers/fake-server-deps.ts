@@ -18,7 +18,9 @@ export interface FakeDepsOptions {
   /** project name -> its own auth policy */
   projectPolicies?: Record<string, AuthConfig["defaultPolicy"]>;
   /** project name -> the record the database holds */
-  records?: Record<string, { status: "running" | "stopped" | "starting" }>;
+  records?: Record<string, { status: "running" | "stopped" | "starting" | "destroying" }>;
+  /** Projects whose process is gone: releaseStaleStatuses sets them running */
+  stale?: string[];
   /** What ddev describe reports */
   info?: Record<string, { status: string }>;
   /** Whether a start succeeds */
@@ -54,6 +56,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
     hostnames = {},
     projectPolicies = {},
     records = {},
+    stale = [],
     info = {},
     startSucceeds = true,
     startThrows = false,
@@ -95,6 +98,11 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
     setProjectStatus: (name, status) => {
       recorded.statuses.push([name, status]);
       recorded.steps.push(`${name} ${status}`);
+    },
+    releaseStaleStatuses: () => {
+      for (const name of stale) {
+        records[name] = { status: "running" };
+      }
     },
     startProject: (name) => {
       recorded.started.push(name);

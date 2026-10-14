@@ -19,6 +19,8 @@ import {
   logAccess,
   setProjectStatus,
   getProject,
+  isProcessAlive,
+  releaseStaleStatuses,
 } from "./utils/db.js";
 import {
   loadProjectConfig,
@@ -59,6 +61,8 @@ export interface ServerDeps {
   logAccess: (log: Parameters<typeof logAccess>[0]) => void;
   getProject: (name: string) => ReturnType<typeof getProject>;
   setProjectStatus: (name: string, status: "running" | "stopped" | "starting") => void;
+  /** Set back the "starting" and "destroying" statuses whose process is gone */
+  releaseStaleStatuses: () => unknown;
   startProject: (name: string) => Promise<boolean>;
   /**
    * Stop projects until the running ones fit under max_running_projects. The
@@ -182,8 +186,20 @@ export async function handleErrors(
     return;
   }
 
-  // Check if project is already starting
+  // A start or a removal that was killed leaves its status behind
+  deps.releaseStaleStatuses();
   const record = deps.getProject(projectName);
+
+  if (record?.status === "destroying") {
+    // trafic-agent destroy is removing it: a start now would bring back the
+    // containers that ddev delete removes, or stop the backup's own start
+    const template = deps.loadTemplate("error");
+    res.writeHead(503, { "Content-Type": "text/html" });
+    res.end(template.replace("{{message}}", "This project is being removed"));
+    return;
+  }
+
+  // Check if project is already starting
   if (record?.status === "starting") {
     // Show waiting page
     const template = deps.loadTemplate("wait");
@@ -370,6 +386,18 @@ function reloadProjects(): void {
 }
 
 /**
+ * Set back the busy statuses that a stopped service or a killed removal left
+ * behind, when the service starts. No start or removal of this new process
+ * is in flight yet, so its own id counts as gone too: after a reboot, the
+ * new service can have the id of the old one.
+ */
+export function releaseStatusesAtStart(
+  isAlive: (pid: number) => boolean = isProcessAlive,
+): string[] {
+  return releaseStaleStatuses((pid) => pid !== process.pid && isAlive(pid));
+}
+
+/**
  * Start the agent server
  */
 export function startServer(agentConfig: AgentConfig): void {
@@ -377,6 +405,10 @@ export function startServer(agentConfig: AgentConfig): void {
 
   // Initialize database
   initDb(config.dbPath);
+
+  for (const name of releaseStatusesAtStart()) {
+    console.log(`Set ${name} back to running: the process that started or removed it is gone`);
+  }
 
   // setup wrote the forward auth address before any DDEV network existed, so
   // correct it now that one may have appeared
@@ -406,6 +438,7 @@ export function startServer(agentConfig: AgentConfig): void {
     logAccess,
     getProject,
     setProjectStatus,
+    releaseStaleStatuses,
     startProject,
     makeRoom: () => makeRoomUnderLimit(config.maxRunningProjects, projectConfigs),
     getProjectInfo,

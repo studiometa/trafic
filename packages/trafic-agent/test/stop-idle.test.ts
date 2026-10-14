@@ -6,6 +6,7 @@ import { stopIdleProjects } from "../src/tasks/stop-idle.js";
 import {
   initDb,
   closeDb,
+  getDb,
   getProject,
   setProjectStatus,
   updateProjectAccess,
@@ -139,5 +140,22 @@ describe("stopIdleProjects", () => {
 
     expect(calls).toEqual([["describe", "idle", "-j"], ["stop", "idle"]]);
     expect(getProject("removing")?.status).toBe("destroying");
+  });
+
+  it("stops an idle project whose removal was killed", async () => {
+    // The backup started it, then the CI job was cancelled: nothing else
+    // would ever stop it
+    register({ removing: undefined });
+    accessed("removing", 2 * HOUR);
+    setProjectStatus("removing", "destroying");
+    // No process has this id: kill(2) refuses ids over pid_max
+    getDb().prepare("UPDATE projects SET status_pid = ? WHERE name = ?").run(2 ** 30, "removing");
+    config.idleTimeout = "30m";
+    const calls: string[][] = [];
+
+    await stopIdleProjects(config, runningDdev(["removing"], calls));
+
+    expect(calls).toEqual([["describe", "removing", "-j"], ["stop", "removing"]]);
+    expect(getProject("removing")?.status).toBe("stopped");
   });
 });

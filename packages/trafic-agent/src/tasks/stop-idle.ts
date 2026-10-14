@@ -1,4 +1,4 @@
-import { getIdleProjects, setProjectStatus } from "../utils/db.js";
+import { getIdleProjects, releaseStaleStatuses, setProjectStatus } from "../utils/db.js";
 import {
   stopProject,
   getProjectInfo,
@@ -16,7 +16,9 @@ import type { AgentConfig } from "../types.js";
  * Respects per-project idle_timeout settings from .ddev/config.trafic.yaml
  *
  * Only projects with the status "running" are idle: a project the agent is
- * starting or removing is never stopped here.
+ * starting or removing is never stopped here. A start or a removal whose
+ * process was killed is set back to "running" first, so its project is not
+ * left up for good.
  *
  * Then brings the server back under max_running_projects: a deploy runs
  * `ddev start` without asking the agent, so only the sweep sees it.
@@ -29,6 +31,10 @@ export async function stopIdleProjects(
 
   // Get all projects to check their individual configs
   const projects = loadProjectList(config.projectListPath);
+
+  for (const name of releaseStaleStatuses()) {
+    console.log(`Set ${name} back to running: the process that started or removed it is gone`);
+  }
 
   // Get projects idle according to global threshold
   const idleProjects = getIdleProjects(globalThresholdMs);

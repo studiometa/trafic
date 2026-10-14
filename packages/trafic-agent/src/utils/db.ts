@@ -35,7 +35,8 @@ export function initDb(dbPath: string): DatabaseSync {
     CREATE TABLE IF NOT EXISTS projects (
       name TEXT PRIMARY KEY,
       last_access INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'stopped'
+      status TEXT NOT NULL DEFAULT 'stopped',
+      status_pid INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS access_logs (
@@ -59,7 +60,25 @@ export function initDb(dbPath: string): DatabaseSync {
     );
   `);
 
+  // Databases made before the column existed
+  addColumn(db, "projects", "status_pid INTEGER");
+
   return db;
+}
+
+/**
+ * Add a column to a table that does not have it yet. The service and a
+ * `trafic-agent destroy` run can both get here first, so a column that
+ * exists already is not an error.
+ */
+function addColumn(database: DatabaseSync, table: string, column: string): void {
+  try {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);
+  } catch (error) {
+    if (!/duplicate column name/i.test((error as Error).message)) {
+      throw error;
+    }
+  }
 }
 
 /**
@@ -107,7 +126,16 @@ export function getProject(name: string): ProjectRecord | undefined {
 }
 
 /**
+ * The statuses a process sets while it works on a project: "starting" (the
+ * waiting page, in the service) and "destroying" (`trafic-agent destroy`).
+ */
+const BUSY_STATUSES: readonly ProjectRecord["status"][] = ["starting", "destroying"];
+
+/**
  * Set project status
+ *
+ * A busy status ("starting", "destroying") records the id of this process,
+ * so releaseStaleStatuses can tell when the process that set it is gone.
  */
 export function setProjectStatus(
   name: string,
@@ -116,11 +144,69 @@ export function setProjectStatus(
 ): void {
   const database = getDb();
   const stmt = database.prepare(`
-    INSERT INTO projects (name, last_access, status)
-    VALUES (?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET status = excluded.status
+    INSERT INTO projects (name, last_access, status, status_pid)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      status = excluded.status,
+      status_pid = excluded.status_pid
   `);
-  stmt.run(name, now(), status);
+  stmt.run(name, now(), status, BUSY_STATUSES.includes(status) ? process.pid : null);
+}
+
+/**
+ * Whether a process is alive. EPERM means it is, but belongs to another user.
+ */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Set back to "running" the busy statuses ("starting", "destroying") whose
+ * process is gone, and return the names of those projects.
+ *
+ * The process that sets a busy status sets it back when it ends. A process
+ * that is killed (a cancelled CI job, a dropped SSH connection, a restart of
+ * the service) cannot, and the status would stay: the sweeps never stop a
+ * busy project, max_running_projects counts it as running, and the waiting
+ * page never starts it. "running" lets the idle sweep check the project
+ * against DDEV and stop it, also when it is stopped already.
+ *
+ * `isAlive` says whether a process still works on its project: the service
+ * passes its own check at start, where its own id is not alive yet.
+ */
+export function releaseStaleStatuses(
+  isAlive: (pid: number) => boolean = isProcessAlive,
+): string[] {
+  const database = getDb();
+  const rows = database
+    .prepare(
+      "SELECT name, status, status_pid AS pid FROM projects WHERE status IN ('starting', 'destroying')",
+    )
+    .all() as unknown as { name: string; status: string; pid: number | null }[];
+  // Only when the same process still holds the status: another one may
+  // have set it since the SELECT
+  const release = database.prepare(`
+    UPDATE projects SET status = 'running', status_pid = NULL
+    WHERE name = ? AND status = ? AND status_pid IS ?
+  `);
+  const released: string[] = [];
+
+  for (const { name, status, pid } of rows) {
+    if (pid !== null && isAlive(pid)) {
+      continue;
+    }
+
+    if (Number(release.run(name, status, pid).changes) > 0) {
+      released.push(name);
+    }
+  }
+
+  return released;
 }
 
 /**

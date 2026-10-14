@@ -6,8 +6,16 @@ import {
   handleRequest,
   getEffectiveAuthConfig,
   makeRoomUnderLimit,
+  releaseStatusesAtStart,
 } from "../src/server.js";
-import { initDb, closeDb, getProject, updateProjectAccess } from "../src/utils/db.js";
+import {
+  initDb,
+  closeDb,
+  getDb,
+  getProject,
+  setProjectStatus,
+  updateProjectAccess,
+} from "../src/utils/db.js";
 import type { DdevRunner } from "../src/utils/ddev.js";
 import {
   createFakeDeps,
@@ -217,6 +225,43 @@ describe("handleErrors", () => {
     expect(out.status()).toBe(503);
     expect(recorded.started).toEqual([]);
     expect(recorded.steps).toEqual([]);
+  });
+
+  it("does not start a project that trafic-agent destroy is removing", async () => {
+    // A start would stop the backup's own start, or bring back the
+    // containers that ddev delete removes
+    const { deps, recorded } = createFakeDeps({
+      hostnames: HOSTS,
+      records: { app: { status: "destroying" } },
+    });
+    const out = captureResponse();
+
+    await handleErrors(request({ "x-forwarded-host": "app.example.com" }), out.res, deps);
+    await settle();
+
+    expect(out.status()).toBe(503);
+    expect(out.body()).toContain("error:This project is being removed");
+    expect(recorded.steps).toEqual([]);
+  });
+
+  it("starts a project whose removal or start was killed", async () => {
+    // Its process is gone, so nothing will ever set the status back
+    for (const status of ["destroying", "starting"] as const) {
+      const { deps, recorded } = createFakeDeps({
+        hostnames: HOSTS,
+        records: { app: { status } },
+        stale: ["app"],
+      });
+
+      await handleErrors(
+        request({ "x-forwarded-host": "app.example.com" }),
+        captureResponse().res,
+        deps,
+      );
+      await settle();
+
+      expect(recorded.started).toEqual(["app"]);
+    }
   });
 
   it("records the project running once the start succeeds", async () => {
@@ -452,5 +497,40 @@ describe("makeRoomUnderLimit", () => {
     await expect(makeRoomUnderLimit(0, new Map(), runningDdev(["a"], calls))).resolves.toEqual([]);
 
     expect(calls).toEqual([]);
+  });
+});
+
+describe("releaseStatusesAtStart", () => {
+  beforeEach(() => {
+    initDb(":memory:");
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it("sets back a start that the stopped service had in flight", () => {
+    // Its id can be the one of this new service after a reboot, which
+    // would look alive
+    setProjectStatus("app", "starting");
+
+    expect(releaseStatusesAtStart()).toEqual(["app"]);
+    expect(getProject("app")?.status).toBe("running");
+  });
+
+  it("keeps a removal that trafic-agent destroy still runs", () => {
+    // The service can restart in the middle of a removal run over SSH
+    setProjectStatus("app", "destroying");
+    getDb().prepare("UPDATE projects SET status_pid = ? WHERE name = ?").run(process.ppid, "app");
+
+    expect(releaseStatusesAtStart()).toEqual([]);
+    expect(getProject("app")?.status).toBe("destroying");
+  });
+
+  it("sets back a removal whose process is gone", () => {
+    setProjectStatus("app", "destroying");
+
+    expect(releaseStatusesAtStart(() => false)).toEqual(["app"]);
+    expect(getProject("app")?.status).toBe("running");
   });
 });

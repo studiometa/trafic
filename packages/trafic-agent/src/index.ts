@@ -59,6 +59,8 @@ export {
   startScheduledDestroy,
   getScheduledDestroys,
   getIdleProjects,
+  releaseStaleStatuses,
+  isProcessAlive,
   logAccess,
   getAccessLogs,
   cleanOldLogs,

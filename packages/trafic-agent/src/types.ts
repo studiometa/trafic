@@ -122,7 +122,11 @@ export interface DdevProject {
 export interface ProjectRecord {
   name: string;
   lastAccess: number; // Unix timestamp
-  /** "destroying": trafic-agent destroy is removing it, see destroyProject */
+  /**
+   * "starting": the waiting page is starting it. "destroying": trafic-agent
+   * destroy is removing it, see destroyProject. Both are set back when their
+   * process is gone, see releaseStaleStatuses.
+   */
   status: "running" | "stopped" | "starting" | "destroying";
 }
 
