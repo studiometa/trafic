@@ -151,8 +151,8 @@ function isDirectory(path: string): boolean {
  * would find a stale directory.
  *
  * While the removal runs, the project has the status "destroying", which the
- * idle sweep never stops: the backup can take many minutes, and a stop in
- * the middle of it fails the backup. The status is in the database, so the
+ * idle sweep and max_running_projects never stop: the backup can take many
+ * minutes, and a stop in the middle of it fails the backup. The status is in the database, so the
  * service sees it when `trafic-agent destroy` runs from the command line. A
  * removal that fails sets the status back: "running" when it was, else
  * "stopped".

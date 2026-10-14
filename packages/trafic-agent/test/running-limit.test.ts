@@ -214,6 +214,36 @@ describe("enforceRunningLimit", () => {
     expect(stopped).toEqual(["a"]);
   });
 
+  it("never stops a project trafic-agent destroy is removing, but counts it", async () => {
+    // Its backup started it: a stop now fails the backup
+    accessed("removing", 5 * HOUR);
+    setProjectStatus("removing", "destroying");
+    accessed("a", HOUR);
+    accessed("b", MINUTE);
+    const { deps, stopped } = createDeps(
+      ddev({ removing: "running", a: "running", b: "running" }),
+    );
+
+    await enforceRunningLimit({ max: 2, neverStops: nothingIsNever }, deps);
+
+    expect(stopped).toEqual(["a"]);
+    expect(getProject("removing")).toMatchObject({
+      status: "destroying",
+      lastAccess: expect.any(Number),
+    });
+    expect(getProject("removing")!.lastAccess).toBeLessThan(Date.now() - HOUR);
+  });
+
+  it("keeps the status of a project being removed whatever ddev shows", async () => {
+    // Before its backup starts it, ddev shows it stopped
+    setProjectStatus("removing", "destroying");
+    const { deps } = createDeps(ddev({ removing: "stopped" }));
+
+    await enforceRunningLimit({ max: 1, neverStops: nothingIsNever }, deps);
+
+    expect(getProject("removing")?.status).toBe("destroying");
+  });
+
   it("warns and stops nothing when every running project must stay", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     accessed("a", HOUR);

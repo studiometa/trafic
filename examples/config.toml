@@ -31,7 +31,8 @@ idle_check_interval = "5m"
 # running project with the oldest access. `trafic deploy` starts projects
 # without the agent, so the idle sweep also stops projects until the server
 # is back under the limit. Projects with `idle_timeout: never` in
-# .ddev/config.trafic.yaml are never stopped by this rule.
+# .ddev/config.trafic.yaml, and projects that `trafic-agent destroy` is
+# removing, are never stopped by this rule.
 max_running_projects = 8
 
 # Backups made by `trafic-agent destroy --backup` (and `trafic destroy --backup`)

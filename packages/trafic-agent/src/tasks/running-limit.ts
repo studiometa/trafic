@@ -27,6 +27,11 @@ export const nodeRunningLimitDeps: RunningLimitDeps = {
   updateProjectAccess: (name) => updateProjectAccess(name),
 };
 
+/** Whether the agent works on a project, so it must not be stopped. */
+function isBusy(record: ProjectRecord): boolean {
+  return record.status === "starting" || record.status === "destroying";
+}
+
 export interface RunningLimitOptions {
   /** max_running_projects: 0 means no limit */
   max: number;
@@ -63,9 +68,10 @@ function isUp(project: DdevProject): boolean {
  * the database says runs while DDEV says it does not was stopped outside the
  * agent, and is recorded as stopped, so its next start is seen too.
  *
- * Projects with `idle_timeout: never` and projects the agent is starting are
- * never stopped. When no other project can be stopped, a warning is logged
- * and the server stays over the limit.
+ * Projects with `idle_timeout: never`, projects the agent is starting and
+ * projects `trafic-agent destroy` is removing (status "destroying": its
+ * backup starts a stopped project) are never stopped. When no other project
+ * can be stopped, a warning is logged and the server stays over the limit.
  *
  * Returns the names of the projects it stopped.
  */
@@ -105,7 +111,7 @@ export async function enforceRunningLimit(
   if (excess <= 0) return [];
 
   const candidates = running
-    .filter((record) => record.status !== "starting" && !neverStops(record.name))
+    .filter((record) => !isBusy(record) && !neverStops(record.name))
     .sort((a, b) => a.lastAccess - b.lastAccess)
     .slice(0, excess);
 
