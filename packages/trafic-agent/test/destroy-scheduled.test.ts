@@ -189,7 +189,27 @@ describe("scheduled removals", () => {
       expect(getScheduledDestroys()).toEqual([]);
     });
 
-    it("keeps a project whose removal is cancelled during its backup", async () => {
+    it("removes nothing when the removal is cancelled during the backup", async () => {
+      const dir = createProject("app");
+      scheduleDestroy("app", NOW, true);
+      const calls: string[][] = [];
+      const runner = recordingRunner(calls);
+
+      // A deploy cancels the removal while the database is exported
+      await destroyScheduledProjects(config, clock, (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          cancelScheduledDestroy("app");
+        }
+        return runner(args, timeoutMs, cwd);
+      });
+
+      // No ddev delete, no directory removed, no schedule left
+      expect(calls.map(([command]) => command)).toEqual(["describe", "export-db", "exec"]);
+      expect(existsSync(dir)).toBe(true);
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("keeps a project whose removal is cancelled and scheduled again during its backup", async () => {
       const dir = createProject("app");
       scheduleDestroy("app", NOW, true);
       const calls: string[][] = [];
