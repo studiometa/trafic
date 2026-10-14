@@ -83,7 +83,7 @@ The command checks the config as `start` does, and exits with an error before it
 
 The agent service checks the scheduled removals every `idle_check_interval` (default `5m`). It removes each project whose date is past with the same steps as `trafic-agent destroy`. When a removal fails (for example, the backup fails), the agent logs the error, keeps the removal scheduled and tries again on the next check. A failure on one project does not stop the removal of the others.
 
-`trafic deploy` cancels the scheduled removal of the project it deploys. To cancel it by hand, run `trafic-agent destroy <name> --cancel`. `trafic-agent destroy --list` shows the scheduled removals, soonest first.
+`trafic deploy` cancels the scheduled removal of the project it deploys. To cancel it by hand, run `trafic-agent destroy <name> --cancel`. A cancel stops a removal that is due but not started, or that is still in its backup. Once `ddev delete` has started, the project is removed. `trafic-agent destroy --list` shows the scheduled removals, soonest first.
 
 The date is kept in the agent database, not in `.ddev/config.trafic.yaml`: the agent finds it even when DDEV no longer knows the project, and a deploy cancels it with one command.
 

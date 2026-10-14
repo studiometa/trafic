@@ -191,6 +191,26 @@ export function getScheduledDestroys(dueBy = Number.MAX_SAFE_INTEGER): Scheduled
 }
 
 /**
+ * Get the scheduled removal of a project when it is due at or before
+ * `dueBy`, or undefined when there is none.
+ */
+export function getScheduledDestroy(
+  name: string,
+  dueBy = Number.MAX_SAFE_INTEGER,
+): ScheduledDestroy | undefined {
+  const database = getDb();
+  const stmt = database.prepare(`
+    SELECT name, destroy_at as destroyAt, backup
+    FROM scheduled_destroys
+    WHERE name = ? AND destroy_at <= ?
+  `);
+  const row = stmt.get(name, dueBy) as
+    | { name: string; destroyAt: number; backup: number }
+    | undefined;
+  return row && { ...row, backup: row.backup === 1 };
+}
+
+/**
  * Log an access
  */
 export function logAccess(log: Omit<AccessLog, "id">): void {

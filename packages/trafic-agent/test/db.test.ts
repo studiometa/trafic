@@ -13,6 +13,7 @@ import {
   deleteProject,
   scheduleDestroy,
   cancelScheduledDestroy,
+  getScheduledDestroy,
   getScheduledDestroys,
 } from "../src/utils/db.js";
 
@@ -270,6 +271,16 @@ describe("db", () => {
       scheduleDestroy("future", NOW + HOUR, false);
 
       expect(getScheduledDestroys(NOW).map((s) => s.name)).toEqual(["past", "now"]);
+    });
+
+    it("gets the removal of one project only when it is due", () => {
+      scheduleDestroy("app", NOW, true);
+      scheduleDestroy("other", NOW - HOUR, false);
+
+      expect(getScheduledDestroy("app", NOW)).toEqual({ name: "app", destroyAt: NOW, backup: true });
+      expect(getScheduledDestroy("app", NOW - MINUTE)).toBeUndefined();
+      expect(getScheduledDestroy("app")).toBeDefined();
+      expect(getScheduledDestroy("unknown")).toBeUndefined();
     });
 
     it("cancels a removal and reports whether there was one", () => {

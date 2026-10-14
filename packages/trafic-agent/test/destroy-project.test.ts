@@ -387,6 +387,27 @@ describe("destroyProject", () => {
       expect(existsSync(dir)).toBe(true);
       expect(getProject("app")).toBeDefined();
     });
+
+    it("removes nothing when the removal is cancelled during the backup", async () => {
+      const dir = createProject("app");
+      updateProjectAccess("app");
+      const calls: string[][] = [];
+      const runner = backupRunner([], calls);
+      let cancelled = false;
+      const cancellingRunner: DdevRunner = (args, timeoutMs, cwd) => {
+        cancelled ||= args[0] === "export-db";
+        return runner(args, timeoutMs, cwd);
+      };
+
+      await expect(
+        destroyProject("app", config, { backup: true, isCancelled: () => cancelled }, cancellingRunner),
+      ).resolves.toBe(false);
+
+      expect(calls.some(([command]) => command === "delete")).toBe(false);
+      expect(existsSync(dir)).toBe(true);
+      expect(getProject("app")).toBeDefined();
+      expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
+    });
   });
 
   describe("resolveProjectDir", () => {

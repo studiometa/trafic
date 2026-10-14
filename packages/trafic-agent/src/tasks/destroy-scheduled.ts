@@ -1,6 +1,7 @@
 import { destroyProject, resolveProjectDir } from "./destroy-project.js";
 import {
   cancelScheduledDestroy,
+  getScheduledDestroy,
   getScheduledDestroys,
   scheduleDestroy,
   systemClock,
@@ -50,6 +51,11 @@ let sweeping = false;
  * A failure on one project does not stop the sweep: it is logged, and the
  * removal stays scheduled so the next sweep tries again. A project already
  * gone has its schedule cleared.
+ *
+ * A removal can take minutes, and a deploy or a `--cancel` can cancel the
+ * removal of a project meanwhile. So the sweep reads each removal again just
+ * before it starts, and once more after the backup. A cancel that comes
+ * while `ddev delete` runs is too late: the project is removed.
  */
 export async function destroyScheduledProjects(
   config: AgentConfig,
@@ -63,12 +69,25 @@ export async function destroyScheduledProjects(
   sweeping = true;
 
   try {
-    for (const { name, backup } of getScheduledDestroys(now())) {
+    for (const { name } of getScheduledDestroys(now())) {
+      // Not the row read above: an earlier removal of this sweep took time
+      const scheduled = getScheduledDestroy(name, now());
+      const isCancelled = () => !getScheduledDestroy(name, now());
+
+      if (!scheduled) {
+        continue;
+      }
+
       console.log(`Destroying ${name}: its scheduled removal is due`);
 
       try {
-        await destroyProject(name, config, { backup }, run);
-        cancelScheduledDestroy(name);
+        const { backup } = scheduled;
+        const removed = await destroyProject(name, config, { backup, isCancelled }, run);
+
+        // A removal clears the schedule itself; a project already gone is not removed
+        if (!removed && !isCancelled()) {
+          cancelScheduledDestroy(name);
+        }
       } catch (error) {
         console.error(
           `Scheduled removal of ${name} failed, retrying on the next sweep: ${(error as Error).message}`,

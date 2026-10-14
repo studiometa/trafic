@@ -6,7 +6,13 @@ import {
   destroyScheduledProjects,
   scheduleProjectDestroy,
 } from "../src/tasks/destroy-scheduled.js";
-import { initDb, closeDb, getScheduledDestroys, scheduleDestroy } from "../src/utils/db.js";
+import {
+  initDb,
+  closeDb,
+  cancelScheduledDestroy,
+  getScheduledDestroys,
+  scheduleDestroy,
+} from "../src/utils/db.js";
 import type { DdevRunner } from "../src/utils/ddev.js";
 import type { AgentConfig } from "../src/types.js";
 
@@ -161,6 +167,45 @@ describe("scheduled removals", () => {
 
       expect(existsSync(failing)).toBe(false);
       expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("keeps a project whose removal is cancelled while another one runs", async () => {
+      const first = createProject("first");
+      const second = createProject("second");
+      scheduleDestroy("first", NOW - HOUR, false);
+      scheduleDestroy("second", NOW, true);
+      const runner = recordingRunner([]);
+
+      // A deploy of the second project cancels its removal meanwhile
+      await destroyScheduledProjects(config, clock, (args, timeoutMs, cwd) => {
+        if (cwd === first) {
+          cancelScheduledDestroy("second");
+        }
+        return runner(args, timeoutMs, cwd);
+      });
+
+      expect(existsSync(first)).toBe(false);
+      expect(existsSync(second)).toBe(true);
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("keeps a project whose removal is cancelled during its backup", async () => {
+      const dir = createProject("app");
+      scheduleDestroy("app", NOW, true);
+      const calls: string[][] = [];
+      const runner = recordingRunner(calls);
+
+      // A deploy cancels the removal, then a new one is scheduled for later
+      await destroyScheduledProjects(config, clock, (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          scheduleDestroy("app", NOW + HOUR, false);
+        }
+        return runner(args, timeoutMs, cwd);
+      });
+
+      expect(calls.map(([command]) => command)).toEqual(["describe", "export-db", "exec"]);
+      expect(existsSync(dir)).toBe(true);
+      expect(getScheduledDestroys()).toEqual([{ name: "app", destroyAt: NOW + HOUR, backup: false }]);
     });
 
     it("clears the schedule of a project that is already gone", async () => {

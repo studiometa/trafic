@@ -141,6 +141,11 @@ function isDirectory(path: string): boolean {
  *
  * A failed backup throws before anything is removed.
  *
+ * A backup can take many minutes. With `isCancelled`, the removal asks
+ * again after the backup, and stops without removing anything when the
+ * answer is yes: a scheduled removal that a deploy cancelled meanwhile must
+ * not delete the new deploy.
+ *
  * A failed `ddev delete` does not stop the removal: a project DDEV has
  * already forgotten could otherwise never be cleaned up, and the next deploy
  * would find a stale directory.
@@ -153,13 +158,15 @@ function isDirectory(path: string): boolean {
  * "stopped".
  *
  * The database must be open (`initDb`). Returns false when there was no
- * project directory. The project's records are still deleted then, so a
- * retry after a run that failed between steps 2 and 3 cleans them up.
+ * project directory or the removal was cancelled. Without a project
+ * directory, the project's records are still deleted, so a retry after a run
+ * that failed between steps 2 and 3 cleans them up. A cancelled removal
+ * removes nothing and sets the status back.
  */
 export async function destroyProject(
   name: string,
   config: AgentConfig,
-  options: { backup?: boolean } & BackupOptions = {},
+  options: { backup?: boolean; isCancelled?: () => boolean } & BackupOptions = {},
   run: DdevRunner = nodeDdevRunner,
 ): Promise<boolean> {
   const dir = resolveProjectDir(name, config);
@@ -177,27 +184,41 @@ export async function destroyProject(
   const previous = getProject(name)?.status;
   setProjectStatus(name, "destroying");
 
+  let removed: boolean;
+
   try {
-    await removeProject(name, dir, config, options, run);
+    removed = await removeProject(name, dir, config, options, run);
   } catch (error) {
     setProjectStatus(name, previous === "running" ? "running" : "stopped");
     throw error;
   }
 
-  return true;
+  if (!removed) {
+    setProjectStatus(name, previous === "running" ? "running" : "stopped");
+  }
+
+  return removed;
 }
 
-/** The steps of destroyProject, once the project is marked "destroying". */
+/**
+ * The steps of destroyProject, once the project is marked "destroying".
+ * Returns false when the removal was cancelled after the backup.
+ */
 async function removeProject(
   name: string,
   dir: string,
   config: AgentConfig,
-  options: { backup?: boolean } & BackupOptions,
+  options: { backup?: boolean; isCancelled?: () => boolean } & BackupOptions,
   run: DdevRunner,
-): Promise<void> {
+): Promise<boolean> {
   if (options.backup) {
     console.log(`Backing up ${name}`);
     await backupProject(name, dir, config.backup.dir, { timeoutMs: options.timeoutMs }, run);
+  }
+
+  if (options.isCancelled?.()) {
+    console.log(`Removal of ${name} cancelled — nothing removed`);
+    return false;
   }
 
   console.log(`Deleting DDEV project: ${name}`);
@@ -212,4 +233,5 @@ async function removeProject(
 
   deleteProject(name);
   console.log(`Destroyed: ${name}`);
+  return true;
 }
