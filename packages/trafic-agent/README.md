@@ -46,7 +46,7 @@ trafic-agent setup --tld previews.example.com
 
 ### `trafic-agent destroy`
 
-Remove a project from the server. Run it as the `ddev` user, the user the service runs as.
+Remove a project from the server. Run it as the `ddev` user, the user the service runs as. The command refuses to run as root: DDEV does not run as root, and root could leave files in the database directory that the service cannot write to.
 
 ```bash
 trafic-agent destroy preview-42--my-app

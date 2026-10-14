@@ -7,6 +7,7 @@ import { startIdleScheduler } from "./tasks/stop-idle.js";
 import { closeDb, initDb } from "./utils/db.js";
 import { destroyProject } from "./tasks/destroy-project.js";
 import { setup, audit } from "./setup/index.js";
+import { isRoot } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
 import { runUpgrade } from "./setup/upgrade.js";
 
@@ -79,7 +80,7 @@ Examples:
   # Run security audit
   trafic-agent audit
 
-  # Remove a project (as the ddev user)
+  # Remove a project (as the ddev user, never as root)
   trafic-agent destroy preview-42--my-app
 `;
 
@@ -133,6 +134,14 @@ async function runDestroy(
   values: Record<string, unknown>,
   name: string | undefined,
 ): Promise<void> {
+  // DDEV refuses to run as root, so the directory would go and leave the
+  // containers behind, and root could leave files in the database directory
+  // that the service cannot write to
+  if (isRoot()) {
+    console.error("Error: run trafic-agent destroy as the ddev user, not root");
+    process.exit(1);
+  }
+
   if (!name) {
     console.error("Error: a project name is required");
     console.error("Example: trafic-agent destroy preview-42--my-app");
