@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, realpathSync, rmSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { backupProject, type BackupOptions } from "./backup.js";
 import { deleteProject, getProject, setProjectStatus } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
@@ -84,11 +84,12 @@ function checkRealPath(dir: string, projectsDir: string): void {
  * Refuse a backup directory that is the project directory or inside it: the
  * removal would delete the backup right after it is written. validateConfig
  * already refuses a backup.dir in projects_dir; this also follows symbolic
- * links.
+ * links. It checks `<backup.dir>/<name>`, where the backup goes, so a
+ * symbolic link at that level is followed too.
  */
-function checkBackupDir(backupDir: string, dir: string): void {
-  const target = resolve(backupDir);
-  const realTarget = existsSync(target) ? realpathSync(target) : target;
+function checkBackupDir(backupDir: string, name: string, dir: string): void {
+  const target = resolve(backupDir, name);
+  const realTarget = realpathOfNearest(target);
   const realDir = realpathSync(dir);
 
   if (target === dir || isInside(dir, target) || realTarget === realDir || isInside(realDir, realTarget)) {
@@ -96,6 +97,27 @@ function checkBackupDir(backupDir: string, dir: string): void {
       `Refusing to back up to ${backupDir}: it is inside the project directory ${dir}, which the removal deletes`,
     );
   }
+}
+
+/**
+ * The real path of a path that may not exist yet: the real path of its
+ * nearest existing ancestor, plus the rest of the path. The backup creates
+ * the missing directories through the symbolic links of that ancestor.
+ */
+function realpathOfNearest(path: string): string {
+  const rest: string[] = [];
+  let current = path;
+
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+
+    if (parent === current) break;
+
+    rest.unshift(basename(current));
+    current = parent;
+  }
+
+  return join(realpathSync(current), ...rest);
 }
 
 /** Whether a path is an existing directory. */
@@ -149,7 +171,7 @@ export async function destroyProject(
   }
 
   if (options.backup) {
-    checkBackupDir(config.backup.dir, dir);
+    checkBackupDir(config.backup.dir, name, dir);
   }
 
   const previous = getProject(name)?.status;

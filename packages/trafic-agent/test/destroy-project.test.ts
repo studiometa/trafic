@@ -272,6 +272,37 @@ describe("destroyProject", () => {
       expect(calls).toEqual([]);
     });
 
+    it("refuses a backup directory under a symbolic link into the project directory", async () => {
+      // backup.dir does not exist yet: the backup would create it through the link
+      const dir = createProject("app");
+      mkdirSync(join(dir, "backups"));
+      symlinkSync(join(dir, "backups"), join(root, "backups-link"));
+      config.backup.dir = join(root, "backups-link", "new", "dir");
+      const calls: string[][] = [];
+
+      await expect(destroyProject("app", config, { backup: true }, backupRunner([], calls))).rejects.toThrow(
+        /inside the project directory/,
+      );
+
+      expect(calls).toEqual([]);
+      expect(existsSync(join(dir, "backups", "new"))).toBe(false);
+    });
+
+    it("refuses a project backup directory that is a symbolic link into the project directory", async () => {
+      // <backup.dir>/<name> is where the backup goes
+      const dir = createProject("app");
+      mkdirSync(join(dir, "backups"));
+      mkdirSync(config.backup.dir, { recursive: true });
+      symlinkSync(join(dir, "backups"), join(config.backup.dir, "app"));
+      const calls: string[][] = [];
+
+      await expect(destroyProject("app", config, { backup: true }, backupRunner([], calls))).rejects.toThrow(
+        /inside the project directory/,
+      );
+
+      expect(calls).toEqual([]);
+    });
+
     it("marks the project destroying while it works on it", async () => {
       // The idle sweep must not stop the project during the backup
       createProject("app");
