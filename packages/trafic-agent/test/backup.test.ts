@@ -266,6 +266,28 @@ describe("backupProject", () => {
     warn.mockRestore();
   });
 
+  it("fails before it changes anything when the backup directory already exists", async () => {
+    // Two backups of a project in the same second: the one that fails must
+    // not remove the files of the other
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.parse("2026-10-14T07:40:24Z"));
+    const other = join(backupDir, "app", "2026-10-14T07-40-24Z");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "db.sql.gz"), "dump");
+    const calls: string[][] = [];
+
+    try {
+      await expect(
+        backupProject("app", projectDir, backupDir, {}, fakeDdev({ status: "stopped" }, calls)),
+      ).rejects.toThrow(/already exists/);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(calls).toEqual([["describe", "app", "-j"]]);
+    expect(readdirSync(other)).toEqual(["db.sql.gz"]);
+  });
+
   it("fails when DDEV does not know the project", async () => {
     await expect(
       backupProject("app", projectDir, backupDir, {}, fakeDdev({ fails: ["describe"] }, [])),

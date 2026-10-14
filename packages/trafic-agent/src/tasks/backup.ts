@@ -137,6 +137,24 @@ async function writeBackup(
 }
 
 /**
+ * Create the directory of one backup. It must not exist: two backups of a
+ * project in the same second would share it, and the one that fails would
+ * remove the files of the other. The second one fails here, before it
+ * changes anything.
+ */
+function createBackupDir(target: string, name: string): void {
+  try {
+    mkdirSync(target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new Error(`${target} already exists: another backup of ${name} runs or ran in the same second`);
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Back up a DDEV project to `<backupDir>/<name>/<timestamp>`.
  *
  * The backup holds:
@@ -166,7 +184,8 @@ export async function backupProject(
   const target = join(backupDir, name, backupTimestamp(new Date()));
   const wasRunning = info.status === "running";
 
-  mkdirSync(target, { recursive: true });
+  mkdirSync(join(backupDir, name), { recursive: true });
+  createBackupDir(target, name);
 
   try {
     if (!wasRunning) {
