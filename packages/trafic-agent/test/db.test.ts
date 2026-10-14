@@ -11,6 +11,9 @@ import {
   getAccessLogs,
   cleanOldLogs,
   deleteProject,
+  scheduleDestroy,
+  cancelScheduledDestroy,
+  getScheduledDestroys,
 } from "../src/utils/db.js";
 
 const NOW = new Date("2026-09-07T12:00:00Z").getTime();
@@ -33,13 +36,14 @@ describe("db", () => {
   });
 
   describe("initDb", () => {
-    it("creates both tables", () => {
+    it("creates the tables", () => {
       const tables = getDb()
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all() as unknown as { name: string }[];
 
       expect(tables.map((t) => t.name)).toContain("projects");
       expect(tables.map((t) => t.name)).toContain("access_logs");
+      expect(tables.map((t) => t.name)).toContain("scheduled_destroys");
     });
 
     it("can run again over an existing schema without losing data", () => {
@@ -226,6 +230,54 @@ describe("db", () => {
 
     it("does nothing for a project it has never seen", () => {
       expect(() => deleteProject("nope")).not.toThrow();
+    });
+
+    it("cancels the scheduled removal of the project", () => {
+      scheduleDestroy("gone", NOW, false);
+
+      deleteProject("gone");
+
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+  });
+
+  describe("scheduled removals", () => {
+    it("records a removal with its date and backup", () => {
+      scheduleDestroy("app", NOW + DAY, true);
+
+      expect(getScheduledDestroys()).toEqual([{ name: "app", destroyAt: NOW + DAY, backup: true }]);
+    });
+
+    it("replaces the date and backup of a removal already scheduled", () => {
+      scheduleDestroy("app", NOW + DAY, true);
+      scheduleDestroy("app", NOW + 2 * DAY, false);
+
+      expect(getScheduledDestroys()).toEqual([
+        { name: "app", destroyAt: NOW + 2 * DAY, backup: false },
+      ]);
+    });
+
+    it("lists the removals soonest first", () => {
+      scheduleDestroy("later", NOW + 2 * DAY, false);
+      scheduleDestroy("sooner", NOW + DAY, false);
+
+      expect(getScheduledDestroys().map((s) => s.name)).toEqual(["sooner", "later"]);
+    });
+
+    it("lists only the removals due by the given time", () => {
+      scheduleDestroy("past", NOW - HOUR, false);
+      scheduleDestroy("now", NOW, false);
+      scheduleDestroy("future", NOW + HOUR, false);
+
+      expect(getScheduledDestroys(NOW).map((s) => s.name)).toEqual(["past", "now"]);
+    });
+
+    it("cancels a removal and reports whether there was one", () => {
+      scheduleDestroy("app", NOW + DAY, false);
+
+      expect(cancelScheduledDestroy("app")).toBe(true);
+      expect(cancelScheduledDestroy("app")).toBe(false);
+      expect(getScheduledDestroys()).toEqual([]);
     });
   });
 

@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { ProjectRecord, AccessLog } from "../types.js";
+import type { ProjectRecord, AccessLog, ScheduledDestroy } from "../types.js";
 
 /**
  * Reads the current time in epoch milliseconds.
@@ -49,6 +49,12 @@ export function initDb(dbPath: string): DatabaseSync {
 
     CREATE INDEX IF NOT EXISTS idx_access_logs_project ON access_logs(project);
     CREATE INDEX IF NOT EXISTS idx_access_logs_timestamp ON access_logs(timestamp);
+
+    CREATE TABLE IF NOT EXISTS scheduled_destroys (
+      name TEXT PRIMARY KEY,
+      destroy_at INTEGER NOT NULL,
+      backup INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   return db;
@@ -133,12 +139,55 @@ export function getIdleProjects(
 }
 
 /**
- * Delete every record of a project: its status row and its access logs.
+ * Delete every record of a project: its status row, its access logs and its
+ * scheduled removal.
  */
 export function deleteProject(name: string): void {
   const database = getDb();
   database.prepare("DELETE FROM projects WHERE name = ?").run(name);
   database.prepare("DELETE FROM access_logs WHERE project = ?").run(name);
+  cancelScheduledDestroy(name);
+}
+
+/**
+ * Schedule the removal of a project, or move the date of a removal already
+ * scheduled.
+ */
+export function scheduleDestroy(name: string, destroyAt: number, backup: boolean): void {
+  const database = getDb();
+  const stmt = database.prepare(`
+    INSERT INTO scheduled_destroys (name, destroy_at, backup)
+    VALUES (?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      destroy_at = excluded.destroy_at,
+      backup = excluded.backup
+  `);
+  stmt.run(name, destroyAt, backup ? 1 : 0);
+}
+
+/**
+ * Cancel the scheduled removal of a project. Returns false when there was none.
+ */
+export function cancelScheduledDestroy(name: string): boolean {
+  const database = getDb();
+  const result = database.prepare("DELETE FROM scheduled_destroys WHERE name = ?").run(name);
+  return Number(result.changes) > 0;
+}
+
+/**
+ * Get the scheduled removals, soonest first. With `dueBy`, only the removals
+ * due at or before that time.
+ */
+export function getScheduledDestroys(dueBy = Number.MAX_SAFE_INTEGER): ScheduledDestroy[] {
+  const database = getDb();
+  const stmt = database.prepare(`
+    SELECT name, destroy_at as destroyAt, backup
+    FROM scheduled_destroys
+    WHERE destroy_at <= ?
+    ORDER BY destroy_at, name
+  `);
+  const rows = stmt.all(dueBy) as unknown as { name: string; destroyAt: number; backup: number }[];
+  return rows.map((row) => ({ ...row, backup: row.backup === 1 }));
 }
 
 /**

@@ -21,7 +21,8 @@ projects_dir = "/home/ddev/www"
 # Scale-to-zero: stop idle projects after this duration (default: 30m)
 idle_timeout = "4h"
 
-# How often to check for idle projects (default: 5m)
+# How often to check for idle projects and for scheduled removals
+# (`trafic destroy --delay`) that are due (default: 5m)
 idle_check_interval = "5m"
 
 # Backups made by `trafic-agent destroy --backup` (and `trafic destroy --backup`)

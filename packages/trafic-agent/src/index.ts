@@ -9,6 +9,7 @@ export type {
   DdevProject,
   ProjectRecord,
   AccessLog,
+  ScheduledDestroy,
 } from "./types.js";
 
 // Config utilities
@@ -53,6 +54,9 @@ export {
   getProject,
   setProjectStatus,
   deleteProject,
+  scheduleDestroy,
+  cancelScheduledDestroy,
+  getScheduledDestroys,
   getIdleProjects,
   logAccess,
   getAccessLogs,
@@ -70,6 +74,11 @@ export type { ProjectConfig } from "./utils/project-config.js";
 // Tasks
 export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
 export { destroyProject } from "./tasks/destroy-project.js";
+export {
+  scheduleProjectDestroy,
+  destroyScheduledProjects,
+  startScheduledDestroyScheduler,
+} from "./tasks/destroy-scheduled.js";
 export {
   backupProject,
   removeOldBackups,

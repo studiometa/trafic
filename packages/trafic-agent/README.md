@@ -57,19 +57,35 @@ trafic-agent destroy preview-42--my-app --config /etc/trafic/config.toml
 trafic-agent destroy preview-42--my-app --backup
 # give the backup up to one hour
 trafic-agent destroy preview-42--my-app --backup --timeout 1h
+# remove the project in 48 hours, after a backup
+trafic-agent destroy preview-42--my-app --delay 48h --backup
+# cancel that removal
+trafic-agent destroy preview-42--my-app --cancel
+# list the scheduled removals
+trafic-agent destroy --list
 ```
 
 Steps:
 1. **Backup** (with `--backup` only) — see [Backups](#backups). If the backup fails, the command removes nothing and exits with an error
 2. **DDEV** — runs `ddev delete -Oy` in the project directory (containers and volumes, no snapshot). A failure is reported as a warning and does not stop the removal
 3. **Directory** — removes the project directory
-4. **Database** — deletes the project's rows from the agent database (`projects` and `access_logs`)
+4. **Database** — deletes the project's rows from the agent database (`projects`, `access_logs` and `scheduled_destroys`)
 
 The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning, does not run DDEV and only deletes the project's rows from the agent database, so a retry after a failed run cleans them up. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
 
 The command checks the config as `start` does, and exits with an error before it changes anything when the config is not valid (for example a relative `[backup] dir`).
 
 `trafic destroy` runs this command over SSH.
+
+### Scheduled removals
+
+`trafic-agent destroy <name> --delay <duration>` removes nothing. It records the removal date (now plus the delay) in the agent database and exits. The delay uses hours, minutes and seconds: `48h`, `1h30m`, `90m`. With `--backup`, the agent backs up the project before the scheduled removal. A new `--delay` for the same project replaces the date and the backup choice.
+
+The agent service checks the scheduled removals every `idle_check_interval` (default `5m`). It removes each project whose date is past with the same steps as `trafic-agent destroy`. When a removal fails (for example, the backup fails), the agent logs the error, keeps the removal scheduled and tries again on the next check. A failure on one project does not stop the removal of the others.
+
+`trafic deploy` cancels the scheduled removal of the project it deploys. To cancel it by hand, run `trafic-agent destroy <name> --cancel`. `trafic-agent destroy --list` shows the scheduled removals, soonest first.
+
+The date is kept in the agent database, not in `.ddev/config.trafic.yaml`: the agent finds it even when DDEV no longer knows the project, and a deploy cancels it with one command.
 
 ### Backups
 
@@ -219,6 +235,7 @@ The agent:
 3. Tracks project activity for scale-to-zero
 4. Starts stopped projects when requested
 5. Shows a waiting page while projects start
+6. Removes projects whose [scheduled removal](#scheduled-removals) is due
 
 ## Endpoints
 

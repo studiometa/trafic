@@ -4,8 +4,12 @@ import { parseArgs } from "node:util";
 import { loadConfig, parseTimeout, validateConfig } from "./utils/config.js";
 import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
-import { closeDb, initDb } from "./utils/db.js";
+import { cancelScheduledDestroy, closeDb, getScheduledDestroys, initDb } from "./utils/db.js";
 import { destroyProject } from "./tasks/destroy-project.js";
+import {
+  scheduleProjectDestroy,
+  startScheduledDestroyScheduler,
+} from "./tasks/destroy-scheduled.js";
 import { startBackupSweepScheduler } from "./tasks/backup.js";
 import { setup, audit } from "./setup/index.js";
 import { isRoot } from "./setup/steps.js";
@@ -27,7 +31,8 @@ Commands:
   upgrade                 Check for a new version, install it, run migrations, restart the service
   update                  Alias for upgrade
   audit                   Run security audit checks
-  destroy <name>          Remove a project: DDEV project, directory, database records
+  destroy <name>          Remove a project: DDEV project, directory, database records,
+                          now or after a delay
   version                 Show version
   help                    Show this help
 
@@ -57,6 +62,10 @@ Destroy options:
   --timeout <duration>    Time limit of the backup, the database dump and the files
                           archive together: 10m, 90s, 1h; a bare number is minutes
                           (default: 40m)
+  --delay <duration>      Remove nothing now: schedule the removal after this delay
+                          (e.g. 48h). The agent removes the project when it is due
+  --cancel                Cancel the scheduled removal of the project
+  --list                  List the scheduled removals
 
 Upgrade/update options:
   --dry-run               Show what would be done without making changes
@@ -91,6 +100,9 @@ Examples:
   trafic-agent destroy preview-42--my-app
   trafic-agent destroy preview-42--my-app --backup
   trafic-agent destroy preview-42--my-app --backup --timeout 1h
+  trafic-agent destroy preview-42--my-app --delay 48h --backup
+  trafic-agent destroy preview-42--my-app --cancel
+  trafic-agent destroy --list
 `;
 
 function printHelp(): void {
@@ -139,6 +151,7 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   startServer(config);
   startIdleScheduler(config);
   startBackupSweepScheduler(config);
+  startScheduledDestroyScheduler(config);
 }
 
 /**
@@ -157,7 +170,7 @@ async function runDestroy(
     process.exit(1);
   }
 
-  if (!name) {
+  if (!name && !values.list) {
     console.error("Error: a project name is required");
     console.error("Example: trafic-agent destroy preview-42--my-app");
     process.exit(1);
@@ -179,16 +192,45 @@ async function runDestroy(
   exitOnConfigErrors(config);
   initDb(config.dbPath);
 
+  const backup = values.backup as boolean | undefined;
+  const delay = values.delay as string | undefined;
+
   try {
-    await destroyProject(name, config, {
-      backup: values.backup as boolean | undefined,
-      timeoutMs,
-    });
+    if (values.list) {
+      printScheduledDestroys();
+    } else if (values.cancel) {
+      console.log(
+        cancelScheduledDestroy(name!)
+          ? `Cancelled the scheduled removal of ${name}`
+          : `No removal scheduled for ${name}`,
+      );
+    } else if (delay !== undefined) {
+      const destroyAt = scheduleProjectDestroy(name!, delay, config, { backup });
+      console.log(
+        `Scheduled the removal of ${name} at ${destroyAt.toISOString()}${backup ? ", after a backup" : ""}`,
+      );
+    } else {
+      await destroyProject(name!, config, { backup, timeoutMs });
+    }
   } catch (error) {
     console.error(`Error: ${(error as Error).message}`);
     process.exitCode = 1;
   } finally {
     closeDb();
+  }
+}
+
+/** Print the scheduled removals, soonest first. */
+function printScheduledDestroys(): void {
+  const scheduled = getScheduledDestroys();
+
+  if (scheduled.length === 0) {
+    console.log("No removal scheduled");
+    return;
+  }
+
+  for (const { name, destroyAt, backup } of scheduled) {
+    console.log(`${new Date(destroyAt).toISOString()}  ${name}${backup ? "  (backup)" : ""}`);
   }
 }
 
@@ -340,12 +382,14 @@ async function main(): Promise<void> {
       "trusted-proxy-hops": { type: "string" },
       "dry-run": { type: "boolean" },
 
-      // Upgrade options
+      // Upgrade and destroy options
       list: { type: "boolean" },
 
       // Destroy options
       backup: { type: "boolean" },
       timeout: { type: "string" },
+      delay: { type: "string" },
+      cancel: { type: "boolean" },
     },
   });
 

@@ -125,6 +125,17 @@ export interface ProjectRecord {
 }
 
 /**
+ * A removal scheduled with `trafic-agent destroy --delay`
+ */
+export interface ScheduledDestroy {
+  name: string;
+  /** When the removal is due, as a Unix timestamp in milliseconds */
+  destroyAt: number;
+  /** Whether to back the project up before it is removed */
+  backup: boolean;
+}
+
+/**
  * Access log entry
  */
 export interface AccessLog {
