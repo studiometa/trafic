@@ -49,6 +49,24 @@ export function parseDuration(duration: string): number {
   return (hours * 3600 + minutes * 60 + seconds) * 1000;
 }
 
+/** Duration suffixes accepted in a timeout, in milliseconds. */
+const TIMEOUT_UNITS: Record<string, number> = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000 };
+
+/**
+ * Parse a command-line timeout such as "10m", "90s" or "1h"; a bare number
+ * is minutes. The grammar is the one of `trafic --timeout`, which the CLI
+ * passes on as is. Returns undefined for anything else, or for zero.
+ */
+export function parseTimeout(value: string): number | undefined {
+  const match = /^(\d+)([smh])?$/.exec(value.trim());
+
+  if (!match || Number(match[1]) <= 0) {
+    return undefined;
+  }
+
+  return Number(match[1]) * TIMEOUT_UNITS[match[2] ?? "m"]!;
+}
+
 /**
  * Load configuration from TOML file
  */

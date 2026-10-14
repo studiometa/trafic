@@ -1,6 +1,6 @@
 import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { backupProject } from "./backup.js";
+import { backupProject, type BackupOptions } from "./backup.js";
 import { deleteProject } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
 import type { AgentConfig } from "../types.js";
@@ -98,7 +98,8 @@ function isDirectory(path: string): boolean {
  * Remove a project from the server.
  *
  * Steps:
- * 1. With `backup`, back up the database and the upload directories
+ * 1. With `backup`, back up the database and the upload directories, each
+ *    step within `timeoutMs` when it is given
  * 2. Delete the DDEV project (containers, volumes, no snapshot)
  * 3. Remove the project directory
  * 4. Delete the project's records from the agent database
@@ -116,7 +117,7 @@ function isDirectory(path: string): boolean {
 export async function destroyProject(
   name: string,
   config: AgentConfig,
-  options: { backup?: boolean } = {},
+  options: { backup?: boolean } & BackupOptions = {},
   run: DdevRunner = nodeDdevRunner,
 ): Promise<boolean> {
   const dir = resolveProjectDir(name, config);
@@ -129,7 +130,7 @@ export async function destroyProject(
 
   if (options.backup) {
     console.log(`Backing up ${name}`);
-    await backupProject(name, dir, config.backup.dir, run);
+    await backupProject(name, dir, config.backup.dir, { timeoutMs: options.timeoutMs }, run);
   }
 
   console.log(`Deleting DDEV project: ${name}`);

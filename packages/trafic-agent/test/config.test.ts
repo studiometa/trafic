@@ -2,8 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, parseDuration, validateConfig } from "../src/utils/config.js";
+import { loadConfig, parseDuration, parseTimeout, validateConfig } from "../src/utils/config.js";
 import type { AgentConfig } from "../src/types.js";
+
+describe("parseTimeout", () => {
+  it.each([
+    ["90s", 90 * 1000],
+    ["10m", 10 * 60 * 1000],
+    ["1h", 60 * 60 * 1000],
+    // The trafic CLI reads a bare number as minutes, and passes it on as is
+    ["30", 30 * 60 * 1000],
+  ])("parses %j", (value, expected) => {
+    expect(parseTimeout(value)).toBe(expected);
+  });
+
+  it.each(["", "0", "0m", "-5m", "1h30m", "10 minutes", "abc", "1.5h"])(
+    "rejects %j",
+    (value) => {
+      expect(parseTimeout(value)).toBeUndefined();
+    },
+  );
+});
 
 describe("parseDuration", () => {
   it("parses minutes", () => {

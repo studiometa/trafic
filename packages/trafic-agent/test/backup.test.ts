@@ -3,7 +3,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { backupProject, backupTimestamp, removeOldBackups } from "../src/tasks/backup.js";
+import {
+  EXPORT_TIMEOUT_MS,
+  backupProject,
+  backupTimestamp,
+  removeOldBackups,
+} from "../src/tasks/backup.js";
 import type { DdevRunner } from "../src/utils/ddev.js";
 
 // The task reports progress; keep it out of the test output
@@ -74,11 +79,24 @@ describe("backupProject", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  /** A fake ddev that also records the time limit of the export. */
+  function timedDdev(exportTimeouts: number[]): DdevRunner {
+    const ddev = fakeDdev({}, []);
+
+    return (args, timeoutMs, cwd) => {
+      if (args[0] === "export-db") {
+        exportTimeouts.push(timeoutMs);
+      }
+
+      return ddev(args, timeoutMs, cwd);
+    };
+  }
+
   it("exports the database and archives the upload directories", async () => {
     const calls: string[][] = [];
     const ddev = fakeDdev({ filesDirs: "/var/www/html/web/wp-content/uploads" }, calls);
 
-    const target = await backupProject("app", projectDir, backupDir, ddev);
+    const target = await backupProject("app", projectDir, backupDir, {}, ddev);
 
     expect(target.startsWith(join(backupDir, "app") + "/")).toBe(true);
     expect(calls).toEqual([
@@ -97,7 +115,7 @@ describe("backupProject", () => {
   it("starts a stopped project for the backup, then stops it again", async () => {
     const calls: string[][] = [];
 
-    await backupProject("app", projectDir, backupDir, fakeDdev({ status: "stopped" }, calls));
+    await backupProject("app", projectDir, backupDir, {}, fakeDdev({ status: "stopped" }, calls));
 
     expect(calls[1]).toEqual(["start", "app"]);
     expect(calls.at(-1)).toEqual(["stop", "app"]);
@@ -106,7 +124,7 @@ describe("backupProject", () => {
   it("leaves a running project running", async () => {
     const calls: string[][] = [];
 
-    await backupProject("app", projectDir, backupDir, fakeDdev({}, calls));
+    await backupProject("app", projectDir, backupDir, {}, fakeDdev({}, calls));
 
     expect(calls.some(([command]) => command === "start" || command === "stop")).toBe(false);
   });
@@ -118,6 +136,7 @@ describe("backupProject", () => {
       "app",
       projectDir,
       backupDir,
+      {},
       fakeDdev({ database: false, filesDirs: "/var/www/html/web/wp-content/uploads" }, calls),
     );
 
@@ -130,6 +149,7 @@ describe("backupProject", () => {
       "app",
       projectDir,
       backupDir,
+      {},
       // Missing on the host, and outside the project
       fakeDdev({ filesDirs: "/var/www/html/web/sites/default/files,/etc" }, []),
     );
@@ -145,6 +165,7 @@ describe("backupProject", () => {
       "app",
       projectDir,
       backupDir,
+      {},
       fakeDdev({ filesDirs: "/var/www/html/web/wp-content/uploads,/var/www/html/private" }, []),
     );
 
@@ -157,7 +178,7 @@ describe("backupProject", () => {
     const calls: string[][] = [];
 
     await expect(
-      backupProject("app", projectDir, backupDir, fakeDdev({ status: "stopped", fails: ["export-db"] }, calls)),
+      backupProject("app", projectDir, backupDir, {}, fakeDdev({ status: "stopped", fails: ["export-db"] }, calls)),
     ).rejects.toThrow(/Could not export the database/);
 
     expect(readdirSync(join(backupDir, "app"))).toEqual([]);
@@ -167,7 +188,7 @@ describe("backupProject", () => {
 
   it("fails when the project cannot be started", async () => {
     await expect(
-      backupProject("app", projectDir, backupDir, fakeDdev({ status: "stopped", fails: ["start"] }, [])),
+      backupProject("app", projectDir, backupDir, {}, fakeDdev({ status: "stopped", fails: ["start"] }, [])),
     ).rejects.toThrow(/Could not start app/);
 
     expect(readdirSync(join(backupDir, "app"))).toEqual([]);
@@ -175,13 +196,29 @@ describe("backupProject", () => {
 
   it("fails when the upload directories cannot be read", async () => {
     await expect(
-      backupProject("app", projectDir, backupDir, fakeDdev({ fails: ["exec"] }, [])),
+      backupProject("app", projectDir, backupDir, {}, fakeDdev({ fails: ["exec"] }, [])),
     ).rejects.toThrow(/upload directories/);
+  });
+
+  it("gives the export 10 minutes by default", async () => {
+    const exportTimeouts: number[] = [];
+
+    await backupProject("app", projectDir, backupDir, {}, timedDdev(exportTimeouts));
+
+    expect(exportTimeouts).toEqual([EXPORT_TIMEOUT_MS]);
+  });
+
+  it("gives the export the time limit it is given", async () => {
+    const exportTimeouts: number[] = [];
+
+    await backupProject("app", projectDir, backupDir, { timeoutMs: 3_600_000 }, timedDdev(exportTimeouts));
+
+    expect(exportTimeouts).toEqual([3_600_000]);
   });
 
   it("fails when DDEV does not know the project", async () => {
     await expect(
-      backupProject("app", projectDir, backupDir, fakeDdev({ fails: ["describe"] }, [])),
+      backupProject("app", projectDir, backupDir, {}, fakeDdev({ fails: ["describe"] }, [])),
     ).rejects.toThrow(/Could not describe the DDEV project app/);
 
     expect(existsSync(backupDir)).toBe(false);
@@ -241,3 +278,4 @@ describe("removeOldBackups", () => {
     expect(removeOldBackups({ dir: join(dir, "missing"), retainDays: 14 }, now)).toBe(0);
   });
 });
+

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
-import { loadConfig, validateConfig } from "./utils/config.js";
+import { loadConfig, parseTimeout, validateConfig } from "./utils/config.js";
 import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
 import { closeDb, initDb } from "./utils/db.js";
@@ -54,6 +54,9 @@ Destroy options:
   -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
   --backup                Back up the database and upload directories first, to
                           [backup] dir. If the backup fails, nothing is removed
+  --timeout <duration>    Time limit of each backup step, the database dump and the
+                          files archive: 10m, 90s, 1h; a bare number is minutes
+                          (default: 10m for the dump, 30m for the archive)
 
 Upgrade/update options:
   --dry-run               Show what would be done without making changes
@@ -87,6 +90,7 @@ Examples:
   # Remove a project (as the ddev user, never as root)
   trafic-agent destroy preview-42--my-app
   trafic-agent destroy preview-42--my-app --backup
+  trafic-agent destroy preview-42--my-app --backup --timeout 1h
 `;
 
 function printHelp(): void {
@@ -159,6 +163,16 @@ async function runDestroy(
     process.exit(1);
   }
 
+  // Reject a bad duration rather than quietly using the default: the flag
+  // exists to raise the limit for a large backup
+  const timeout = values.timeout as string | undefined;
+  const timeoutMs = timeout === undefined ? undefined : parseTimeout(timeout);
+
+  if (timeout !== undefined && timeoutMs === undefined) {
+    console.error(`Error: invalid --timeout "${timeout}". Expected a duration such as 10m, 90s or 1h`);
+    process.exit(1);
+  }
+
   // A relative or empty backup.dir would put the backup in the working
   // directory, which start refuses
   const config = loadConfig(values.config as string | undefined);
@@ -166,7 +180,10 @@ async function runDestroy(
   initDb(config.dbPath);
 
   try {
-    await destroyProject(name, config, { backup: values.backup as boolean | undefined });
+    await destroyProject(name, config, {
+      backup: values.backup as boolean | undefined,
+      timeoutMs,
+    });
   } catch (error) {
     console.error(`Error: ${(error as Error).message}`);
     process.exitCode = 1;
@@ -328,6 +345,7 @@ async function main(): Promise<void> {
 
       // Destroy options
       backup: { type: "boolean" },
+      timeout: { type: "string" },
     },
   });
 

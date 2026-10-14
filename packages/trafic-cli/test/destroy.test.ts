@@ -55,6 +55,25 @@ describe("destroy", () => {
     );
   });
 
+  it("gives the agent the timeout for the backup steps", async () => {
+    expect(await remoteCommand({ ...baseOptions, backup: true, timeout: "1h" })).toMatch(
+      /; trafic-agent destroy 'my-app' --backup --timeout '1h'$/,
+    );
+  });
+
+  it("quotes the timeout for the remote shell", async () => {
+    expect(await remoteCommand({ ...baseOptions, backup: true, timeout: "1h; rm -rf ~" })).toMatch(
+      /; trafic-agent destroy 'my-app' --backup --timeout '1h; rm -rf ~'$/,
+    );
+  });
+
+  it("keeps the timeout to itself without a backup", async () => {
+    // The agent uses it for the backup steps only
+    expect(await remoteCommand({ ...baseOptions, timeout: "1h" })).toMatch(
+      /; trafic-agent destroy 'my-app'$/,
+    );
+  });
+
   it("quotes the project name for the remote shell", async () => {
     expect(await remoteCommand({ ...baseOptions, name: "app; rm -rf ~" })).toMatch(
       /; trafic-agent destroy 'app; rm -rf ~'$/,

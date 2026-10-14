@@ -226,6 +226,20 @@ describe("destroyProject", () => {
       expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
     });
 
+    it("gives the backup the time limit it is given", async () => {
+      createProject("app");
+      const timeouts = new Map<string, number>();
+      const ddev = backupRunner([], []);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        timeouts.set(args[0]!, timeoutMs);
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await destroyProject("app", config, { backup: true, timeoutMs: 3_600_000 }, run);
+
+      expect(timeouts.get("export-db")).toBe(3_600_000);
+    });
+
     it("removes nothing when the backup fails", async () => {
       const dir = createProject("app");
       updateProjectAccess("app");

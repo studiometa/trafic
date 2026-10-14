@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 const CONTAINER_APPROOT = "/var/www/html";
 
 /** A dump of a large database takes minutes. */
-const EXPORT_TIMEOUT_MS = 10 * 60 * 1000;
+export const EXPORT_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Upload directories can hold gigabytes. */
 const ARCHIVE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -86,6 +86,16 @@ async function findUploadDirs(dir: string, run: DdevRunner): Promise<string[]> {
     .filter((path) => isDirectory(join(dir, path)));
 }
 
+/** Options of a backup. */
+export interface BackupOptions {
+  /**
+   * Time limit of each step, the database dump and the files archive.
+   * Defaults to EXPORT_TIMEOUT_MS for the dump and ARCHIVE_TIMEOUT_MS for
+   * the archive.
+   */
+  timeoutMs?: number;
+}
+
 /**
  * Write the database dump and the upload archive of a running project.
  */
@@ -93,12 +103,17 @@ async function writeBackup(
   hasDatabase: boolean,
   dir: string,
   target: string,
+  { timeoutMs }: BackupOptions,
   run: DdevRunner,
 ): Promise<void> {
   if (hasDatabase) {
     const file = join(target, "db.sql.gz");
     console.log(`Exporting the database to ${file}`);
-    const { ok } = await run(["export-db", `--file=${file}`], EXPORT_TIMEOUT_MS, dir);
+    const { ok } = await run(
+      ["export-db", `--file=${file}`],
+      timeoutMs ?? EXPORT_TIMEOUT_MS,
+      dir,
+    );
 
     if (!ok) {
       throw new Error("Could not export the database");
@@ -117,7 +132,7 @@ async function writeBackup(
   const file = join(target, "files.tar.gz");
   console.log(`Archiving ${uploadDirs.join(", ")} to ${file}`);
   await execFileAsync("tar", ["-czf", file, "-C", dir, "--", ...uploadDirs], {
-    timeout: ARCHIVE_TIMEOUT_MS,
+    timeout: timeoutMs ?? ARCHIVE_TIMEOUT_MS,
   });
 }
 
@@ -131,13 +146,15 @@ async function writeBackup(
  *   project directory, unless the project has none
  *
  * Both need the project running, so a stopped project is started, then
- * stopped again. A failed backup throws and leaves no backup directory.
- * Returns the backup directory.
+ * stopped again. A failed backup, or a step that takes longer than its time
+ * limit, throws and leaves no backup directory. Returns the backup
+ * directory.
  */
 export async function backupProject(
   name: string,
   dir: string,
   backupDir: string,
+  options: BackupOptions = {},
   run: DdevRunner = nodeDdevRunner,
 ): Promise<string> {
   const info = await getProjectInfo(name, run);
@@ -161,7 +178,7 @@ export async function backupProject(
     }
 
     try {
-      await writeBackup(info.dbType !== undefined, dir, target, run);
+      await writeBackup(info.dbType !== undefined, dir, target, options, run);
     } finally {
       if (!wasRunning && !(await stopProject(name, run))) {
         console.warn(`Could not stop ${name} after the backup`);
