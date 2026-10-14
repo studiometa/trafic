@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   handleAuth,
   handleErrors,
@@ -26,6 +27,8 @@ import {
 
 console.log = () => {};
 console.error = () => {};
+
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { version: string };
 
 /** Let the start that runs after the response settle. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -416,7 +419,7 @@ describe("handleRequest routing", () => {
     await handleRequest(request({}, "/__health__"), out.res, deps);
 
     expect(out.status()).toBe(200);
-    expect(JSON.parse(out.body()).status).toBe("ok");
+    expect(JSON.parse(out.body())).toEqual({ status: "ok", version: pkg.version });
   });
 
   it("sends anything else to the waiting page", async () => {

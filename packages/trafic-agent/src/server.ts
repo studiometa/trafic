@@ -34,6 +34,8 @@ import {
 import { syncForwardAuthAddress } from "./utils/traefik.js";
 import { warnIfWildcardNotApplied } from "./utils/tls.js";
 
+declare const __VERSION__: string;
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // State
@@ -353,7 +355,7 @@ export async function handleRequest(
       await handleStatus(req, res, deps);
     } else if (path === "/__health__") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", version: "__VERSION__" }));
+      res.end(JSON.stringify({ status: "ok", version: __VERSION__ }));
     } else {
       // Default: errors middleware
       await handleErrors(req, res, deps);
