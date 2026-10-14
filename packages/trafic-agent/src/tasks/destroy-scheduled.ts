@@ -8,6 +8,9 @@ import {
   type Clock,
 } from "../utils/db.js";
 import { parseDuration } from "../utils/config.js";
+
+/** Hours, minutes and seconds, in this order: "48h", "1h30m", "90s". */
+const DELAY_REGEX = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
 import { nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
 import type { AgentConfig } from "../types.js";
 
@@ -29,7 +32,8 @@ export function scheduleProjectDestroy(
   options: { backup?: boolean; timeoutMs?: number } = {},
   now: Clock = systemClock,
 ): Date {
-  const delayMs = parseDuration(delay);
+  // The whole string: parseDuration reads "1h30" as 1h and drops the rest
+  const delayMs = DELAY_REGEX.test(delay) ? parseDuration(delay) : 0;
 
   if (delayMs <= 0) {
     throw new Error(`Invalid delay: "${delay}". Use hours, minutes or seconds, e.g. 48h or 1h30m`);

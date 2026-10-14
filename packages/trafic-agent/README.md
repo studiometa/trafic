@@ -79,7 +79,7 @@ The command checks the config as `start` does, and exits with an error before it
 
 ### Scheduled removals
 
-`trafic-agent destroy <name> --delay <duration>` removes nothing. It records the removal date (now plus the delay) in the agent database and exits. The delay uses hours, minutes and seconds: `48h`, `1h30m`, `90m`. With `--backup`, the agent backs up the project before the scheduled removal, and keeps `--timeout` as the time limit of that backup. A new `--delay` for the same project replaces the date, the backup choice and the timeout, unless the removal has started.
+`trafic-agent destroy <name> --delay <duration>` removes nothing. It records the removal date (now plus the delay) in the agent database and exits. The delay uses hours, minutes and seconds, in this order and without spaces: `48h`, `1h30m`, `90m`. The command refuses any other delay, for example `2d`, `1h30` or `48h 30m`. With `--backup`, the agent backs up the project before the scheduled removal, and keeps `--timeout` as the time limit of that backup. A new `--delay` for the same project replaces the date, the backup choice and the timeout, unless the removal has started.
 
 The agent service checks the scheduled removals every `idle_check_interval` (default `5m`). It removes each project whose date is past with the same steps as `trafic-agent destroy`. When a removal fails (for example, the backup fails), the agent logs the error, keeps the removal scheduled and tries again on the next check. A removal that fails after its backup (for example, the service stops during `ddev delete`) does not back up again on the next check: the backup is already made. A failure on one project does not stop the removal of the others.
 

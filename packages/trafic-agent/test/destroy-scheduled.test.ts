@@ -114,7 +114,8 @@ describe("scheduled removals", () => {
     });
 
     it("refuses a delay it cannot read", () => {
-      for (const delay of ["", "0h", "2d", "soon"]) {
+      // parseDuration alone would read "1h30" as 1h and "48h 30m" as 48h
+      for (const delay of ["", "0h", "2d", "soon", "1h30", "48h 30m", "12h2d", " 48h"]) {
         expect(() => scheduleProjectDestroy("app", delay, config, {}, clock)).toThrow(
           /Invalid delay/,
         );
