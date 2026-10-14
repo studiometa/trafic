@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   installAgent,
   createAgentConfig,
@@ -10,16 +11,20 @@ beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { version: string };
+
 const CONFIG_PATH = "/etc/trafic/config.toml";
 const UNIT_PATH = "/etc/systemd/system/trafic-agent.service";
 
 describe("installAgent", () => {
-  it("installs the published package globally", () => {
+  it("installs the published package globally, at its own version", () => {
+    // trafic setup --agent-version installed this version: an install of the
+    // latest one would replace it
     const io = createFakeIo();
 
     installAgent(io);
 
-    expect(io.ran("npm install -g @studiometa/trafic-agent")).toBe(true);
+    expect(io.ran(`npm install -g @studiometa/trafic-agent@${pkg.version}`)).toBe(true);
   });
 });
 

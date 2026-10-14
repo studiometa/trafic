@@ -1,6 +1,8 @@
 import { nodeIo, type SetupIo } from "./io.js";
 import { step, success, info } from "./steps.js";
 
+declare const __VERSION__: string;
+
 /** Node.js major version required by the agent */
 const NODE_MAJOR = 24;
 
@@ -73,15 +75,17 @@ export function installNode(io: SetupIo = nodeIo): void {
 }
 
 /**
- * Install the Trafic agent
+ * Install the Trafic agent globally, at the version that runs this setup.
+ *
+ * `trafic setup --agent-version` installs that version, then runs this
+ * setup: an install with no version would replace it by the latest one.
  */
 export function installAgent(io: SetupIo = nodeIo): void {
   step("Install Trafic agent");
 
-  // Install the agent globally
-  io.exec("npm install -g @studiometa/trafic-agent");
+  io.exec(`npm install -g @studiometa/trafic-agent@${__VERSION__}`);
 
-  success("Trafic agent installed");
+  success(`Trafic agent ${__VERSION__} installed`);
 }
 
 /**
