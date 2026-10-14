@@ -255,6 +255,43 @@ describe("backupProject", () => {
       expect(timeouts.get("exec")).toBe(60_000);
     });
 
+    it("says that a step killed at the time limit timed out", async () => {
+      // ddev only reports a failed command when its time limit kills it
+      const ddev = fakeDdev({}, []);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          vi.advanceTimersByTime(timeoutMs);
+          return Promise.resolve({ ok: false, stdout: "" });
+        }
+
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await expect(backupProject("app", projectDir, backupDir, { timeoutMs: 90_000 }, run)).rejects.toThrow(
+        "The backup timed out: it took longer than its time limit of 90s. Raise the limit with --timeout",
+      );
+    });
+
+    it("names the default time limit", async () => {
+      const ddev = fakeDdev({}, []);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          vi.advanceTimersByTime(timeoutMs);
+          return Promise.resolve({ ok: false, stdout: "" });
+        }
+
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await expect(backupProject("app", projectDir, backupDir, {}, run)).rejects.toThrow(/time limit of 40m\./);
+    });
+
+    it("does not call a failure before the time limit a timeout", async () => {
+      await expect(
+        backupProject("app", projectDir, backupDir, {}, fakeDdev({ fails: ["export-db"] }, [])),
+      ).rejects.toThrow("Could not export the database");
+    });
+
     it("fails and keeps no partial backup when no time is left", async () => {
       const calls: string[][] = [];
       const ddev = fakeDdev({ status: "stopped" }, calls);
@@ -267,7 +304,7 @@ describe("backupProject", () => {
       };
 
       await expect(backupProject("app", projectDir, backupDir, { timeoutMs: 60_000 }, run)).rejects.toThrow(
-        /longer than its time limit/,
+        "The backup timed out: it took longer than its time limit of 1m. Raise the limit with --timeout",
       );
 
       expect(calls.some(([command]) => command === "exec")).toBe(false);

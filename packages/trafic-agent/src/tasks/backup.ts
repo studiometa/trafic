@@ -136,10 +136,30 @@ function timeLeft(deadline: number): number {
   const left = deadline - Date.now();
 
   if (left <= 0) {
-    throw new Error("The backup took longer than its time limit");
+    throw new Error("No time is left for the next step");
   }
 
   return left;
+}
+
+/** A duration in the largest whole unit: 1h, 40m or 90s. */
+function formatDuration(ms: number): string {
+  if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+  if (ms % 60_000 === 0) return `${ms / 60_000}m`;
+  return `${Math.ceil(ms / 1000)}s`;
+}
+
+/**
+ * The error of a backup that went over its time limit. The step that ran
+ * out of time only fails (ddev reports a failed command, tar is killed), so
+ * this says it was the time limit, and how to raise it.
+ */
+function timeoutError(timeoutMs: number, cause: unknown): Error {
+  return new Error(
+    `The backup timed out: it took longer than its time limit of ${formatDuration(timeoutMs)}. ` +
+      "Raise the limit with --timeout",
+    { cause },
+  );
 }
 
 /**
@@ -263,11 +283,15 @@ export async function backupProject(
       }
     }
 
+    // One time limit for all the steps, so the caller knows how long the
+    // backup can take
+    const timeoutMs = options.timeoutMs ?? BACKUP_TIMEOUT_MS;
+    const deadline = Date.now() + timeoutMs;
+
     try {
-      // One time limit for all the steps, so the caller knows how long the
-      // backup can take
-      const deadline = Date.now() + (options.timeoutMs ?? BACKUP_TIMEOUT_MS);
       await writeBackup(info.dbType !== undefined, dir, target, deadline, run);
+    } catch (error) {
+      throw Date.now() >= deadline ? timeoutError(timeoutMs, error) : error;
     } finally {
       if (!wasRunning && !(await stopProject(name, run))) {
         console.warn(`Could not stop ${name} after the backup`);
