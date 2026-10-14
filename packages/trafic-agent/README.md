@@ -158,6 +158,9 @@ port = 9876
 # Scale-to-zero: stop idle projects after this duration
 idle_timeout = "4h"
 
+# Most projects running at the same time (default: 0, no limit)
+max_running_projects = 8
+
 # Backups made by `trafic-agent destroy --backup`
 [backup]
 dir = "/var/backups/trafic"  # default
@@ -211,6 +214,14 @@ auth_policy: allow  # allow, deny, basic, or token
 # Override idle timeout (or disable with "never")
 idle_timeout: never
 ```
+
+## Running project limit
+
+`max_running_projects` limits how many projects run at the same time, so that a burst of traffic on many previews does not use all the memory of the server. Unset or `0` means no limit.
+
+- Before the waiting page starts a stopped project, the agent counts the running projects with `ddev list`. At the limit, it stops the running project with the oldest access first.
+- `trafic deploy` runs `ddev start` without the agent. The idle sweep (every `idle_check_interval`) stops the projects with the oldest access until the server is back under the limit. A project that a deploy started counts as accessed when the sweep first sees it, so it is not the first one stopped.
+- Projects with `idle_timeout: never` are never stopped by this rule. When no other project can be stopped, the agent starts the project anyway and logs a warning.
 
 ## How it works
 

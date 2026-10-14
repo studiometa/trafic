@@ -85,6 +85,7 @@ export {
   removeOldBackups,
   startBackupSweepScheduler,
 } from "./tasks/backup.js";
+export { enforceRunningLimit } from "./tasks/running-limit.js";
 
 // Server
 export { startServer } from "./server.js";

@@ -18,6 +18,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   projectsDir: "/home/ddev/www",
   idleTimeout: "30m",
   idleCheckInterval: "5m",
+  maxRunningProjects: 0,
   auth: {
     defaultPolicy: "basic",
     allowedIps: [],
@@ -103,6 +104,9 @@ export function loadConfig(configPath?: string): AgentConfig {
     idleCheckInterval:
       (parsed.idle_check_interval as string) ??
       DEFAULT_CONFIG.idleCheckInterval,
+    maxRunningProjects:
+      (parsed.max_running_projects as number) ??
+      DEFAULT_CONFIG.maxRunningProjects,
     auth,
     tls,
     backup,
@@ -217,6 +221,13 @@ export function validateConfig(config: AgentConfig): string[] {
 
   if (config.port < 1 || config.port > 65535) {
     errors.push("port must be between 1 and 65535");
+  }
+
+  if (
+    !Number.isInteger(config.maxRunningProjects) ||
+    config.maxRunningProjects < 0
+  ) {
+    errors.push("max_running_projects must be a whole number, 0 or more");
   }
 
   if (

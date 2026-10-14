@@ -16,6 +16,8 @@ export interface AgentConfig {
   idleTimeout: string;
   /** Interval for checking idle projects (e.g., "5m") */
   idleCheckInterval: string;
+  /** Most projects running at the same time (0 = no limit) */
+  maxRunningProjects: number;
   /** Auth configuration */
   auth: AuthConfig;
   /** TLS configuration */
@@ -104,7 +106,7 @@ export interface AuthRule {
  */
 export interface DdevProject {
   name: string;
-  status: "running" | "stopped" | "paused" | "unhealthy";
+  status: "running" | "starting" | "stopped" | "paused" | "unhealthy";
   appRoot: string;
   httpURLs: string[];
   httpsURLs: string[];

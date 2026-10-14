@@ -3,6 +3,7 @@ import {
   startProject,
   stopProject,
   getProjectInfo,
+  listProjects,
   type DdevRunner,
 } from "../src/utils/ddev.js";
 
@@ -121,5 +122,55 @@ describe("getProjectInfo", () => {
     });
 
     await expect(getProjectInfo("my-app", run)).resolves.toBeUndefined();
+  });
+});
+
+describe("listProjects", () => {
+  it("reads every project from the raw array", async () => {
+    const run = runnerThatFinishesLater({
+      ok: true,
+      stdout: JSON.stringify({
+        level: "info",
+        msg: "a table for humans",
+        raw: [
+          { name: "a", status: "running", approot: "/home/ddev/www/a" },
+          { name: "b", status: "stopped", approot: "/home/ddev/www/b" },
+        ],
+      }),
+    });
+
+    const projects = await listProjects(run);
+
+    expect(projects.map((p) => [p.name, p.status, p.appRoot])).toEqual([
+      ["a", "running", "/home/ddev/www/a"],
+      ["b", "stopped", "/home/ddev/www/b"],
+    ]);
+  });
+
+  it("asks ddev for the list as JSON", async () => {
+    const calls: string[][] = [];
+    const run = runnerThatFinishesLater({ ok: true, stdout: "{}" }, calls);
+
+    await listProjects(run);
+
+    expect(calls).toEqual([["list", "-j"]]);
+  });
+
+  it("returns an empty list when ddev fails", async () => {
+    const run = runnerThatFinishesLater({ ok: false, stdout: "" });
+
+    await expect(listProjects(run)).resolves.toEqual([]);
+  });
+
+  it("returns an empty list for output that is not JSON", async () => {
+    const run = runnerThatFinishesLater({ ok: true, stdout: "not json at all" });
+
+    await expect(listProjects(run)).resolves.toEqual([]);
+  });
+
+  it("returns an empty list when the payload has no raw array", async () => {
+    const run = runnerThatFinishesLater({ ok: true, stdout: JSON.stringify([]) });
+
+    await expect(listProjects(run)).resolves.toEqual([]);
   });
 });

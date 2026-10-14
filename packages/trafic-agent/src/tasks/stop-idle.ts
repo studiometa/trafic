@@ -2,11 +2,15 @@ import { getIdleProjects, setProjectStatus } from "../utils/db.js";
 import { stopProject, getProjectInfo, loadProjectList } from "../utils/ddev.js";
 import { parseDuration } from "../utils/config.js";
 import { loadProjectConfig, shouldNeverStop, getIdleTimeoutMs } from "../utils/project-config.js";
+import { enforceRunningLimit } from "./running-limit.js";
 import type { AgentConfig } from "../types.js";
 
 /**
  * Stop idle projects that haven't been accessed recently
  * Respects per-project idle_timeout settings from .ddev/config.trafic.yaml
+ *
+ * Then brings the server back under max_running_projects: a deploy runs
+ * `ddev start` without asking the agent, so only the sweep sees it.
  */
 export async function stopIdleProjects(config: AgentConfig): Promise<void> {
   const globalThresholdMs = parseDuration(config.idleTimeout);
@@ -58,6 +62,15 @@ export async function stopIdleProjects(config: AgentConfig): Promise<void> {
       console.error(`Failed to stop: ${project.name}`);
     }
   }
+
+  await enforceRunningLimit({
+    max: config.maxRunningProjects,
+    reserve: 0,
+    neverStops: (name) => {
+      const projectDir = projects.get(name);
+      return projectDir ? shouldNeverStop(loadProjectConfig(projectDir)) : false;
+    },
+  });
 }
 
 /**

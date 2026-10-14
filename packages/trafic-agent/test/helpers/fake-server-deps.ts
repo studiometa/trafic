@@ -7,6 +7,8 @@ export interface Recorded {
   logged: { project: string; path: string; ip: string }[];
   statuses: [string, string][];
   started: string[];
+  /** Room making and starts, in the order they happened */
+  steps: string[];
 }
 
 export interface FakeDepsOptions {
@@ -21,6 +23,8 @@ export interface FakeDepsOptions {
   info?: Record<string, { status: string }>;
   /** Whether a start succeeds */
   startSucceeds?: boolean;
+  /** Whether making room under max_running_projects throws */
+  makeRoomFails?: boolean;
 }
 
 export const defaultAuth: AuthConfig = {
@@ -50,6 +54,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
     records = {},
     info = {},
     startSucceeds = true,
+    makeRoomFails = false,
   } = options;
 
   const recorded: Recorded = {
@@ -57,6 +62,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
     logged: [],
     statuses: [],
     started: [],
+    steps: [],
   };
 
   const deps: ServerDeps = {
@@ -87,7 +93,14 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
       void recorded.statuses.push([name, status]),
     startProject: (name) => {
       recorded.started.push(name);
+      recorded.steps.push(`start ${name}`);
       return Promise.resolve(startSucceeds);
+    },
+    makeRoom: () => {
+      recorded.steps.push("make room");
+      return makeRoomFails
+        ? Promise.reject(new Error("ddev list failed"))
+        : Promise.resolve();
     },
     getProjectInfo: (name) => {
       const found = info[name];

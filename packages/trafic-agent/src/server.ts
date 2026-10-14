@@ -18,7 +18,8 @@ import {
   setProjectStatus,
   getProject,
 } from "./utils/db.js";
-import { loadProjectConfig } from "./utils/project-config.js";
+import { loadProjectConfig, shouldNeverStop } from "./utils/project-config.js";
+import { enforceRunningLimit } from "./tasks/running-limit.js";
 import { syncForwardAuthAddress } from "./utils/traefik.js";
 import { warnIfWildcardNotApplied } from "./utils/tls.js";
 
@@ -50,6 +51,8 @@ export interface ServerDeps {
   getProject: (name: string) => ReturnType<typeof getProject>;
   setProjectStatus: (name: string, status: "running" | "stopped" | "starting") => void;
   startProject: (name: string) => Promise<boolean>;
+  /** Stop projects so that one more fits under max_running_projects */
+  makeRoom: () => Promise<unknown>;
   getProjectInfo: (name: string) => ReturnType<typeof getProjectInfo>;
 }
 
@@ -204,15 +207,30 @@ export async function handleErrors(
   // serving forward auth for every other project while this runs. The status
   // is recorded when it settles, which is what stops a second request from
   // starting the same project again.
-  void deps.startProject(projectName)
-    .then((success) => {
-      deps.setProjectStatus(projectName, success ? "running" : "stopped");
-    })
-    .catch((error: unknown) => {
-      // Leaving it "starting" forever would wedge the waiting page
-      deps.setProjectStatus(projectName, "stopped");
-      console.error(`Could not start ${projectName}:`, error);
-    });
+  void startWithinLimit(projectName, deps);
+}
+
+/**
+ * Make room under max_running_projects, then start the project.
+ *
+ * A failure to make room does not block the start: a page that never comes
+ * up is worse than a server one project over its limit.
+ */
+async function startWithinLimit(projectName: string, deps: ServerDeps): Promise<void> {
+  try {
+    await deps.makeRoom();
+  } catch (error: unknown) {
+    console.error(`Could not make room for ${projectName}:`, error);
+  }
+
+  try {
+    const success = await deps.startProject(projectName);
+    deps.setProjectStatus(projectName, success ? "running" : "stopped");
+  } catch (error: unknown) {
+    // Leaving it "starting" forever would wedge the waiting page
+    deps.setProjectStatus(projectName, "stopped");
+    console.error(`Could not start ${projectName}:`, error);
+  }
 }
 
 /**
@@ -359,6 +377,12 @@ export function startServer(agentConfig: AgentConfig): void {
     getProject,
     setProjectStatus,
     startProject,
+    makeRoom: () =>
+      enforceRunningLimit({
+        max: config.maxRunningProjects,
+        reserve: 1,
+        neverStops: (name) => shouldNeverStop(projectConfigs.get(name) ?? {}),
+      }),
     getProjectInfo,
   });
 

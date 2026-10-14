@@ -16,6 +16,9 @@ import {
 console.log = () => {};
 console.error = () => {};
 
+/** Let the start that runs after the response settle. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
 const CREDENTIALS = `Basic ${Buffer.from("user:pass").toString("base64")}`;
 const HOSTS = { "app.example.com": "app" };
 
@@ -138,10 +141,46 @@ describe("handleErrors", () => {
     const out = captureResponse();
 
     await handleErrors(request({ "x-forwarded-host": "app.example.com" }), out.res, deps);
+    await settle();
 
     expect(out.status()).toBe(503);
     expect(out.headers()["Retry-After"]).toBe("5");
     expect(recorded.started).toEqual(["app"]);
+  });
+
+  it("makes room under the running limit before it starts the project", async () => {
+    const { deps, recorded } = createFakeDeps({
+      hostnames: HOSTS,
+      records: { app: { status: "stopped" } },
+    });
+
+    await handleErrors(
+      request({ "x-forwarded-host": "app.example.com" }),
+      captureResponse().res,
+      deps,
+    );
+    await settle();
+
+    expect(recorded.steps).toEqual(["make room", "start app"]);
+  });
+
+  it("still starts the project when making room fails", async () => {
+    // A page that never comes up is worse than one project over the limit
+    const { deps, recorded } = createFakeDeps({
+      hostnames: HOSTS,
+      records: { app: { status: "stopped" } },
+      makeRoomFails: true,
+    });
+
+    await handleErrors(
+      request({ "x-forwarded-host": "app.example.com" }),
+      captureResponse().res,
+      deps,
+    );
+    await settle();
+
+    expect(recorded.started).toEqual(["app"]);
+    expect(recorded.statuses).toContainEqual(["app", "running"]);
   });
 
   it("marks the project starting before it responds", async () => {
@@ -168,9 +207,12 @@ describe("handleErrors", () => {
 
     await handleErrors(request({ "x-forwarded-host": "app.example.com" }), out.res, deps);
 
+    await settle();
+
     // Every request during a start would otherwise pile up another ddev start
     expect(out.status()).toBe(503);
     expect(recorded.started).toEqual([]);
+    expect(recorded.steps).toEqual([]);
   });
 
   it("records the project running once the start succeeds", async () => {
@@ -185,7 +227,7 @@ describe("handleErrors", () => {
       captureResponse().res,
       deps,
     );
-    await new Promise((resolve) => setImmediate(resolve));
+    await settle();
 
     expect(recorded.statuses).toContainEqual(["app", "running"]);
   });
@@ -203,7 +245,7 @@ describe("handleErrors", () => {
       captureResponse().res,
       deps,
     );
-    await new Promise((resolve) => setImmediate(resolve));
+    await settle();
 
     expect(recorded.statuses).toContainEqual(["app", "stopped"]);
   });
@@ -215,6 +257,7 @@ describe("handleErrors", () => {
     });
 
     await handleErrors(request({ host: "app.example.com" }), captureResponse().res, deps);
+    await settle();
 
     expect(recorded.started).toEqual(["app"]);
   });
@@ -321,6 +364,7 @@ describe("handleRequest routing", () => {
       captureResponse().res,
       deps,
     );
+    await settle();
 
     expect(recorded.started).toEqual(["app"]);
   });

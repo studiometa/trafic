@@ -59,6 +59,7 @@ describe("validateConfig", () => {
     projectsDir: "/home/ddev/www",
     idleTimeout: "30m",
     idleCheckInterval: "5m",
+    maxRunningProjects: 0,
     auth: {
       defaultPolicy: "basic",
       allowedIps: [],
@@ -105,6 +106,20 @@ describe("validateConfig", () => {
     expect(errors).toContain(
       'auth.default_policy must be "allow", "deny", "basic", or "token"',
     );
+  });
+
+  it.each([
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["a string", "8" as unknown as number],
+  ])("rejects a %s max_running_projects", (_label, value) => {
+    expect(validateConfig({ ...validConfig, maxRunningProjects: value })).toContain(
+      "max_running_projects must be a whole number, 0 or more",
+    );
+  });
+
+  it("accepts a max_running_projects limit", () => {
+    expect(validateConfig({ ...validConfig, maxRunningProjects: 8 })).toEqual([]);
   });
 
   it("accepts token as default policy", () => {
@@ -230,5 +245,31 @@ describe("loadConfig trusted_proxy_hops", () => {
     writeFileSync(path, 'tld = "example.com"\n');
 
     expect(loadConfig(path).auth.trustedProxyHops).toBe(1);
+  });
+});
+
+describe("loadConfig max_running_projects", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "trafic-config-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function load(content: string) {
+    const path = join(dir, "config.toml");
+    writeFileSync(path, `tld = "example.com"\n${content}\n`);
+    return loadConfig(path);
+  }
+
+  it("has no limit by default", () => {
+    expect(load("").maxRunningProjects).toBe(0);
+  });
+
+  it("reads the limit", () => {
+    expect(load("max_running_projects = 8").maxRunningProjects).toBe(8);
   });
 });

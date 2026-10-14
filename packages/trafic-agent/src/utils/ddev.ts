@@ -1,5 +1,5 @@
 import { readFileSync, existsSync, watch } from "node:fs";
-import { execSync, execFile } from "node:child_process";
+import { execFile } from "node:child_process";
 import type { DdevProject } from "../types.js";
 
 /** Strip a single pair of surrounding quotes. */
@@ -227,19 +227,27 @@ export async function stopProject(
 }
 
 /**
- * List all DDEV projects with their status
+ * List all DDEV projects with their live status.
+ *
+ * `ddev list -j` asks Docker, so a project started or stopped outside the
+ * agent (by `trafic deploy`, say) shows its real state here. It wraps the
+ * entries in a `raw` array.
  */
-export function listProjects(): DdevProject[] {
+export async function listProjects(
+  run: DdevRunner = nodeDdevRunner,
+): Promise<DdevProject[]> {
+  const { ok, stdout } = await run(["list", "-j"], 30000);
+
+  if (!ok) {
+    return [];
+  }
+
   try {
-    const output = execSync("ddev list -j", {
-      encoding: "utf-8",
-      timeout: 30000,
-    });
-    const data = JSON.parse(output);
+    const data = JSON.parse(stdout);
 
-    if (!Array.isArray(data)) return [];
+    if (!Array.isArray(data.raw)) return [];
 
-    return data.map((p: Record<string, unknown>) => ({
+    return data.raw.map((p: Record<string, unknown>) => ({
       name: p.name as string,
       status: p.status as DdevProject["status"],
       appRoot: p.approot as string,
