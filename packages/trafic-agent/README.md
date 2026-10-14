@@ -82,6 +82,14 @@ trafic-agent audit
 
 `trafic-agent version` (also `-v`, `--version`) prints the version. `trafic-agent help` (also `-h`, `--help`) prints the help with every option.
 
+### `trafic-agent skill`
+
+Print the [`trafic-agent` agent skill](../../skills/trafic-agent/SKILL.md) of this version to stdout. A coding agent reads it to operate the server. To install the skill from the repository instead, run `npx skills add studiometa/trafic` or `gh skill install studiometa/trafic`.
+
+```bash
+trafic-agent skill
+```
+
 ### `trafic-agent destroy`
 
 Remove a project from the server. Run it as the `ddev` user, the user the service runs as. The command refuses to run as root: DDEV does not run as root, and root could leave files in the database directory that the service cannot write to.

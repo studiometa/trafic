@@ -152,6 +152,23 @@ destroy_preview:
 
 </details>
 
+## Agent skills
+
+Two [Agent Skills](https://agentskills.io) teach a coding agent to use Trafic:
+
+- [`trafic-cli`](skills/trafic-cli/SKILL.md): write and fix the CI jobs that run `trafic setup`, `trafic deploy` and `trafic destroy`.
+- [`trafic-agent`](skills/trafic-agent/SKILL.md): operate the server (setup, upgrade, audit, `destroy`, `config.toml`).
+
+Install them in a project or for your user:
+
+```bash
+npx skills add studiometa/trafic
+# or, with the GitHub CLI
+gh skill install studiometa/trafic
+```
+
+Each package also prints the skill that matches its version: `trafic skill` and `trafic-agent skill`.
+
 ## Documentation
 
 - [CLI README](packages/trafic-cli/README.md) — Deploy and destroy commands

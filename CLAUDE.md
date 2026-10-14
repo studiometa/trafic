@@ -10,6 +10,9 @@ Trafic is a CLI tool and server agent for managing DDEV preview environments on 
 packages/
 ├── trafic-cli/      # @studiometa/trafic-cli — CLI for CI and operators (setup, deploy, destroy)
 └── trafic-agent/    # @studiometa/trafic-agent — Server agent (auth, scale-to-zero, setup)
+skills/
+├── trafic-cli/      # Agent skill for CI jobs that use the CLI (SKILL.md)
+└── trafic-agent/    # Agent skill for server operations (SKILL.md)
 ```
 
 ## Git & Commits
@@ -66,6 +69,7 @@ Commands:
 - `trafic setup` — 5-step server setup over SSH (Node.js, agent, `trafic-agent setup`)
 - `trafic deploy` — 9-step DDEV deployment
 - `trafic destroy` — Remove project from server
+- `trafic skill` — Print `skills/trafic-cli/SKILL.md`, bundled at build time
 
 ### Agent (`packages/trafic-agent/`)
 
@@ -88,6 +92,15 @@ Commands:
 - `trafic-agent audit` — Security audit checks
 - `trafic-agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `trafic destroy` calls it over SSH. Options: `--backup`, `--timeout`, `--delay`, `--cancel`, `--list`
 - `trafic-agent version` / `help` — Print the version (also `-v`, `--version`) or the help (also `-h`, `--help`)
+- `trafic-agent skill` — Print `skills/trafic-agent/SKILL.md`, bundled at build time
+
+### Agent skills (`skills/`)
+
+`skills/<name>/SKILL.md` follow the [Agent Skills spec](https://agentskills.io/specification). `npx skills add studiometa/trafic` and `gh skill install studiometa/trafic` install them from this directory, and `trafic skill` / `trafic-agent skill` print the copy bundled in the package (Vite `?raw` import).
+
+- **Update the skills with each user-visible change** of the CLI or the agent: commands, options, defaults, config keys, error messages, CI patterns. Check the skill against the code, like the READMEs
+- Frontmatter: only spec keys (`name` = directory name, `description` of 1024 characters or less saying what and when, `license`). No Claude Code-only keys
+- Body under 500 lines. `packages/trafic-cli/test/skills-spec.test.ts` checks these rules
 
 ### Agent migrations (`packages/trafic-agent/src/setup/migrations/`)
 

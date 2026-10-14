@@ -136,6 +136,14 @@ With `--delay`, nothing is removed now. The agent records the removal date (now 
 | `--port` | SSH port | `22` |
 | `--ssh-options` | Extra SSH options | - |
 
+### `trafic skill`
+
+Print the [`trafic-cli` agent skill](../../skills/trafic-cli/SKILL.md) of this version to stdout. A coding agent reads it to write or fix the CI jobs. To install the skill from the repository instead, run `npx skills add studiometa/trafic` or `gh skill install studiometa/trafic`.
+
+```bash
+npx @studiometa/trafic-cli@<version> skill
+```
+
 ## CI Examples
 
 ### GitLab CI
