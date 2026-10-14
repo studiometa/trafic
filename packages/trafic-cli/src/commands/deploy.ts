@@ -7,13 +7,15 @@ import { resolveProjectName } from "../types.js";
  * Deploy a project to a DDEV server.
  *
  * Steps:
- * 1. Clone or pull the repository
- * 2. Start DDEV container (if needed)
- * 3. Run before-script (on server, outside container)
- * 4. Rsync build artifacts
- * 5. Run script inside DDEV container
- * 6. Run after-script (on server, outside container)
- * 7. Verify deployment
+ * 1. Cancel a removal scheduled with `trafic destroy --delay`
+ * 2. Clone or pull the repository
+ * 3. Start DDEV container (if needed)
+ * 4. Run before-script (on server, outside container)
+ * 5. Rsync build artifacts
+ * 6. Run create-script (on the deploy that created the project only)
+ * 7. Run script inside DDEV container
+ * 8. Run after-script (on server, outside container)
+ * 9. Verify deployment
  */
 export async function deploy(
   options: DeployOptions,
@@ -29,7 +31,14 @@ export async function deploy(
   info(`Branch: ${options.branch}`);
   info(`Directory: ${projectDir}`);
 
-  // 1. Clone or pull
+  // 1. Cancel a scheduled removal
+  //
+  // First, so the agent cannot remove the project while it is deployed. A
+  // new deploy means the environment is in use again.
+  step("Cancel a scheduled removal");
+  await io.exec(options, `trafic-agent destroy ${ssh.shellQuote(projectName)} --cancel`);
+
+  // 2. Clone or pull
   step("Update source code");
 
   const exists = await io.test(options, `test -d ${projectDir}/.git`);
@@ -72,7 +81,7 @@ export async function deploy(
     );
   }
 
-  // 2. Start DDEV if needed
+  // 3. Start DDEV if needed
   if (!options.noStart) {
     step("Start DDEV container");
 
@@ -91,13 +100,13 @@ export async function deploy(
     }
   }
 
-  // 3. Before script (on server, outside container)
+  // 4. Before script (on server, outside container)
   if (options.beforeScript) {
     step("Run before-script");
     await io.exec(options, `cd ${projectDir} && ${options.beforeScript}`);
   }
 
-  // 4. Rsync build artifacts
+  // 5. Rsync build artifacts
   if (options.sync) {
     step("Sync build artifacts");
 
@@ -119,7 +128,7 @@ export async function deploy(
     }
   }
 
-  // 5. Create script (on server, only on the deploy that created the project)
+  // 6. Create script (on server, only on the deploy that created the project)
   //
   // Runs after the sync so the code is in place, and before the container
   // script so that script can rely on whatever this seeded. Skipped for an
@@ -129,19 +138,19 @@ export async function deploy(
     await runCreateScript(options, projectDir, exists, io);
   }
 
-  // 6. Script inside DDEV container
+  // 7. Script inside DDEV container
   if (options.script) {
     step("Run deploy script in DDEV container");
     await runContainerScript(options, projectDir, io);
   }
 
-  // 7. After script (on server, outside container)
+  // 8. After script (on server, outside container)
   if (options.afterScript) {
     step("Run after-script");
     await io.exec(options, `cd ${projectDir} && ${options.afterScript}`);
   }
 
-  // 8. Verify
+  // 9. Verify
   step("Verify deployment");
 
   try {

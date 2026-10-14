@@ -101,6 +101,24 @@ describe("destroy", () => {
     expect(io.execOptions[0]?.timeoutMs).toBeUndefined();
   });
 
+  it("asks the agent to schedule the removal when a delay is given", async () => {
+    expect(await remoteCommand({ ...baseOptions, preview: "42", delay: "48h" })).toMatch(
+      /; trafic-agent destroy 'preview-42--my-app' --delay '48h'$/,
+    );
+  });
+
+  it("keeps the backup for a scheduled removal", async () => {
+    expect(await remoteCommand({ ...baseOptions, backup: true, delay: "48h" })).toMatch(
+      /; trafic-agent destroy 'my-app' --backup --delay '48h'$/,
+    );
+  });
+
+  it("quotes the delay for the remote shell", async () => {
+    expect(await remoteCommand({ ...baseOptions, delay: "48h; rm -rf ~" })).toMatch(
+      /; trafic-agent destroy 'my-app' --delay '48h; rm -rf ~'$/,
+    );
+  });
+
   it("quotes the project name for the remote shell", async () => {
     expect(await remoteCommand({ ...baseOptions, name: "app; rm -rf ~" })).toMatch(
       /; trafic-agent destroy 'app; rm -rf ~'$/,

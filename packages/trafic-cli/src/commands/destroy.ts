@@ -23,6 +23,10 @@ export const BACKUP_MARGIN_MS = 10 * 60 * 1000;
  * the other steps, so the agent always fails a slow backup cleanly before
  * the SSH connection is cut.
  *
+ * With `delay`, nothing is removed now: the agent records the removal date
+ * and removes the project once it is due, with the backup when one is asked
+ * for. A new deploy cancels the removal.
+ *
  * One remote command checks that the agent is installed and runs it. A
  * separate check could not tell a missing agent from an SSH failure, and
  * would report a connection error as a missing agent.
@@ -51,6 +55,10 @@ export async function destroy(
     timeoutMs = backupMs + BACKUP_MARGIN_MS;
   }
 
+  if (options.delay !== undefined) {
+    args.push("--delay", ssh.shellQuote(options.delay));
+  }
+
   const destroyCommand = `trafic-agent destroy ${args.join(" ")}`;
   const missingAgent = ssh.shellQuote(
     `trafic-agent is not on the PATH of ${options.user}@${options.host}. Set the server up with \`trafic setup\`, then try again`,
@@ -59,13 +67,18 @@ export async function destroy(
   info(`Project: ${projectName}`);
   info(`Server: ${options.user}@${options.host}:${options.port}`);
 
-  step("Destroy the project");
+  step(options.delay === undefined ? "Destroy the project" : "Schedule the removal");
 
   await io.exec(
     options,
     `command -v trafic-agent >/dev/null || { echo ${missingAgent} >&2; exit 127; }; ${destroyCommand}`,
     { log: destroyCommand, timeoutMs },
   );
+
+  if (options.delay !== undefined) {
+    success(`Removal of ${projectName} scheduled in ${options.delay}`);
+    return;
+  }
 
   success(`Destroy of ${projectName} complete`);
 }

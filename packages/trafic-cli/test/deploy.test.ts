@@ -22,13 +22,33 @@ const baseOptions: DeployOptions = {
   timeout: "10m",
 };
 
+describe("deploy scheduled removal", () => {
+  it("cancels a scheduled removal before it touches the project", async () => {
+    const io = createFakeSshIo({ exists: true });
+
+    await deploy({ ...baseOptions, preview: "42" }, io);
+
+    // Before the source update, so the agent cannot remove the project
+    // while it is deployed
+    expect(io.commands[0]).toBe("trafic-agent destroy 'preview-42--my-app' --cancel");
+  });
+
+  it("fails when the agent cannot cancel the removal", async () => {
+    // Deploying anyway would leave the project to be removed later
+    const io = createFakeSshIo({ fails: ["--cancel"] });
+
+    await expect(deploy(baseOptions, io)).rejects.toThrow();
+    expect(io.commands).toHaveLength(1);
+  });
+});
+
 describe("deploy source update", () => {
   it("clones when the project is not there yet", async () => {
     const io = createFakeSshIo({ exists: false });
 
     await deploy(baseOptions, io);
 
-    expect(io.commands[0]).toContain("git clone");
+    expect(io.commands[1]).toContain("git clone");
   });
 
   it("fetches when the repository is already there", async () => {
@@ -36,7 +56,7 @@ describe("deploy source update", () => {
 
     await deploy(baseOptions, io);
 
-    expect(io.commands[0]).toContain("git fetch");
+    expect(io.commands[1]).toContain("git fetch");
   });
 
   it("uses the preview directory for a preview", async () => {
@@ -44,7 +64,8 @@ describe("deploy source update", () => {
 
     await deploy({ ...baseOptions, preview: "42" }, io);
 
-    expect(io.commands[0]).toContain("preview-42--my-app");
+    expect(io.commands[1]).toContain("git clone");
+    expect(io.commands[1]).toContain("preview-42--my-app");
   });
 
   it("writes the local config only on a fresh clone", async () => {

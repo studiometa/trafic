@@ -63,6 +63,8 @@ const HELP = `
     --preview <iid>            MR/PR number (computes the name)
     --backup                   Back up the database and upload directories on the
                                server first. If the backup fails, nothing is removed
+    --delay <duration>         Remove nothing now: the agent removes the project after
+                               this delay (e.g. 48h). A new deploy cancels the removal
     --timeout <duration>       Timeout of the remote command (default: 10m). With
                                --backup, the time limit of the backup on the server,
                                and the remote command gets 10 more minutes. Raise
@@ -83,6 +85,7 @@ const HELP = `
     trafic deploy --host server.example.com --name my-app --env COMPOSER_AUTH --env CI=true
     trafic destroy --host server.example.com --name my-app --preview 42
     trafic destroy --host server.example.com --name my-app --preview 42 --backup
+    trafic destroy --host server.example.com --name my-app --preview 42 --delay 48h
 `;
 
 /**
@@ -227,6 +230,7 @@ function main(): void {
         "projects-dir": { type: "string", default: "~/www" },
         "no-start": { type: "boolean", default: false },
         backup: { type: "boolean", default: false },
+        delay: { type: "string" },
         timeout: { type: "string", default: "10m" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
@@ -381,6 +385,7 @@ function main(): void {
         name: values.name!,
         preview: values.preview,
         backup: values.backup!,
+        delay: values.delay,
         timeout: values.timeout!,
       };
 
