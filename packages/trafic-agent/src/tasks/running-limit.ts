@@ -3,7 +3,12 @@ import {
   setProjectStatus,
   updateProjectAccess,
 } from "../utils/db.js";
-import { listProjects, stopProject } from "../utils/ddev.js";
+import {
+  listProjects,
+  nodeDdevRunner,
+  stopProject,
+  type DdevRunner,
+} from "../utils/ddev.js";
 import type { DdevProject, ProjectRecord } from "../types.js";
 
 /**
@@ -18,14 +23,21 @@ export interface RunningLimitDeps {
   updateProjectAccess: (name: string) => void;
 }
 
-/** The real dependencies, used unless a caller passes its own. */
-export const nodeRunningLimitDeps: RunningLimitDeps = {
-  listProjects: () => listProjects(),
-  stopProject: (name) => stopProject(name),
-  getProject,
-  setProjectStatus: (name, status) => setProjectStatus(name, status),
-  updateProjectAccess: (name) => updateProjectAccess(name),
-};
+/**
+ * The real dependencies: the agent database, and DDEV through `run`. The
+ * default runner is the real one.
+ */
+export function ddevRunningLimitDeps(
+  run: DdevRunner = nodeDdevRunner,
+): RunningLimitDeps {
+  return {
+    listProjects: () => listProjects(run),
+    stopProject: (name) => stopProject(name, run),
+    getProject,
+    setProjectStatus: (name, status) => setProjectStatus(name, status),
+    updateProjectAccess: (name) => updateProjectAccess(name),
+  };
+}
 
 /** Whether the agent works on a project, so it must not be stopped. */
 function isBusy(record: ProjectRecord): boolean {
@@ -77,7 +89,7 @@ function isUp(project: DdevProject): boolean {
  */
 export async function enforceRunningLimit(
   options: RunningLimitOptions,
-  deps: RunningLimitDeps = nodeRunningLimitDeps,
+  deps: RunningLimitDeps = ddevRunningLimitDeps(),
 ): Promise<string[]> {
   const { max, neverStops } = options;
 

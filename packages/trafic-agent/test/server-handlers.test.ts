@@ -1,11 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   handleAuth,
   handleErrors,
   handleStatus,
   handleRequest,
   getEffectiveAuthConfig,
+  makeRoomUnderLimit,
 } from "../src/server.js";
+import { initDb, closeDb, getProject, updateProjectAccess } from "../src/utils/db.js";
+import type { DdevRunner } from "../src/utils/ddev.js";
 import {
   createFakeDeps,
   captureResponse,
@@ -251,6 +254,23 @@ describe("handleErrors", () => {
     expect(recorded.statuses).toContainEqual(["app", "stopped"]);
   });
 
+  it("records it stopped when the start throws", async () => {
+    const { deps, recorded } = createFakeDeps({
+      hostnames: HOSTS,
+      records: { app: { status: "stopped" } },
+      startThrows: true,
+    });
+
+    await handleErrors(
+      request({ "x-forwarded-host": "app.example.com" }),
+      captureResponse().res,
+      deps,
+    );
+    await settle();
+
+    expect(recorded.steps).toEqual(["app starting", "make room", "start app", "app stopped"]);
+  });
+
   it("falls back to the Host header when there is no forwarded host", async () => {
     const { deps, recorded } = createFakeDeps({
       hostnames: HOSTS,
@@ -385,5 +405,52 @@ describe("handleRequest routing", () => {
     await handleRequest(request({}, "/__auth__"), out.res, broken);
 
     expect(out.status()).toBe(500);
+  });
+});
+
+describe("makeRoomUnderLimit", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  /** A ddev that lists every given project running and records each call. */
+  function runningDdev(names: string[], calls: string[][]): DdevRunner {
+    const raw = names.map((name) => ({ name, status: "running", approot: `/home/ddev/www/${name}` }));
+
+    return (args) => {
+      calls.push(args);
+      return Promise.resolve({ ok: true, stdout: args[0] === "list" ? JSON.stringify({ raw }) : "" });
+    };
+  }
+
+  beforeEach(() => {
+    initDb(":memory:");
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it("keeps a project whose own config says idle_timeout: never", async () => {
+    updateProjectAccess("pinned", () => Date.now() - 5 * HOUR);
+    updateProjectAccess("a", () => Date.now() - 2 * HOUR);
+    updateProjectAccess("b", () => Date.now() - HOUR);
+    const calls: string[][] = [];
+
+    const stopped = await makeRoomUnderLimit(
+      2,
+      new Map([["pinned", { idle_timeout: "never" }]]),
+      runningDdev(["pinned", "a", "b"], calls),
+    );
+
+    expect(stopped).toEqual(["a"]);
+    expect(calls).toEqual([["list", "-j"], ["stop", "a"]]);
+    expect(getProject("pinned")?.status).toBe("running");
+  });
+
+  it("asks nothing of ddev without a limit", async () => {
+    const calls: string[][] = [];
+
+    await expect(makeRoomUnderLimit(0, new Map(), runningDdev(["a"], calls))).resolves.toEqual([]);
+
+    expect(calls).toEqual([]);
   });
 });

@@ -23,6 +23,8 @@ export interface FakeDepsOptions {
   info?: Record<string, { status: string }>;
   /** Whether a start succeeds */
   startSucceeds?: boolean;
+  /** Whether a start throws instead of resolving */
+  startThrows?: boolean;
   /** Whether making room under max_running_projects throws */
   makeRoomFails?: boolean;
 }
@@ -54,6 +56,7 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
     records = {},
     info = {},
     startSucceeds = true,
+    startThrows = false,
     makeRoomFails = false,
   } = options;
 
@@ -96,7 +99,9 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
     startProject: (name) => {
       recorded.started.push(name);
       recorded.steps.push(`start ${name}`);
-      return Promise.resolve(startSucceeds);
+      return startThrows
+        ? Promise.reject(new Error("ddev is not installed"))
+        : Promise.resolve(startSucceeds);
     },
     makeRoom: () => {
       recorded.steps.push("make room");

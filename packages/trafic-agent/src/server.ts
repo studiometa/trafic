@@ -10,6 +10,8 @@ import {
   watchProjectList,
   startProject,
   getProjectInfo,
+  nodeDdevRunner,
+  type DdevRunner,
 } from "./utils/ddev.js";
 import {
   initDb,
@@ -18,8 +20,15 @@ import {
   setProjectStatus,
   getProject,
 } from "./utils/db.js";
-import { loadProjectConfig, shouldNeverStop } from "./utils/project-config.js";
-import { enforceRunningLimit } from "./tasks/running-limit.js";
+import {
+  loadProjectConfig,
+  shouldNeverStop,
+  type ProjectConfig,
+} from "./utils/project-config.js";
+import {
+  ddevRunningLimitDeps,
+  enforceRunningLimit,
+} from "./tasks/running-limit.js";
 import { syncForwardAuthAddress } from "./utils/traefik.js";
 import { warnIfWildcardNotApplied } from "./utils/tls.js";
 
@@ -214,6 +223,24 @@ export async function handleErrors(
 }
 
 /**
+ * Stop projects until the running ones fit under `max`, before the waiting
+ * page starts a project. A project's own config says whether it never stops.
+ */
+export function makeRoomUnderLimit(
+  max: number,
+  projectConfigs: Map<string, ProjectConfig>,
+  run: DdevRunner = nodeDdevRunner,
+): Promise<string[]> {
+  return enforceRunningLimit(
+    {
+      max,
+      neverStops: (name) => shouldNeverStop(projectConfigs.get(name) ?? {}),
+    },
+    ddevRunningLimitDeps(run),
+  );
+}
+
+/**
  * Make room under max_running_projects, then start the project.
  *
  * A failure to make room does not block the start: a page that never comes
@@ -380,11 +407,7 @@ export function startServer(agentConfig: AgentConfig): void {
     getProject,
     setProjectStatus,
     startProject,
-    makeRoom: () =>
-      enforceRunningLimit({
-        max: config.maxRunningProjects,
-        neverStops: (name) => shouldNeverStop(projectConfigs.get(name) ?? {}),
-      }),
+    makeRoom: () => makeRoomUnderLimit(config.maxRunningProjects, projectConfigs),
     getProjectInfo,
   });
 
