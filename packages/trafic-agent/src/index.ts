@@ -88,6 +88,7 @@ export {
   startBackupSweepScheduler,
 } from "./tasks/backup.js";
 export { enforceRunningLimit } from "./tasks/running-limit.js";
+export { startAccessLogSweepScheduler } from "./tasks/access-logs.js";
 
 // Server
 export { startServer } from "./server.js";

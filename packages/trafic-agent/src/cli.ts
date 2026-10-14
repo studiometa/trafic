@@ -11,6 +11,7 @@ import {
   startScheduledDestroyScheduler,
 } from "./tasks/destroy-scheduled.js";
 import { startBackupSweepScheduler } from "./tasks/backup.js";
+import { startAccessLogSweepScheduler } from "./tasks/access-logs.js";
 import { setup, audit } from "./setup/index.js";
 import { isRoot } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
@@ -151,6 +152,7 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   startServer(config);
   startIdleScheduler(config);
   startBackupSweepScheduler(config);
+  startAccessLogSweepScheduler();
   startScheduledDestroyScheduler(config);
 }
 
