@@ -1,6 +1,8 @@
 ### Added
 
 - **Agent**: Add the `--version` and `-v` options to `trafic-agent`. They print the version, as the `version` command does
+- **Agent**: A backup of `trafic-agent destroy --backup` that goes over its time limit fails with an error that says it timed out and that `--timeout` raises the limit
+- **Agent**: When `trafic-agent destroy` cannot read the config or open the database, the error says to connect as the `ddev` user, and the command exits with code 1 without a stack trace
 
 ### Fixed
 
