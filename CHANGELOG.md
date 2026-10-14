@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.50 - 2026-10-14
+
+### Added
+
+- **Agent**: Add the `trafic-agent destroy <name>` command. It deletes the DDEV project (`ddev delete -Oy`), removes the project directory and deletes the project's rows from the agent database. It refuses a directory outside `projects_dir` (also after it follows symbolic links) or a project directory that is a symbolic link, and refuses to run as root ([#85])
+- **Agent**: Add the `--backup` option to `trafic-agent destroy`. Before the removal, the agent dumps the database with `ddev export-db` to `db.sql.gz` and archives the upload directories to `files.tar.gz`, in `<backup.dir>/<project>/<timestamp>/`. It starts a stopped project for the backup and stops it again. The idle sweep does not stop a project while it is removed. If the backup fails, nothing is removed and the command fails. `trafic-agent destroy` checks the config as `start` does, and refuses to run when it is not valid ([#85])
+- **Agent**: Add the `[backup]` config section: `dir` (default `/var/backups/trafic`) and `retain_days` (default `14`). The agent service removes backups older than `retain_days` once an hour. `dir` must not be `projects_dir`, be inside it or contain it ([#85])
+- **Agent**: Setup creates `/var/backups/trafic` for the `ddev` user and lets the agent service write to it. A migration does the same on existing servers: run `sudo trafic-agent upgrade` ([#85])
+- **Agent**: Add the `--timeout` option to `trafic-agent destroy`. It sets the time limit of the backup, the database dump and the files archive together (default `40m`). A file that changes while the agent archives it does not fail the backup ([#85])
+- **CLI**: Add the `--backup` option to `trafic destroy`. It runs `trafic-agent destroy --backup` on the server. Upgrade the agent on the server before you use it ([#85])
+- **CLI**: `trafic destroy` reads `--timeout` (default `10m`). With `--backup`, it passes the value to `trafic-agent destroy --timeout` as the time limit of the backup, and the remote command gets that limit plus 10 minutes for the start, the stop and `ddev delete`. Raise it to back up a large project ([#85])
+- **CLI**: Add the `--delay` option to `trafic destroy`, for example `--delay 48h`. It removes nothing now: the agent records the removal date and removes the project when it is due. With `--backup`, the agent backs up the project before the removal, within the `--timeout` of the command ([#85])
+- **Agent**: Add the `--delay`, `--cancel` and `--list` options to `trafic-agent destroy`. They schedule a removal, cancel it and list the scheduled removals. The agent keeps the dates in its database. `--delay` accepts hours, minutes and seconds only, such as `48h` or `1h30m`, and refuses any other value. `--cancel` fails once the removal has started, after its backup ([#85])
+- **Agent**: The agent service removes the projects whose scheduled removal is due, every `idle_check_interval`. When a removal fails, the agent logs the error and tries again on the next check, without a new backup when the backup is already made. The service makes the backups of these removals inside its systemd sandbox, so `[backup] dir` must be inside `/var/backups/trafic`, `/home/ddev` or `/var/lib/trafic`. A backup that cannot write to `[backup] dir` fails with an error that names the sandbox ([#85])
+- **Agent**: Add the `max_running_projects` option to limit how many projects run at the same time. Before the waiting page starts a project, the agent stops the running project with the oldest access when the server is at the limit. Projects that the agent is starting count as running, so many starts at the same time stay under the limit. The idle sweep also stops projects until the server is back under the limit, because `trafic deploy` starts projects without the agent. Projects with `idle_timeout: never` are never stopped by this rule. A project that `trafic-agent destroy` is removing is never stopped by this rule or by the idle sweep, so the backup that starts it does not fail, and the waiting page does not start it again. When the removal is killed, the agent sets the project back to `running` once the `trafic-agent destroy` process is gone, so the idle sweep can stop it. Unset or `0` means no limit ([#85])
+- **Agent**: Add the `--version` and `-v` options to `trafic-agent`. They print the version, as the `version` command does ([#85])
+- **Agent**: A backup of `trafic-agent destroy --backup` that goes over its time limit fails with an error that says it timed out and that `--timeout` raises the limit ([#85])
+- **Agent**: When `trafic-agent destroy` cannot read the config or open the database, the error says to connect as the `ddev` user, and the command exits with code 1 without a stack trace ([#85])
+- **Dev**: Add the `trafic-cli` and `trafic-agent` agent skills in `skills/`. Install them with `npx skills add studiometa/trafic` or `gh skill install studiometa/trafic` ([#85])
+- **CLI**: Add the `trafic skill` command. It prints the `trafic-cli` agent skill that matches the installed version ([#85])
+- **Agent**: Add the `trafic-agent skill` command. It prints the `trafic-agent` agent skill that matches the installed version ([#85])
+
+### Changed
+
+- **CLI**: `trafic destroy` runs `trafic-agent destroy` on the server instead of running `ddev delete` and `rm -rf` itself. The agent finds the project directory from its config, so `destroy` no longer reads `--projects-dir`. `projects_dir` in `/etc/trafic/config.toml` must be the directory that `trafic deploy --projects-dir` uses (default `~/www`, which is `/home/ddev/www`). If you deploy to another directory, set `projects_dir` before you upgrade, or `trafic destroy` fails. `trafic destroy` must connect as the `ddev` user (the default `--user`), because the agent reads `/etc/trafic/config.toml` and writes to `/var/lib/trafic`. Upgrade the agent on the server before you use this CLI version ([#85])
+- **Agent**: The database waits up to 5 seconds for a lock, so the service and `trafic-agent destroy` can write to it at the same time ([#85])
+- **CLI**: `trafic deploy` cancels a removal of the project scheduled with `trafic destroy --delay`. This is the new first step of the deploy, so the deploy fails when `trafic-agent` is not on the `PATH` of the SSH user, or when the agent has already started to remove the project. Upgrade the agent on the server before you upgrade the CLI ([#85])
+
+### Fixed
+
+- **Agent**: `getProjectInfo` now reads the database type from `ddev describe`. It was always empty ([#85])
+- **Agent**: The exported `listProjects` function reads the `raw` array of `ddev list -j` and no longer blocks the event loop. Before, it always returned an empty list ([#85])
+- **Agent**: A start that the agent service did not finish because it restarted no longer leaves the project on the waiting page: the service sets the project back to `running` when it starts again ([#85])
+- **Agent**: `/__health__` returns the agent version. Before, it returned the text `__VERSION__` ([#85])
+- **Agent**: `trafic-agent setup` installs the agent at its own version. Before, it installed the latest version, so `trafic setup --agent-version` did not keep the version it installed ([#85])
+- **Agent**: An `idle_timeout` in `.ddev/config.trafic.yaml` that is shorter than the global `idle_timeout` now stops the project. Before, the idle sweep only looked at the projects idle longer than the global `idle_timeout` ([#85])
+- **Agent**: The agent service removes the access logs older than 30 days, when it starts and then once an hour. Before, the agent database grew without limit ([#85])
+- **CLI**: On a GitHub `pull_request` event, `trafic deploy` takes the branch from `$GITHUB_HEAD_REF`. Before, it took `$GITHUB_REF_NAME`, which is `<number>/merge` there and which git clone cannot use ([#85])
+- **CLI**: `trafic deploy --timeout` also sets the time limit of the rsync of each `--sync` path. Before, a `--sync` always stopped after 10 minutes ([#85])
+- **Agent**: The help and the README of `trafic-agent audit` say to run it with `sudo`. As another user, the firewall and wildcard certificate checks fail ([#85])
+
+[#85]: https://github.com/studiometa/trafic/pull/85
+
 ## 0.1.49 - 2026-10-13
 
 ### Changed
