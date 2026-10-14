@@ -55,7 +55,7 @@ describe("db", () => {
     });
 
     it("can run again over an existing schema without losing data", () => {
-      updateProjectAccess("scalian", clock);
+      updateProjectAccess("my-app", clock);
 
       initDb(":memory:");
 
@@ -120,30 +120,30 @@ describe("db", () => {
 
   describe("updateProjectAccess", () => {
     it("records a new project as running", () => {
-      updateProjectAccess("scalian", clock);
+      updateProjectAccess("my-app", clock);
 
-      expect(getProject("scalian")).toEqual({
-        name: "scalian",
+      expect(getProject("my-app")).toEqual({
+        name: "my-app",
         lastAccess: NOW,
         status: "running",
       });
     });
 
     it("moves last access forward on a later request", () => {
-      updateProjectAccess("scalian", clock);
+      updateProjectAccess("my-app", clock);
       clockValue = NOW + HOUR;
-      updateProjectAccess("scalian", clock);
+      updateProjectAccess("my-app", clock);
 
-      expect(getProject("scalian")?.lastAccess).toBe(NOW + HOUR);
+      expect(getProject("my-app")?.lastAccess).toBe(NOW + HOUR);
     });
 
     it("does not overwrite a status set elsewhere", () => {
       // A start in flight must not be reset to "running" by a request
       // arriving on the waiting page
-      setProjectStatus("scalian", "starting", clock);
-      updateProjectAccess("scalian", clock);
+      setProjectStatus("my-app", "starting", clock);
+      updateProjectAccess("my-app", clock);
 
-      expect(getProject("scalian")?.status).toBe("starting");
+      expect(getProject("my-app")?.status).toBe("starting");
     });
   });
 
@@ -161,20 +161,20 @@ describe("db", () => {
     });
 
     it("changes the status of a known project", () => {
-      updateProjectAccess("scalian", clock);
-      setProjectStatus("scalian", "stopped", clock);
+      updateProjectAccess("my-app", clock);
+      setProjectStatus("my-app", "stopped", clock);
 
-      expect(getProject("scalian")?.status).toBe("stopped");
+      expect(getProject("my-app")?.status).toBe("stopped");
     });
 
     it("leaves last access alone", () => {
-      updateProjectAccess("scalian", clock);
+      updateProjectAccess("my-app", clock);
       clockValue = NOW + HOUR;
-      setProjectStatus("scalian", "stopped", clock);
+      setProjectStatus("my-app", "stopped", clock);
 
       // Otherwise stopping a project would look like activity and defer the
       // next idle sweep
-      expect(getProject("scalian")?.lastAccess).toBe(NOW);
+      expect(getProject("my-app")?.lastAccess).toBe(NOW);
     });
   });
 
@@ -298,7 +298,7 @@ describe("db", () => {
 
   describe("logAccess and getAccessLogs", () => {
     const entry = {
-      project: "scalian",
+      project: "my-app",
       timestamp: NOW,
       ip: "203.0.113.5",
       userAgent: "curl/8",
@@ -308,7 +308,7 @@ describe("db", () => {
     it("stores and reads back an access", () => {
       logAccess(entry);
 
-      const [logged] = getAccessLogs("scalian");
+      const [logged] = getAccessLogs("my-app");
 
       expect(logged).toMatchObject(entry);
       expect(logged?.id).toBeGreaterThan(0);
@@ -318,14 +318,14 @@ describe("db", () => {
       logAccess(entry);
       logAccess({ ...entry, project: "other" });
 
-      expect(getAccessLogs("scalian")).toHaveLength(1);
+      expect(getAccessLogs("my-app")).toHaveLength(1);
     });
 
     it("returns the newest first", () => {
       logAccess({ ...entry, path: "/old", timestamp: NOW });
       logAccess({ ...entry, path: "/new", timestamp: NOW + MINUTE });
 
-      expect(getAccessLogs("scalian").map((l) => l.path)).toEqual(["/new", "/old"]);
+      expect(getAccessLogs("my-app").map((l) => l.path)).toEqual(["/new", "/old"]);
     });
 
     it("honours the limit", () => {
@@ -333,7 +333,7 @@ describe("db", () => {
         logAccess({ ...entry, timestamp: NOW + i });
       }
 
-      expect(getAccessLogs("scalian", 2)).toHaveLength(2);
+      expect(getAccessLogs("my-app", 2)).toHaveLength(2);
     });
 
     it("returns nothing for a project with no accesses", () => {
@@ -461,7 +461,7 @@ describe("db", () => {
 
   describe("cleanOldLogs", () => {
     const entry = {
-      project: "scalian",
+      project: "my-app",
       timestamp: NOW,
       ip: "203.0.113.5",
       userAgent: "curl/8",
@@ -473,7 +473,7 @@ describe("db", () => {
       logAccess({ ...entry, timestamp: NOW - 10 * DAY });
 
       expect(cleanOldLogs(30, clock)).toBe(1);
-      expect(getAccessLogs("scalian")).toHaveLength(1);
+      expect(getAccessLogs("my-app")).toHaveLength(1);
     });
 
     it("reports zero when there is nothing old enough", () => {

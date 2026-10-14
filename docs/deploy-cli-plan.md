@@ -115,14 +115,14 @@ Options:
 ```bash
 # Déploiement preprod classique (WordPress)
 trafic deploy \
-  --host preprod.ovh.studiometa.fr \
+  --host preprod.example.com \
   --name wordpress-project \
   --sync "web/wp-content/themes/studiometa/dist/" \
   --script "composer i --no-interaction --no-progress --prefer-dist"
 
 # Déploiement preview depuis une MR
 trafic deploy \
-  --host preprod.ovh.studiometa.fr \
+  --host preprod.example.com \
   --name wordpress-project \
   --preview 42 \
   --sync "web/wp-content/themes/studiometa/dist/" \
@@ -131,21 +131,21 @@ trafic deploy \
 
 # Suppression d'un environnement preview
 trafic destroy \
-  --host preprod.ovh.studiometa.fr \
+  --host preprod.example.com \
   --name wordpress-project \
   --preview 42
 
 # Déploiement Laravel (sans rsync, tout dans le conteneur)
 trafic deploy \
-  --host preprod.ovh.studiometa.fr \
+  --host preprod.example.com \
   --name mon-app-laravel \
   --script "composer i --no-dev && php artisan migrate --force"
 
-# Déploiement avec jump host (Unistra)
+# Déploiement avec jump host (client)
 trafic deploy \
-  --host 192.168.0.47 \
-  --ssh-options "-J studiometa@185.155.93.167" \
-  --name unistra \
+  --host 10.0.0.47 \
+  --ssh-options "-J deploy@bastion.example.com" \
+  --name client-a \
   --sync "dist/" \
   --script "composer i --no-dev"
 ```
@@ -353,7 +353,7 @@ include:
   - local: config/global/.default-rules.yml
 
 variables:
-  TRAFIC_SSH_HOST: preprod.ovh.studiometa.fr
+  TRAFIC_SSH_HOST: preprod.example.com
   TRAFIC_SSH_USER: ddev
   TRAFIC_SSH_OPTIONS: ''
   TRAFIC_PROJECT_NAME: $CI_PROJECT_PATH_SLUG
@@ -482,13 +482,13 @@ include:
   - config/deploy/trafic/preprod.yml
 ```
 
-### Avec jump host (Unistra) :
+### Avec jump host (client) :
 
 ```yaml
 variables:
-  TRAFIC_SSH_HOST: 192.168.0.47
-  TRAFIC_SSH_OPTIONS: '-J studiometa@185.155.93.167'
-  TRAFIC_PROJECT_NAME: unistra
+  TRAFIC_SSH_HOST: 10.0.0.47
+  TRAFIC_SSH_OPTIONS: '-J deploy@bastion.example.com'
+  TRAFIC_PROJECT_NAME: client-a
   TRAFIC_DEPLOY_SYNC: 'dist/'
   TRAFIC_DEPLOY_SCRIPT: 'composer i --no-dev'
 ```

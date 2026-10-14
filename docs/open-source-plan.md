@@ -20,9 +20,9 @@ Le cœur de l'agent est **déjà générique**. Il repose sur DDEV, Traefik et S
 | `routes/__status__/`      | ❌ Non                 | Polling status                                        |
 | `tasks/stop-idle.ts`      | ❌ Non                 | Scale-to-zero                                         |
 | `plugins/config.ts`       | ❌ Non                 | c12 config loader                                     |
-| `plugins/watcher.ts`      | ⚠️ 1 ligne             | `'ikko.dev'` en fallback TLD (devrait être en config) |
+| `plugins/watcher.ts`      | ⚠️ 1 ligne             | `'example.com'` en fallback TLD (devrait être en config) |
 | `plugins/database.ts`     | ❌ Non                 | Schema init                                           |
-| `cli/setup.ts`            | ⚠️ 1 ligne             | `'ikko.dev'` comme exemple de TLD                     |
+| `cli/setup.ts`            | ⚠️ 1 ligne             | `'example.com'` comme exemple de TLD                     |
 | `cli/setup/ddev.ts`       | ❌ Non                 | Installation DDEV générique                           |
 | `cli/setup/docker.ts`     | ❌ Non                 | Installation Docker générique                         |
 | `cli/setup/node.ts`       | ❌ Non                 | Installation Node via fnm                             |
@@ -33,10 +33,10 @@ Le cœur de l'agent est **déjà générique**. Il repose sur DDEV, Traefik et S
 
 ### Seules parties spécifiques Studio Meta
 
-1. **`.gitlab-ci.yml`** : Jobs de déploiement avec les hosts Studio Meta (ikko.dev, etc.)
+1. **`.gitlab-ci.yml`** : Jobs de déploiement avec les hosts Studio Meta (example.com, etc.)
 2. **`README.md`** : Tableau des serveurs Studio Meta
 3. **`config/example.config.toml`** : Exemple avec `tiptoe` (cosmétique)
-4. **`plugins/watcher.ts` L.27** : Fallback `ikko.dev` au lieu de lire la config
+4. **`plugins/watcher.ts` L.27** : Fallback `example.com` au lieu de lire la config
 5. **Configs serveur** : `config/gitconfig`, `config/vimrc`, `config/zshrc` — spécifiques aux serveurs SM
 
 **Conclusion** : Le code est déjà à 95% générique. Les 5% restants sont du hardcoding de TLD et des fichiers d'infra.
@@ -435,7 +435,7 @@ jobs:
 
 ```diff
 # plugins/watcher.ts
-- const tld = process.env.DDEV_TLD ?? 'ikko.dev';
+- const tld = process.env.DDEV_TLD ?? 'example.com';
 + const tld = config.tld;
 ```
 
@@ -528,7 +528,7 @@ Fournir des exemples pour :
 
 ### Phase 1 : Nettoyage du repo actuel
 
-1. Supprimer le hardcoding `ikko.dev`
+1. Supprimer le hardcoding `example.com`
 2. Ajouter `tld` dans la config
 3. Supprimer les fichiers SM-spécifiques
 
