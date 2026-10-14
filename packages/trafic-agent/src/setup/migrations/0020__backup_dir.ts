@@ -13,11 +13,13 @@ const UNIT_PATH = "/etc/systemd/system/trafic-agent.service";
  * fail with a read-only file system error.
  *
  * Creates the directory first: hardening created it, but a server set up with
- * `--no-hardening` has none, and systemd refuses to start a unit whose
- * `ReadWritePaths` names a missing path. Then rewrites the unit.
+ * `--no-hardening` has none, and the ddev user cannot create it in
+ * /var/backups. Then rewrites the unit, which lists the directory with the
+ * `-` prefix: systemd refuses to start a unit whose `ReadWritePaths` names a
+ * missing path, unless the path has that prefix.
  *
  * Idempotent: the unit is rewritten only while it does not list the backup
- * directory.
+ * directory with the `-` prefix.
  */
 export const migration0020BackupDir: Migration = {
   id: "0020__backup_dir",
@@ -34,7 +36,7 @@ export function runBackupDirMigration(io: SetupIo = nodeIo): void {
 
   const unitAllowsBackups =
     io.fileExists(UNIT_PATH) &&
-    new RegExp(`^ReadWritePaths=.*${BACKUP_DIR}(\\s|$)`, "m").test(io.readFile(UNIT_PATH));
+    new RegExp(`^ReadWritePaths=.*\\s-${BACKUP_DIR}(\\s|$)`, "m").test(io.readFile(UNIT_PATH));
 
   if (!unitAllowsBackups) {
     // Rewrites the unit, then reloads systemd; upgrade restarts the agent

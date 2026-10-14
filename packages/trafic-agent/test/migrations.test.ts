@@ -396,14 +396,27 @@ describe("0020__backup_dir migration", () => {
 
     runBackupDirMigration(io);
 
-    expect(io.written(UNIT_PATH)).toContain("/var/backups/trafic");
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/trafic$/m);
     expect(io.ran("systemctl daemon-reload")).toBe(true);
+  });
+
+  it("rewrites a unit that lists the backup directory without the - prefix", () => {
+    const io = createFakeIo({
+      files: {
+        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/trafic /home/ddev /var/backups/trafic\n",
+      },
+    });
+
+    runBackupDirMigration(io);
+
+    // Without "-", a missing directory stops the unit from starting
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/trafic$/m);
   });
 
   it("leaves a unit that already lists the backup directory alone", () => {
     const io = createFakeIo({
       files: {
-        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/trafic /home/ddev /var/backups/trafic\n",
+        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/trafic /home/ddev -/var/backups/trafic\n",
       },
     });
 

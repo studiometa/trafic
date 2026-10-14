@@ -150,8 +150,9 @@ describe("createSystemdService", () => {
 
     createSystemdService(io);
 
-    // The backup sweep removes old backups from it
-    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* \/var\/backups\/trafic$/m);
+    // The backup sweep removes old backups from it. With "-", a missing
+    // directory does not stop the unit from starting (226/NAMESPACE)
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/trafic$/m);
   });
 
   it("still protects the rest of the filesystem", () => {

@@ -104,8 +104,9 @@ export function createAgentConfig(
   } = options;
   step("Create agent configuration");
 
-  // Create directories. The unit lists the state and backup directories in
-  // ReadWritePaths, and systemd refuses to start it when one is missing.
+  // Create directories. The unit lists the state directory in
+  // ReadWritePaths, and systemd refuses to start it when it is missing. The
+  // ddev user cannot create the backup directory in /var/backups itself.
   io.exec("mkdir -p /etc/trafic");
   io.exec("mkdir -p /var/lib/trafic");
   io.exec("chown ddev:ddev /var/lib/trafic");
@@ -271,8 +272,9 @@ ProtectHome=read-only
 # (.ddev/.webimageBuild), buildx state in .docker, mutagen data. Listing
 # individual paths is whack-a-mole across DDEV versions, so grant the home
 # and leave the rest of /home read-only. The backup sweep removes old
-# backups from ${BACKUP_DIR}.
-ReadWritePaths=/var/lib/trafic /home/ddev ${BACKUP_DIR}
+# backups from ${BACKUP_DIR}; with "-", a missing backup directory does not
+# stop the service from starting.
+ReadWritePaths=/var/lib/trafic /home/ddev -${BACKUP_DIR}
 PrivateTmp=true
 
 [Install]
