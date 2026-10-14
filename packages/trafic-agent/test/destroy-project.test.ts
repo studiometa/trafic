@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -80,6 +81,7 @@ describe("destroyProject", () => {
         trustedProxyHops: 1,
       },
       tls: { dnsEnv: {} },
+      backup: { dir: join(root, "backups"), retainDays: 14 },
     };
 
     initDb(config.dbPath);
@@ -97,7 +99,7 @@ describe("destroyProject", () => {
     logAccess({ project: "preview-42--app", timestamp: 1, ip: "1.2.3.4", userAgent: "ua", path: "/" });
     const calls: { args: string[]; cwd?: string }[] = [];
 
-    await expect(destroyProject("preview-42--app", config, recordingRunner(true, calls))).resolves.toBe(true);
+    await expect(destroyProject("preview-42--app", config, {}, recordingRunner(true, calls))).resolves.toBe(true);
 
     expect(calls).toEqual([{ args: ["delete", "-Oy"], cwd: dir }]);
     expect(existsSync(dir)).toBe(false);
@@ -111,7 +113,7 @@ describe("destroyProject", () => {
     updateProjectAccess("other");
     logAccess({ project: "other", timestamp: 1, ip: "1.2.3.4", userAgent: "ua", path: "/" });
 
-    await destroyProject("app", config, recordingRunner(true, []));
+    await destroyProject("app", config, {}, recordingRunner(true, []));
 
     expect(getProject("other")).toBeDefined();
     expect(getAccessLogs("other")).toHaveLength(1);
@@ -125,7 +127,7 @@ describe("destroyProject", () => {
     updateProjectAccess("other");
     const calls: { args: string[]; cwd?: string }[] = [];
 
-    await expect(destroyProject("gone", config, recordingRunner(true, calls))).resolves.toBe(false);
+    await expect(destroyProject("gone", config, {}, recordingRunner(true, calls))).resolves.toBe(false);
 
     expect(calls).toEqual([]);
     expect(getProject("gone")).toBeUndefined();
@@ -139,7 +141,7 @@ describe("destroyProject", () => {
     const dir = createProject("app");
     updateProjectAccess("app");
 
-    await expect(destroyProject("app", config, recordingRunner(false, []))).resolves.toBe(true);
+    await expect(destroyProject("app", config, {}, recordingRunner(false, []))).resolves.toBe(true);
 
     expect(existsSync(dir)).toBe(false);
     expect(getProject("app")).toBeUndefined();
@@ -149,7 +151,7 @@ describe("destroyProject", () => {
     const calls: { args: string[]; cwd?: string }[] = [];
 
     for (const name of ["", " ", ".", "..", "../etc", "a/b"]) {
-      await expect(destroyProject(name, config, recordingRunner(true, calls))).rejects.toThrow(
+      await expect(destroyProject(name, config, {}, recordingRunner(true, calls))).rejects.toThrow(
         /Invalid project name/,
       );
     }
@@ -165,7 +167,7 @@ describe("destroyProject", () => {
     symlinkSync(outside, join(config.projectsDir, "app"));
     const calls: { args: string[]; cwd?: string }[] = [];
 
-    await expect(destroyProject("app", config, recordingRunner(true, calls))).rejects.toThrow(
+    await expect(destroyProject("app", config, {}, recordingRunner(true, calls))).rejects.toThrow(
       /is a symbolic link/,
     );
 
@@ -182,7 +184,7 @@ describe("destroyProject", () => {
     writeProjectList({ app: join(config.projectsDir, "link", "app") });
     const calls: { args: string[]; cwd?: string }[] = [];
 
-    await expect(destroyProject("app", config, recordingRunner(true, calls))).rejects.toThrow(
+    await expect(destroyProject("app", config, {}, recordingRunner(true, calls))).rejects.toThrow(
       /resolves to .*outside.*not inside the projects directory/,
     );
 
@@ -195,9 +197,48 @@ describe("destroyProject", () => {
     config.projectsDir = join(root, "www-link");
     symlinkSync(join(root, "www"), config.projectsDir);
 
-    await expect(destroyProject("app", config, recordingRunner(true, []))).resolves.toBe(true);
+    await expect(destroyProject("app", config, {}, recordingRunner(true, []))).resolves.toBe(true);
 
     expect(existsSync(dir)).toBe(false);
+  });
+
+  describe("with backup", () => {
+    /** A ddev whose describe finds a running project with a database. */
+    function backupRunner(failing: string[], calls: string[][]): DdevRunner {
+      return (args) => {
+        calls.push(args);
+        const ok = !failing.includes(args[0]!);
+        const stdout =
+          args[0] === "describe"
+            ? JSON.stringify({ raw: { name: args[1], status: "running", dbinfo: { database_type: "mariadb" } } })
+            : "";
+        return Promise.resolve({ ok, stdout });
+      };
+    }
+
+    it("backs the project up before it deletes anything", async () => {
+      createProject("app");
+      const calls: string[][] = [];
+
+      await expect(destroyProject("app", config, { backup: true }, backupRunner([], calls))).resolves.toBe(true);
+
+      expect(calls.map(([command]) => command)).toEqual(["describe", "export-db", "exec", "delete"]);
+      expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
+    });
+
+    it("removes nothing when the backup fails", async () => {
+      const dir = createProject("app");
+      updateProjectAccess("app");
+      const calls: string[][] = [];
+
+      await expect(
+        destroyProject("app", config, { backup: true }, backupRunner(["export-db"], calls)),
+      ).rejects.toThrow(/Could not export the database/);
+
+      expect(calls.some(([command]) => command === "delete")).toBe(false);
+      expect(existsSync(dir)).toBe(true);
+      expect(getProject("app")).toBeDefined();
+    });
   });
 
   describe("resolveProjectDir", () => {

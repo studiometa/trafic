@@ -20,6 +20,21 @@ export interface AgentConfig {
   auth: AuthConfig;
   /** TLS configuration */
   tls: TlsConfig;
+  /** Backup configuration */
+  backup: BackupConfig;
+}
+
+/**
+ * Backup configuration.
+ *
+ * A backup is a directory `<dir>/<project>/<timestamp>` that holds the
+ * database dump and an archive of the upload directories.
+ */
+export interface BackupConfig {
+  /** Directory that holds the backups */
+  dir: string;
+  /** Days to keep a backup before the agent removes it */
+  retainDays: number;
 }
 
 /**
@@ -95,6 +110,7 @@ export interface DdevProject {
   httpsURLs: string[];
   type: string;
   phpVersion?: string;
+  /** Database type, or undefined when the project omits the db container */
   dbType?: string;
 }
 

@@ -193,7 +193,8 @@ export async function getProjectInfo(
       httpsURLs: raw.httpsURLs ?? [],
       type: raw.type,
       phpVersion: raw.php_version,
-      dbType: raw.dbinfo?.dbType,
+      // DDEV only describes a database when the project has one
+      dbType: raw.dbinfo?.database_type,
     };
   } catch {
     return undefined;

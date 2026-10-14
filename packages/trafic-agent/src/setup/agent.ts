@@ -104,10 +104,12 @@ export function createAgentConfig(
   } = options;
   step("Create agent configuration");
 
-  // Create directories
+  // Create directories. The unit lists the state and backup directories in
+  // ReadWritePaths, and systemd refuses to start it when one is missing.
   io.exec("mkdir -p /etc/trafic");
   io.exec("mkdir -p /var/lib/trafic");
   io.exec("chown ddev:ddev /var/lib/trafic");
+  createBackupDir(io);
 
   const configPath = "/etc/trafic/config.toml";
 
@@ -216,6 +218,19 @@ function escapeTomlString(value: string): string {
     .replace(/\t/g, "\\t");
 }
 
+/** Default backup directory, `[backup] dir` in the agent config. */
+export const BACKUP_DIR = "/var/backups/trafic";
+
+/**
+ * Create the backup directory, writable by the ddev user only: it holds
+ * database dumps.
+ */
+export function createBackupDir(io: SetupIo = nodeIo): void {
+  io.exec(`mkdir -p ${BACKUP_DIR}`);
+  io.exec(`chown ddev:ddev ${BACKUP_DIR}`);
+  io.exec(`chmod 700 ${BACKUP_DIR}`);
+}
+
 /**
  * Create systemd service for the agent
  */
@@ -255,8 +270,9 @@ ProtectHome=read-only
 # ddev start writes across its own home: the project directory
 # (.ddev/.webimageBuild), buildx state in .docker, mutagen data. Listing
 # individual paths is whack-a-mole across DDEV versions, so grant the home
-# and leave the rest of /home read-only.
-ReadWritePaths=/var/lib/trafic /home/ddev
+# and leave the rest of /home read-only. The backup sweep removes old
+# backups from ${BACKUP_DIR}.
+ReadWritePaths=/var/lib/trafic /home/ddev ${BACKUP_DIR}
 PrivateTmp=true
 
 [Install]

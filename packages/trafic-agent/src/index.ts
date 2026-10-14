@@ -2,6 +2,7 @@
 export type {
   AgentConfig,
   AuthConfig,
+  BackupConfig,
   AuthRule,
   AuthRequest,
   AuthResult,
@@ -69,6 +70,11 @@ export type { ProjectConfig } from "./utils/project-config.js";
 // Tasks
 export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
 export { destroyProject } from "./tasks/destroy-project.js";
+export {
+  backupProject,
+  removeOldBackups,
+  startBackupSweepScheduler,
+} from "./tasks/backup.js";
 
 // Server
 export { startServer } from "./server.js";

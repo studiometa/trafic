@@ -1,5 +1,6 @@
 import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { backupProject } from "./backup.js";
 import { deleteProject } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
 import type { AgentConfig } from "../types.js";
@@ -97,9 +98,12 @@ function isDirectory(path: string): boolean {
  * Remove a project from the server.
  *
  * Steps:
- * 1. Delete the DDEV project (containers, volumes, no snapshot)
- * 2. Remove the project directory
- * 3. Delete the project's records from the agent database
+ * 1. With `backup`, back up the database and the upload directories
+ * 2. Delete the DDEV project (containers, volumes, no snapshot)
+ * 3. Remove the project directory
+ * 4. Delete the project's records from the agent database
+ *
+ * A failed backup throws before anything is removed.
  *
  * A failed `ddev delete` does not stop the removal: a project DDEV has
  * already forgotten could otherwise never be cleaned up, and the next deploy
@@ -112,6 +116,7 @@ function isDirectory(path: string): boolean {
 export async function destroyProject(
   name: string,
   config: AgentConfig,
+  options: { backup?: boolean } = {},
   run: DdevRunner = nodeDdevRunner,
 ): Promise<boolean> {
   const dir = resolveProjectDir(name, config);
@@ -120,6 +125,11 @@ export async function destroyProject(
     console.warn(`Project directory ${dir} does not exist — nothing to destroy`);
     deleteProject(name);
     return false;
+  }
+
+  if (options.backup) {
+    console.log(`Backing up ${name}`);
+    await backupProject(name, dir, config.backup.dir, run);
   }
 
   console.log(`Deleting DDEV project: ${name}`);

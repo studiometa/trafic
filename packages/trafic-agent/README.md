@@ -10,6 +10,7 @@ Part of [Trafic](https://github.com/studiometa/trafic), a tool for managing DDEV
 - **Scale-to-zero** — Automatically stop idle DDEV projects to save RAM
 - **Auto-start** — Show a waiting page and restart stopped projects on request
 - **Per-project config** — Override auth and idle timeout per project
+- **Backups on removal** — Dump the database and archive the upload directories before a project is removed
 
 ## Installation
 
@@ -52,16 +53,37 @@ Remove a project from the server. Run it as the `ddev` user, the user the servic
 trafic-agent destroy preview-42--my-app
 # or with custom config
 trafic-agent destroy preview-42--my-app --config /etc/trafic/config.toml
+# back up the project first
+trafic-agent destroy preview-42--my-app --backup
 ```
 
 Steps:
-1. **DDEV** — runs `ddev delete -Oy` in the project directory (containers and volumes, no snapshot). A failure is reported as a warning and does not stop the removal
-2. **Directory** — removes the project directory
-3. **Database** — deletes the project's rows from the agent database (`projects` and `access_logs`)
+1. **Backup** (with `--backup` only) — see [Backups](#backups). If the backup fails, the command removes nothing and exits with an error
+2. **DDEV** — runs `ddev delete -Oy` in the project directory (containers and volumes, no snapshot). A failure is reported as a warning and does not stop the removal
+3. **Directory** — removes the project directory
+4. **Database** — deletes the project's rows from the agent database (`projects` and `access_logs`)
 
 The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning, does not run DDEV and only deletes the project's rows from the agent database, so a retry after a failed run cleans them up. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
 
 `trafic destroy` runs this command over SSH.
+
+### Backups
+
+`trafic-agent destroy --backup` writes a backup to `<backup.dir>/<project>/<timestamp>/`, for example `/var/backups/trafic/preview-42--my-app/2026-10-14T07-40-24Z/`:
+
+- `db.sql.gz` — the `ddev export-db` dump. Skipped when the project has no database (`omit_containers: [db]`)
+- `files.tar.gz` — the upload directories, with paths relative to the project directory. Skipped when the project has none
+
+The upload directories are the ones DDEV uses: `upload_dirs` from the project's `.ddev/config.yaml`, or the default of the project type (for example `wp-content/uploads` for WordPress). The agent reads them from `DDEV_FILES_DIRS` in the web container. Both steps need the project to run, so the agent starts a stopped project and stops it again after the backup.
+
+The agent service removes backups older than `retain_days` once an hour. It can only write to `/var/backups/trafic` and `/home/ddev`: if you set `dir` to another path, remove old backups yourself. Setup creates `/var/backups/trafic`, owned by `ddev` with mode `700`.
+
+To restore a backup into a project:
+
+```bash
+ddev import-db --file=/var/backups/trafic/<project>/<timestamp>/db.sql.gz
+tar -xzf /var/backups/trafic/<project>/<timestamp>/files.tar.gz -C <project directory>
+```
 
 ### `trafic-agent upgrade` / `trafic-agent update`
 
@@ -111,6 +133,11 @@ port = 9876
 
 # Scale-to-zero: stop idle projects after this duration
 idle_timeout = "4h"
+
+# Backups made by `trafic-agent destroy --backup`
+[backup]
+dir = "/var/backups/trafic"  # default
+retain_days = 14             # default; older backups are removed
 
 # Authentication
 [auth]

@@ -51,6 +51,10 @@ describe("validateConfig", () => {
     tls: {
       dnsEnv: {},
     },
+    backup: {
+      dir: "/var/backups/trafic",
+      retainDays: 14,
+    },
   };
 
   it("returns no errors for valid config", () => {
@@ -90,6 +94,55 @@ describe("validateConfig", () => {
       auth: { ...validConfig.auth, defaultPolicy: "token" as const },
     };
     expect(validateConfig(config)).toEqual([]);
+  });
+
+  it("requires an absolute backup directory", () => {
+    const config = { ...validConfig, backup: { ...validConfig.backup, dir: "backups" } };
+    expect(validateConfig(config)).toContain("backup.dir must be an absolute path");
+  });
+
+  it.each([0, -1, 1.5])("rejects retain_days = %s", (retainDays) => {
+    // 0 would remove each backup as soon as the sweep sees it
+    const config = { ...validConfig, backup: { ...validConfig.backup, retainDays } };
+    expect(validateConfig(config)).toContain(
+      "backup.retain_days must be a whole number of 1 or more",
+    );
+  });
+});
+
+describe("loadConfig backup", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "trafic-config-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function load(content: string) {
+    const path = join(dir, "config.toml");
+    writeFileSync(path, `tld = "example.com"\n${content}\n`);
+    return loadConfig(path).backup;
+  }
+
+  it("defaults to /var/backups/trafic and 14 days", () => {
+    expect(load("")).toEqual({ dir: "/var/backups/trafic", retainDays: 14 });
+  });
+
+  it("reads the [backup] section", () => {
+    expect(load('[backup]\ndir = "/srv/backups"\nretain_days = 30')).toEqual({
+      dir: "/srv/backups",
+      retainDays: 30,
+    });
+  });
+
+  it("keeps the default for a key the section leaves out", () => {
+    expect(load("[backup]\nretain_days = 7")).toEqual({
+      dir: "/var/backups/trafic",
+      retainDays: 7,
+    });
   });
 });
 

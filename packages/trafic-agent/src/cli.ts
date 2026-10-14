@@ -6,6 +6,7 @@ import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
 import { closeDb, initDb } from "./utils/db.js";
 import { destroyProject } from "./tasks/destroy-project.js";
+import { startBackupSweepScheduler } from "./tasks/backup.js";
 import { setup, audit } from "./setup/index.js";
 import { isRoot } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
@@ -50,6 +51,8 @@ Setup options:
 
 Destroy options:
   -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
+  --backup                Back up the database and upload directories first, to
+                          [backup] dir. If the backup fails, nothing is removed
 
 Upgrade/update options:
   --dry-run               Show what would be done without making changes
@@ -82,6 +85,7 @@ Examples:
 
   # Remove a project (as the ddev user, never as root)
   trafic-agent destroy preview-42--my-app
+  trafic-agent destroy preview-42--my-app --backup
 `;
 
 function printHelp(): void {
@@ -121,9 +125,10 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Start server and scheduler
+  // Start server and schedulers
   startServer(config);
   startIdleScheduler(config);
+  startBackupSweepScheduler(config);
 }
 
 /**
@@ -152,7 +157,7 @@ async function runDestroy(
   initDb(config.dbPath);
 
   try {
-    await destroyProject(name, config);
+    await destroyProject(name, config, { backup: values.backup as boolean | undefined });
   } catch (error) {
     console.error(`Error: ${(error as Error).message}`);
     process.exitCode = 1;
@@ -311,6 +316,9 @@ async function main(): Promise<void> {
 
       // Upgrade options
       list: { type: "boolean" },
+
+      // Destroy options
+      backup: { type: "boolean" },
     },
   });
 

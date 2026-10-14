@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { parse } from "smol-toml";
-import type { AgentConfig, AuthConfig, AuthRule, TlsConfig } from "../types.js";
+import type { AgentConfig, AuthConfig, AuthRule, BackupConfig, TlsConfig } from "../types.js";
 
 const DEFAULT_CONFIG_PATHS = [
   "/etc/trafic/config.toml",
@@ -26,6 +27,10 @@ const DEFAULT_CONFIG: AgentConfig = {
   },
   tls: {
     dnsEnv: {},
+  },
+  backup: {
+    dir: "/var/backups/trafic",
+    retainDays: 14,
   },
 };
 
@@ -65,6 +70,7 @@ export function loadConfig(configPath?: string): AgentConfig {
   // Merge with defaults
   const auth = mergeAuthConfig(parsed.auth as Record<string, unknown>);
   const tls = mergeTlsConfig(parsed.tls as Record<string, unknown>);
+  const backup = mergeBackupConfig(parsed.backup as Record<string, unknown>);
 
   return {
     tld: (parsed.tld as string) ?? DEFAULT_CONFIG.tld,
@@ -80,6 +86,20 @@ export function loadConfig(configPath?: string): AgentConfig {
       DEFAULT_CONFIG.idleCheckInterval,
     auth,
     tls,
+    backup,
+  };
+}
+
+/**
+ * Read the [backup] section. validateConfig reports a bad value.
+ */
+function mergeBackupConfig(raw?: Record<string, unknown>): BackupConfig {
+  if (!raw) return DEFAULT_CONFIG.backup;
+
+  return {
+    dir: (raw.dir as string | undefined) ?? DEFAULT_CONFIG.backup.dir,
+    retainDays:
+      (raw.retain_days as number | undefined) ?? DEFAULT_CONFIG.backup.retainDays,
   };
 }
 
@@ -197,6 +217,15 @@ export function validateConfig(config: AgentConfig): string[] {
     if (typeof value !== "string") {
       errors.push(`tls.dns_env.${key} must be a string`);
     }
+  }
+
+  if (typeof config.backup.dir !== "string" || !isAbsolute(config.backup.dir)) {
+    errors.push("backup.dir must be an absolute path");
+  }
+
+  // 0 would remove each backup as soon as the sweep sees it
+  if (!Number.isInteger(config.backup.retainDays) || config.backup.retainDays < 1) {
+    errors.push("backup.retain_days must be a whole number of 1 or more");
   }
 
   return errors;

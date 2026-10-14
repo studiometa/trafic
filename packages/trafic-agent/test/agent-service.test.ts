@@ -87,6 +87,18 @@ describe("createAgentConfig", () => {
     expect(io.ran("mkdir -p /var/lib/trafic")).toBe(true);
     expect(io.ran("chown ddev:ddev /var/lib/trafic")).toBe(true);
   });
+
+  it("creates the backup directory for the agent user only", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    // Hardening creates it too, but a --no-hardening server needs it: the
+    // unit lists it in ReadWritePaths, and systemd refuses a missing path
+    expect(io.ran("mkdir -p /var/backups/trafic")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/backups/trafic")).toBe(true);
+    expect(io.ran("chmod 700 /var/backups/trafic")).toBe(true);
+  });
 });
 
 describe("createSystemdService", () => {
@@ -131,6 +143,15 @@ describe("createSystemdService", () => {
     expect(io.written(UNIT_PATH)).toContain(
       "ReadWritePaths=/var/lib/trafic /home/ddev",
     );
+  });
+
+  it("grants the agent write access to the backup directory", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    // The backup sweep removes old backups from it
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* \/var\/backups\/trafic$/m);
   });
 
   it("still protects the rest of the filesystem", () => {
