@@ -56,7 +56,7 @@ const HELP = `
                                only (on server). For seeding a database once
     --projects-dir <path>      Projects directory (default: ~/www)
     --no-start                 Skip starting the DDEV container
-    --timeout <duration>       Timeout (default: 10m)
+    --timeout <duration>       Timeout of each remote command (default: 10m)
 
   Destroy options:
     --name <name>              DDEV project name (required)
@@ -64,7 +64,8 @@ const HELP = `
     --backup                   Back up the database and upload directories on the
                                server first. If the backup fails, nothing is removed
     --delay <duration>         Remove nothing now: the agent removes the project after
-                               this delay (e.g. 48h). A new deploy cancels the removal
+                               this delay. Hours, minutes, seconds only: 48h, 1h30m.
+                               A new deploy cancels the removal
     --timeout <duration>       Timeout of the remote command (default: 10m). With
                                --backup, the time limit of the backup on the server,
                                and the remote command gets 10 more minutes. Raise

@@ -29,7 +29,7 @@ Usage:
 Commands:
   start                   Start the agent server
   setup                   Setup a new server (Docker, DDEV, hardening)
-  upgrade                 Check for a new version, install it, run migrations, restart the service
+  upgrade                 Install the latest agent, run migrations, upgrade DDEV, restart the service
   update                  Alias for upgrade
   audit                   Run security audit checks
   destroy <name>          Remove a project: DDEV project, directory, database records,
@@ -38,7 +38,8 @@ Commands:
   help                    Show this help (also -h, --help)
 
 Start options:
-  -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
+  -c, --config <path>     Path to config file (default: first of /etc/trafic/config.toml,
+                          ./config.toml, ./trafic.toml)
   -p, --port <port>       Override port from config
 
 Setup options:
@@ -57,14 +58,16 @@ Setup options:
   --dry-run               Show what would be done without making changes
 
 Destroy options:
-  -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
+  -c, --config <path>     Path to config file (default: first of /etc/trafic/config.toml,
+                          ./config.toml, ./trafic.toml)
   --backup                Back up the database and upload directories first, to
                           [backup] dir. If the backup fails, nothing is removed
   --timeout <duration>    Time limit of the backup, the database dump and the files
                           archive together: 10m, 90s, 1h; a bare number is minutes
                           (default: 40m)
   --delay <duration>      Remove nothing now: schedule the removal after this delay
-                          (e.g. 48h). The agent removes the project when it is due
+                          (hours, minutes, seconds only: 48h, 1h30m). The agent
+                          removes the project when it is due
   --cancel                Cancel the scheduled removal of the project
   --list                  List the scheduled removals
 
@@ -88,7 +91,7 @@ Examples:
 
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
 
-  # Upgrade: install latest version, run migrations, restart service
+  # Upgrade: install the latest agent, run migrations, upgrade DDEV, restart the service
   sudo trafic-agent upgrade
   sudo trafic-agent upgrade --dry-run
   trafic-agent upgrade --list
