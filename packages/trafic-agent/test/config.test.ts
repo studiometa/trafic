@@ -120,6 +120,29 @@ describe("validateConfig", () => {
     expect(validateConfig(config)).toContain("backup.dir must be an absolute path");
   });
 
+  it.each([
+    ["projects_dir itself", "/home/ddev/www"],
+    ["projects_dir with a trailing slash", "/home/ddev/www/"],
+    ["inside projects_dir", "/home/ddev/www/backups"],
+    ["inside a project directory", "/home/ddev/www/app/backups"],
+    ["a parent of projects_dir", "/home/ddev"],
+    ["a parent of projects_dir, not normalized", "/home/ddev/www/.."],
+  ])("rejects a backup directory that is %s", (_, dir) => {
+    // trafic-agent destroy would remove the backup with the project
+    const config = { ...validConfig, projectsDir: "/home/ddev/www", backup: { ...validConfig.backup, dir } };
+    expect(validateConfig(config)).toContain(
+      "backup.dir must not be projects_dir, be inside it or contain it",
+    );
+  });
+
+  it.each(["/home/ddev/backups", "/home/ddev/www-backups"])(
+    "accepts a backup directory next to projects_dir: %s",
+    (dir) => {
+      const config = { ...validConfig, projectsDir: "/home/ddev/www", backup: { ...validConfig.backup, dir } };
+      expect(validateConfig(config)).toEqual([]);
+    },
+  );
+
   it.each([0, -1, 1.5])("rejects retain_days = %s", (retainDays) => {
     // 0 would remove each backup as soon as the sweep sees it
     const config = { ...validConfig, backup: { ...validConfig.backup, retainDays } };

@@ -1,7 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { parse } from "smol-toml";
 import type { AgentConfig, AuthConfig, AuthRule, BackupConfig, TlsConfig } from "../types.js";
+import { isInside } from "./paths.js";
 
 const DEFAULT_CONFIG_PATHS = [
   "/etc/trafic/config.toml",
@@ -239,6 +240,15 @@ export function validateConfig(config: AgentConfig): string[] {
 
   if (typeof config.backup.dir !== "string" || !isAbsolute(config.backup.dir)) {
     errors.push("backup.dir must be an absolute path");
+  } else {
+    // trafic-agent destroy removes the project directories: a backup in
+    // one of them would be removed right after it is written
+    const backupDir = resolve(config.backup.dir);
+    const projectsDir = resolve(config.projectsDir);
+
+    if (backupDir === projectsDir || isInside(projectsDir, backupDir) || isInside(backupDir, projectsDir)) {
+      errors.push("backup.dir must not be projects_dir, be inside it or contain it");
+    }
   }
 
   // 0 would remove each backup as soon as the sweep sees it

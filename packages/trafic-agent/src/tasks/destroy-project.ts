@@ -1,18 +1,13 @@
-import { lstatSync, realpathSync, rmSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { existsSync, lstatSync, realpathSync, rmSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { backupProject, type BackupOptions } from "./backup.js";
 import { deleteProject } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
+import { isInside } from "../utils/paths.js";
 import type { AgentConfig } from "../types.js";
 
 /** Removing containers and volumes is slower than a stop. */
 const DELETE_TIMEOUT_MS = 5 * 60 * 1000;
-
-/** Whether `child` is strictly inside `parent`. */
-function isInside(parent: string, child: string): boolean {
-  const path = relative(parent, child);
-  return Boolean(path) && !isAbsolute(path) && path.split(sep)[0] !== "..";
-}
 
 /**
  * Find the directory of a project, and refuse one outside the projects
@@ -85,6 +80,24 @@ function checkRealPath(dir: string, projectsDir: string): void {
   }
 }
 
+/**
+ * Refuse a backup directory that is the project directory or inside it: the
+ * removal would delete the backup right after it is written. validateConfig
+ * already refuses a backup.dir in projects_dir; this also follows symbolic
+ * links.
+ */
+function checkBackupDir(backupDir: string, dir: string): void {
+  const target = resolve(backupDir);
+  const realTarget = existsSync(target) ? realpathSync(target) : target;
+  const realDir = realpathSync(dir);
+
+  if (target === dir || isInside(dir, target) || realTarget === realDir || isInside(realDir, realTarget)) {
+    throw new Error(
+      `Refusing to back up to ${backupDir}: it is inside the project directory ${dir}, which the removal deletes`,
+    );
+  }
+}
+
 /** Whether a path is an existing directory. */
 function isDirectory(path: string): boolean {
   try {
@@ -129,6 +142,7 @@ export async function destroyProject(
   }
 
   if (options.backup) {
+    checkBackupDir(config.backup.dir, dir);
     console.log(`Backing up ${name}`);
     await backupProject(name, dir, config.backup.dir, { timeoutMs: options.timeoutMs }, run);
   }

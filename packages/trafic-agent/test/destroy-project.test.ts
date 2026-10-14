@@ -242,6 +242,34 @@ describe("destroyProject", () => {
       expect(timeouts.get("export-db")).toBeGreaterThan(3_590_000);
     });
 
+    it("refuses a backup directory inside the project directory", async () => {
+      // The removal would delete the backup right after it is written
+      const dir = createProject("app");
+      config.backup.dir = join(dir, "backups");
+      const calls: string[][] = [];
+
+      await expect(destroyProject("app", config, { backup: true }, backupRunner([], calls))).rejects.toThrow(
+        /inside the project directory/,
+      );
+
+      expect(calls).toEqual([]);
+      expect(existsSync(join(dir, ".ddev", "config.yaml"))).toBe(true);
+    });
+
+    it("refuses a backup directory that a symbolic link takes into the project directory", async () => {
+      const dir = createProject("app");
+      mkdirSync(join(dir, "backups"));
+      config.backup.dir = join(root, "backups-link");
+      symlinkSync(join(dir, "backups"), config.backup.dir);
+      const calls: string[][] = [];
+
+      await expect(destroyProject("app", config, { backup: true }, backupRunner([], calls))).rejects.toThrow(
+        /inside the project directory/,
+      );
+
+      expect(calls).toEqual([]);
+    });
+
     it("removes nothing when the backup fails", async () => {
       const dir = createProject("app");
       updateProjectAccess("app");
