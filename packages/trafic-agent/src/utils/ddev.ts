@@ -26,8 +26,8 @@ const APPROOT_LINE = /^\s+approot:\s*(.+?)\s*$/;
  *
  * The file nests the path under the project name:
  *
- *   scalian:
- *       approot: /home/ddev/www/scalian
+ *   my-app:
+ *       approot: /home/ddev/www/my-app
  *
  * Indentation therefore has to be read. A flat key/value pass produces one
  * entry per line instead: the project mapped to an empty string, plus a

@@ -173,22 +173,22 @@ A CLI subcommand that runs from a developer's machine and talks to multiple serv
 
 [[servers]]
 name = "ovh-preprod"
-host = "preprod.ovh.studiometa.fr"
+host = "preprod.example.com"
 user = "ddev"
-tld = "ovh.previews.studiometa.fr"
+tld = "previews.example.com"
 
 [[servers]]
 name = "hetzner-01"
-host = "hetzner01.studiometa.fr"
+host = "server2.example.com"
 user = "ddev"
-tld = "hz1.previews.studiometa.fr"
+tld = "previews2.example.com"
 
 [[servers]]
-name = "unistra"
-host = "192.168.0.47"
+name = "client-a"
+host = "10.0.0.47"
 user = "ddev"
-ssh_options = "-J studiometa@185.155.93.167"
-tld = "previews.unistra.fr"
+ssh_options = "-J deploy@bastion.example.com"
+tld = "previews.example.org"
 ```
 
 ### CLI Surface
@@ -199,9 +199,9 @@ trafic fleet status
 # ┌──────────────┬──────────────────────────┬──────────┬─────────┬──────────┬──────────┐
 # │ Server       │ Host                     │ Projects │ Running │ Disk     │ RAM      │
 # ├──────────────┼──────────────────────────┼──────────┼─────────┼──────────┼──────────┤
-# │ ovh-preprod  │ preprod.ovh.studiometa.fr│ 24       │ 8       │ 67%      │ 4.2/8 GB │
-# │ hetzner-01   │ hetzner01.studiometa.fr  │ 12       │ 3       │ 43%      │ 2.1/4 GB │
-# │ unistra      │ 192.168.0.47             │ 6        │ 2       │ 51%      │ 1.8/4 GB │
+# │ ovh-preprod  │ preprod.example.com      │ 24       │ 8       │ 67%      │ 4.2/8 GB │
+# │ hetzner-01   │ server2.example.com      │ 12       │ 3       │ 43%      │ 2.1/4 GB │
+# │ client-a     │ 10.0.0.47                │ 6        │ 2       │ 51%      │ 1.8/4 GB │
 # └──────────────┴──────────────────────────┴──────────┴─────────┴──────────┴──────────┘
 
 # List all projects across all servers
@@ -625,7 +625,7 @@ CI config becomes minimal:
 ```yaml
 # .gitlab-ci.yml
 variables:
-  TRAFIC_SSH_HOST: preprod.ovh.studiometa.fr
+  TRAFIC_SSH_HOST: preprod.example.com
   TRAFIC_PROJECT_NAME: my-wordpress
 
 include:

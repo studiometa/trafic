@@ -11,7 +11,7 @@ describe("routePath", () => {
     // The whole point: routing used to compare the raw target, so a query
     // threw every internal route off and the request fell to the waiting page
     expect(routePath("/__auth__?s=search+term")).toBe("/__auth__");
-    expect(routePath("/__status__?project=scalian")).toBe("/__status__");
+    expect(routePath("/__status__?project=my-app")).toBe("/__status__");
     expect(routePath("/__health__?x=1")).toBe("/__health__");
   });
 
@@ -26,7 +26,7 @@ describe("routePath", () => {
 
   it("keeps a subpath, so the prefix branches still match", () => {
     expect(routePath("/__auth__/nested")).toBe("/__auth__/nested");
-    expect(routePath("/__status__/scalian")).toBe("/__status__/scalian");
+    expect(routePath("/__status__/my-app")).toBe("/__status__/my-app");
   });
 
   it("keeps the root as a single slash", () => {
