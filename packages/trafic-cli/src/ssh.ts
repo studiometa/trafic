@@ -140,7 +140,10 @@ export async function exec(
 export interface ExecOptions {
   /** Timeout in milliseconds (default: 10 minutes) */
   timeoutMs?: number;
-  /** Printed instead of the command itself, for commands holding secrets */
+  /**
+   * Printed instead of the command itself, for commands holding secrets or
+   * wrapped in a guard that would hide the part worth reading
+   */
   log?: string;
   /** Overrides how the command is run. Tests pass their own. */
   runner?: CommandRunner;

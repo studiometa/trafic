@@ -11,9 +11,9 @@ import { resolveProjectName } from "../types.js";
  * directory from its own config and deletes the DDEV project, the directory
  * and the project's records in its database.
  *
- * Steps:
- * 1. Check that the agent is installed
- * 2. Run `trafic-agent destroy` on the server
+ * One remote command checks that the agent is installed and runs it. A
+ * separate check could not tell a missing agent from an SSH failure, and
+ * would report a connection error as a missing agent.
  */
 export async function destroy(
   options: DestroyOptions,
@@ -22,23 +22,21 @@ export async function destroy(
   resetSteps();
 
   const projectName = resolveProjectName(options.name, options.preview);
+  const destroyCommand = `trafic-agent destroy ${ssh.shellQuote(projectName)}`;
+  const missingAgent = ssh.shellQuote(
+    `trafic-agent is not on the PATH of ${options.user}@${options.host}. Set the server up with \`trafic setup\`, then try again`,
+  );
 
   info(`Project: ${projectName}`);
   info(`Server: ${options.user}@${options.host}:${options.port}`);
 
-  // 1. Check the agent
-  step("Check the Trafic agent");
-
-  if (!(await io.test(options, "command -v trafic-agent"))) {
-    throw new Error(
-      `trafic-agent is not on the PATH of ${options.user}@${options.host}. Set the server up with \`trafic setup\`, then try again`,
-    );
-  }
-
-  // 2. Destroy the project
   step("Destroy the project");
 
-  await io.exec(options, `trafic-agent destroy ${ssh.shellQuote(projectName)}`);
+  await io.exec(
+    options,
+    `command -v trafic-agent >/dev/null || { echo ${missingAgent} >&2; exit 127; }; ${destroyCommand}`,
+    { log: destroyCommand },
+  );
 
   success(`Destroy of ${projectName} complete`);
 }
