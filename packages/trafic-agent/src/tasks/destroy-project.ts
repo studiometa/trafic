@@ -106,7 +106,8 @@ function isDirectory(path: string): boolean {
  * would find a stale directory.
  *
  * The database must be open (`initDb`). Returns false when there was no
- * project directory, in which case nothing is changed.
+ * project directory. The project's records are still deleted then, so a
+ * retry after a run that failed between steps 2 and 3 cleans them up.
  */
 export async function destroyProject(
   name: string,
@@ -117,6 +118,7 @@ export async function destroyProject(
 
   if (!isDirectory(dir)) {
     console.warn(`Project directory ${dir} does not exist — nothing to destroy`);
+    deleteProject(name);
     return false;
   }
 

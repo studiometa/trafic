@@ -117,14 +117,20 @@ describe("destroyProject", () => {
     expect(getAccessLogs("other")).toHaveLength(1);
   });
 
-  it("does nothing when the project directory is not there", async () => {
+  it("removes leftover records when the directory is already gone", async () => {
+    // A run that removed the directory and then failed to write to the
+    // database must not leave the records behind for good
     updateProjectAccess("gone");
+    logAccess({ project: "gone", timestamp: 1, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+    updateProjectAccess("other");
     const calls: { args: string[]; cwd?: string }[] = [];
 
     await expect(destroyProject("gone", config, recordingRunner(true, calls))).resolves.toBe(false);
 
     expect(calls).toEqual([]);
-    expect(getProject("gone")).toBeDefined();
+    expect(getProject("gone")).toBeUndefined();
+    expect(getAccessLogs("gone")).toEqual([]);
+    expect(getProject("other")).toBeDefined();
   });
 
   it("still removes the directory when ddev delete fails", async () => {
