@@ -34,8 +34,8 @@ Commands:
   audit                   Run security audit checks
   destroy <name>          Remove a project: DDEV project, directory, database records,
                           now or after a delay
-  version                 Show version
-  help                    Show this help
+  version                 Show version (also -v, --version)
+  help                    Show this help (also -h, --help)
 
 Start options:
   -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
@@ -379,6 +379,7 @@ async function main(): Promise<void> {
     options: {
       // Common
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "v" },
 
       // Start options
       config: { type: "string", short: "c" },
@@ -413,6 +414,11 @@ async function main(): Promise<void> {
   if (values.help) {
     printHelp();
     process.exit(0);
+  }
+
+  if (values.version) {
+    printVersion();
+    return;
   }
 
   switch (command) {
