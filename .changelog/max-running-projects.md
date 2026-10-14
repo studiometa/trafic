@@ -4,5 +4,5 @@
 
 ### Fixed
 
-- **Agent**: `listProjects` reads the `raw` array of `ddev list -j` and no longer blocks the event loop. Before, it always returned an empty list
+- **Agent**: The exported `listProjects` function reads the `raw` array of `ddev list -j` and no longer blocks the event loop. Before, it always returned an empty list
 - **Agent**: A start that the agent service did not finish because it restarted no longer leaves the project on the waiting page: the service sets the project back to `running` when it starts again
