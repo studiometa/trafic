@@ -388,7 +388,7 @@ describe("destroyProject", () => {
       expect(getProject("app")).toBeDefined();
     });
 
-    it("removes nothing when the removal is cancelled during the backup", async () => {
+    it("removes nothing when beforeDelete says no after the backup", async () => {
       const dir = createProject("app");
       updateProjectAccess("app");
       const calls: string[][] = [];
@@ -400,12 +400,12 @@ describe("destroyProject", () => {
       };
 
       await expect(
-        destroyProject("app", config, { backup: true, isCancelled: () => cancelled }, cancellingRunner),
+        destroyProject("app", config, { backup: true, beforeDelete: () => !cancelled }, cancellingRunner),
       ).resolves.toBe(false);
 
       expect(calls.some(([command]) => command === "delete")).toBe(false);
       expect(existsSync(dir)).toBe(true);
-      expect(getProject("app")).toBeDefined();
+      expect(getProject("app")?.status).not.toBe("destroying");
       expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
     });
   });

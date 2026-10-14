@@ -199,11 +199,7 @@ async function runDestroy(
     if (values.list) {
       printScheduledDestroys();
     } else if (values.cancel) {
-      console.log(
-        cancelScheduledDestroy(name!)
-          ? `Cancelled the scheduled removal of ${name}`
-          : `No removal scheduled for ${name}`,
-      );
+      cancelDestroy(name!);
     } else if (delay !== undefined) {
       const destroyAt = scheduleProjectDestroy(name!, delay, config, { backup, timeoutMs });
       console.log(
@@ -220,6 +216,22 @@ async function runDestroy(
   }
 }
 
+/**
+ * Cancel the scheduled removal of a project. Fails when the sweep already
+ * removes the project, so a deploy that cancels first stops there.
+ */
+function cancelDestroy(name: string): void {
+  const result = cancelScheduledDestroy(name);
+
+  if (result === "removing") {
+    throw new Error(`the removal of ${name} is in progress, it is too late to cancel it`);
+  }
+
+  console.log(
+    result === "cancelled" ? `Cancelled the scheduled removal of ${name}` : `No removal scheduled for ${name}`,
+  );
+}
+
 /** Print the scheduled removals, soonest first. */
 function printScheduledDestroys(): void {
   const scheduled = getScheduledDestroys();
@@ -229,8 +241,9 @@ function printScheduledDestroys(): void {
     return;
   }
 
-  for (const { name, destroyAt, backup } of scheduled) {
-    console.log(`${new Date(destroyAt).toISOString()}  ${name}${backup ? "  (backup)" : ""}`);
+  for (const { name, destroyAt, backup, removing } of scheduled) {
+    const notes = [backup && "backup", removing && "in progress"].filter(Boolean);
+    console.log(`${new Date(destroyAt).toISOString()}  ${name}${notes.length ? `  (${notes.join(", ")})` : ""}`);
   }
 }
 

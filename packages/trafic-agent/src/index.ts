@@ -56,6 +56,7 @@ export {
   deleteProject,
   scheduleDestroy,
   cancelScheduledDestroy,
+  startScheduledDestroy,
   getScheduledDestroys,
   getIdleProjects,
   logAccess,

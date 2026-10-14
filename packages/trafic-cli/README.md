@@ -116,7 +116,7 @@ The CLI runs [`trafic-agent destroy`](../trafic-agent/README.md#trafic-agent-des
 
 With `--backup`, the agent first dumps the database and archives the upload directories to its backup directory (`[backup] dir`, default `/var/backups/trafic`). If the backup fails, nothing is removed and the command fails. The CLI passes `--timeout` to the agent, which uses it as the time limit of the backup (the database dump and the files archive together). The remote command gets that limit plus 10 minutes, for the start and the stop of a stopped project and for `ddev delete`. Raise `--timeout` to back up a large project. See [Backups](../trafic-agent/README.md#backups).
 
-With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`) and removes the project when it is due, with the backup when `--backup` is set, within the same `--timeout`. Use it after a merge to keep the preview for a short time. A new `trafic deploy` of the project cancels the removal. See [Scheduled removals](../trafic-agent/README.md#scheduled-removals).
+With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`) and removes the project when it is due, with the backup when `--backup` is set, within the same `--timeout`. Use it after a merge to keep the preview for a short time. A new `trafic deploy` of the project cancels the removal, or fails when the agent has already started to remove the project. See [Scheduled removals](../trafic-agent/README.md#scheduled-removals).
 
 **Options:**
 
@@ -190,7 +190,7 @@ The setup command executes 5 steps over SSH:
 
 The deploy command executes 9 steps over SSH:
 
-1. **Cancel a scheduled removal** — Run `trafic-agent destroy <name> --cancel`, so the agent cannot remove a project scheduled with `trafic destroy --delay` while it is deployed. The deploy fails when `trafic-agent` is not on the `PATH` of the SSH user
+1. **Cancel a scheduled removal** — Run `trafic-agent destroy <name> --cancel`, so the agent cannot remove a project scheduled with `trafic destroy --delay` while it is deployed. The deploy fails when `trafic-agent` is not on the `PATH` of the SSH user, or when the agent has already started to remove the project
 2. **Update source code** — Clone the repository, or fetch and check out the branch when it is already there. A clone also writes `.ddev/config.local.yaml` with the project name and the server's router ports, read from `ddev config global`
 3. **Start DDEV** — Run `ddev start` unless the project is already running
 4. **Before-script** — Optional, on the server, outside the container

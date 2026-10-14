@@ -141,10 +141,10 @@ function isDirectory(path: string): boolean {
  *
  * A failed backup throws before anything is removed.
  *
- * A backup can take many minutes. With `isCancelled`, the removal asks
- * again after the backup, and stops without removing anything when the
- * answer is yes: a scheduled removal that a deploy cancelled meanwhile must
- * not delete the new deploy.
+ * A backup can take many minutes. With `beforeDelete`, the removal calls it
+ * after the backup, just before step 2, and stops without removing anything
+ * when it returns false: a scheduled removal that a deploy cancelled
+ * meanwhile must not delete the new deploy.
  *
  * A failed `ddev delete` does not stop the removal: a project DDEV has
  * already forgotten could otherwise never be cleaned up, and the next deploy
@@ -166,7 +166,7 @@ function isDirectory(path: string): boolean {
 export async function destroyProject(
   name: string,
   config: AgentConfig,
-  options: { backup?: boolean; isCancelled?: () => boolean } & BackupOptions = {},
+  options: { backup?: boolean; beforeDelete?: () => boolean } & BackupOptions = {},
   run: DdevRunner = nodeDdevRunner,
 ): Promise<boolean> {
   const dir = resolveProjectDir(name, config);
@@ -208,7 +208,7 @@ async function removeProject(
   name: string,
   dir: string,
   config: AgentConfig,
-  options: { backup?: boolean; isCancelled?: () => boolean } & BackupOptions,
+  options: { backup?: boolean; beforeDelete?: () => boolean } & BackupOptions,
   run: DdevRunner,
 ): Promise<boolean> {
   if (options.backup) {
@@ -216,7 +216,7 @@ async function removeProject(
     await backupProject(name, dir, config.backup.dir, { timeoutMs: options.timeoutMs }, run);
   }
 
-  if (options.isCancelled?.()) {
+  if (options.beforeDelete && !options.beforeDelete()) {
     console.log(`Removal of ${name} cancelled — nothing removed`);
     return false;
   }

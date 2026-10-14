@@ -13,6 +13,7 @@ import {
   cancelScheduledDestroy,
   getScheduledDestroys,
   scheduleDestroy,
+  startScheduledDestroy,
 } from "../src/utils/db.js";
 import type { DdevRunner } from "../src/utils/ddev.js";
 import type { AgentConfig } from "../src/types.js";
@@ -92,7 +93,7 @@ describe("scheduled removals", () => {
 
       expect(destroyAt.getTime()).toBe(NOW + 48 * HOUR);
       expect(getScheduledDestroys()).toEqual([
-        { name: "app", destroyAt: NOW + 48 * HOUR, backup: false },
+        { name: "app", destroyAt: NOW + 48 * HOUR, backup: false, removing: false },
       ]);
     });
 
@@ -100,7 +101,7 @@ describe("scheduled removals", () => {
       scheduleProjectDestroy("app", "1h30m", config, { backup: true }, clock);
 
       expect(getScheduledDestroys()).toEqual([
-        { name: "app", destroyAt: NOW + 1.5 * HOUR, backup: true },
+        { name: "app", destroyAt: NOW + 1.5 * HOUR, backup: true, removing: false },
       ]);
     });
 
@@ -108,7 +109,7 @@ describe("scheduled removals", () => {
       scheduleProjectDestroy("app", "48h", config, { backup: true, timeoutMs: HOUR }, clock);
 
       expect(getScheduledDestroys()).toEqual([
-        { name: "app", destroyAt: NOW + 48 * HOUR, backup: true, timeoutMs: HOUR },
+        { name: "app", destroyAt: NOW + 48 * HOUR, backup: true, timeoutMs: HOUR, removing: false },
       ]);
     });
 
@@ -120,6 +121,18 @@ describe("scheduled removals", () => {
       }
 
       expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("refuses a removal that the sweep already started", () => {
+      scheduleDestroy("app", NOW, true);
+      startScheduledDestroy("app", NOW);
+
+      expect(() => scheduleProjectDestroy("app", "48h", config, {}, clock)).toThrow(
+        /The removal of app is in progress/,
+      );
+      expect(getScheduledDestroys()).toEqual([
+        { name: "app", destroyAt: NOW, backup: true, removing: true },
+      ]);
     });
 
     it("refuses an unsafe name now rather than in a later sweep", () => {
@@ -251,7 +264,60 @@ describe("scheduled removals", () => {
 
       expect(calls.map(([command]) => command)).toEqual(["describe", "export-db", "exec"]);
       expect(existsSync(dir)).toBe(true);
-      expect(getScheduledDestroys()).toEqual([{ name: "app", destroyAt: NOW + HOUR, backup: false }]);
+      expect(getScheduledDestroys()).toEqual([
+        { name: "app", destroyAt: NOW + HOUR, backup: false, removing: false },
+      ]);
+    });
+
+    it("refuses a cancel that comes after the backup and removes the project", async () => {
+      const dir = createProject("app");
+      scheduleDestroy("app", NOW, true);
+      const calls: string[][] = [];
+      const runner = recordingRunner(calls);
+      const cancels: string[] = [];
+
+      // A deploy tries to cancel the removal while ddev delete runs
+      await destroyScheduledProjects(config, clock, (args, timeoutMs, cwd) => {
+        if (args[0] === "delete") {
+          cancels.push(cancelScheduledDestroy("app"));
+          expect(getScheduledDestroys()).toEqual([
+            { name: "app", destroyAt: NOW, backup: true, removing: true },
+          ]);
+        }
+        return runner(args, timeoutMs, cwd);
+      });
+
+      // The deploy is told it is too late, and the removal goes on
+      expect(cancels).toEqual(["removing"]);
+      expect(calls.map(([command]) => command)).toEqual(["describe", "export-db", "exec", "delete"]);
+      expect(existsSync(dir)).toBe(false);
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("does not back the project up again when it retries a removal that failed after the backup", async () => {
+      const dir = createProject("app");
+      scheduleDestroy("app", NOW, true);
+      const runner = recordingRunner([]);
+
+      // The service stops while ddev delete runs
+      await destroyScheduledProjects(config, clock, (args, timeoutMs, cwd) =>
+        args[0] === "delete" ? Promise.reject(new Error("killed")) : runner(args, timeoutMs, cwd),
+      );
+
+      expect(existsSync(dir)).toBe(true);
+      expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
+      expect(getScheduledDestroys()).toEqual([
+        { name: "app", destroyAt: NOW, backup: true, removing: true },
+      ]);
+
+      // DDEV has forgotten the project: a new backup would fail on ddev describe
+      const calls: string[][] = [];
+      await destroyScheduledProjects(config, clock, recordingRunner(calls));
+
+      expect(calls).toEqual([["delete", "-Oy"]]);
+      expect(existsSync(dir)).toBe(false);
+      expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
+      expect(getScheduledDestroys()).toEqual([]);
     });
 
     it("runs one sweep at a time", async () => {

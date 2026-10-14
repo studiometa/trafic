@@ -1,9 +1,9 @@
 import { destroyProject, resolveProjectDir } from "./destroy-project.js";
 import {
-  cancelScheduledDestroy,
   getScheduledDestroy,
   getScheduledDestroys,
   scheduleDestroy,
+  startScheduledDestroy,
   systemClock,
   type Clock,
 } from "../utils/db.js";
@@ -19,7 +19,8 @@ import type { AgentConfig } from "../types.js";
  * even for a project DDEV has forgotten. The name is checked now, so a bad
  * name or a wrong `projects_dir` fails the CI job, not a sweep two days
  * later. With `backup`, the removal backs the project up first, within
- * `timeoutMs` when it is given. Returns the date of the removal.
+ * `timeoutMs` when it is given. A removal that the sweep already started
+ * cannot be scheduled again. Returns the date of the removal.
  */
 export function scheduleProjectDestroy(
   name: string,
@@ -35,6 +36,10 @@ export function scheduleProjectDestroy(
   }
 
   resolveProjectDir(name, config);
+
+  if (getScheduledDestroy(name)?.removing) {
+    throw new Error(`The removal of ${name} is in progress`);
+  }
 
   const destroyAt = now() + delayMs;
   scheduleDestroy(name, destroyAt, options.backup ?? false, options.timeoutMs);
@@ -55,8 +60,12 @@ let sweeping = false;
  *
  * A removal can take minutes, and a deploy or a `--cancel` can cancel the
  * removal of a project meanwhile. So the sweep reads each removal again just
- * before it starts, and once more after the backup. A cancel that comes
- * while `ddev delete` runs is too late: the project is removed.
+ * before it starts, and once more after the backup. There, it marks the
+ * removal as started (startScheduledDestroy) before `ddev delete`: a later
+ * cancel is refused, so the deploy fails instead of deploying a project
+ * that is about to go. A retry of a started removal does not back the
+ * project up again: the backup exists, and DDEV may have forgotten the
+ * project already.
  */
 export async function destroyScheduledProjects(
   config: AgentConfig,
@@ -73,22 +82,27 @@ export async function destroyScheduledProjects(
     for (const { name } of getScheduledDestroys(now())) {
       // Not the row read above: an earlier removal of this sweep took time
       const scheduled = getScheduledDestroy(name, now());
-      const isCancelled = () => !getScheduledDestroy(name, now());
 
       if (!scheduled) {
         continue;
       }
 
-      console.log(`Destroying ${name}: its scheduled removal is due`);
+      console.log(
+        `Destroying ${name}: its scheduled removal is ${scheduled.removing ? "in progress" : "due"}`,
+      );
 
       try {
-        const { backup, timeoutMs } = scheduled;
-        const removed = await destroyProject(name, config, { backup, timeoutMs, isCancelled }, run);
-
-        // A removal clears the schedule itself; a project already gone is not removed
-        if (!removed && !isCancelled()) {
-          cancelScheduledDestroy(name);
-        }
+        // destroyProject clears the schedule, also for a project already gone
+        await destroyProject(
+          name,
+          config,
+          {
+            backup: scheduled.backup && !scheduled.removing,
+            timeoutMs: scheduled.timeoutMs,
+            beforeDelete: () => startScheduledDestroy(name, now()),
+          },
+          run,
+        );
       } catch (error) {
         console.error(
           `Scheduled removal of ${name} failed, retrying on the next sweep: ${(error as Error).message}`,

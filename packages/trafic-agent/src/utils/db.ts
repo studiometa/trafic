@@ -54,7 +54,8 @@ export function initDb(dbPath: string): DatabaseSync {
       name TEXT PRIMARY KEY,
       destroy_at INTEGER NOT NULL,
       backup INTEGER NOT NULL DEFAULT 0,
-      timeout_ms INTEGER
+      timeout_ms INTEGER,
+      removing INTEGER NOT NULL DEFAULT 0
     );
   `);
 
@@ -147,7 +148,7 @@ export function deleteProject(name: string): void {
   const database = getDb();
   database.prepare("DELETE FROM projects WHERE name = ?").run(name);
   database.prepare("DELETE FROM access_logs WHERE project = ?").run(name);
-  cancelScheduledDestroy(name);
+  database.prepare("DELETE FROM scheduled_destroys WHERE name = ?").run(name);
 }
 
 /**
@@ -178,18 +179,61 @@ interface ScheduledDestroyRow {
   destroyAt: number;
   backup: number;
   timeoutMs: number | null;
+  removing: number;
 }
 
-function toScheduledDestroy({ name, destroyAt, backup, timeoutMs }: ScheduledDestroyRow): ScheduledDestroy {
-  return { name, destroyAt, backup: backup === 1, ...(timeoutMs === null ? {} : { timeoutMs }) };
+function toScheduledDestroy({
+  name,
+  destroyAt,
+  backup,
+  timeoutMs,
+  removing,
+}: ScheduledDestroyRow): ScheduledDestroy {
+  return {
+    name,
+    destroyAt,
+    backup: backup === 1,
+    ...(timeoutMs === null ? {} : { timeoutMs }),
+    removing: removing === 1,
+  };
+}
+
+/** The columns of a ScheduledDestroy. */
+const SCHEDULED_DESTROY_COLUMNS =
+  "name, destroy_at as destroyAt, backup, timeout_ms as timeoutMs, removing";
+
+/**
+ * Cancel the scheduled removal of a project:
+ * - "cancelled" when it was scheduled and is now cancelled
+ * - "none" when there was none
+ * - "removing" when the sweep already removes the project (see
+ *   startScheduledDestroy): it is too late, and the removal stays
+ */
+export function cancelScheduledDestroy(name: string): "cancelled" | "none" | "removing" {
+  const database = getDb();
+  const result = database
+    .prepare("DELETE FROM scheduled_destroys WHERE name = ? AND removing = 0")
+    .run(name);
+
+  if (Number(result.changes) > 0) {
+    return "cancelled";
+  }
+
+  return getScheduledDestroy(name) ? "removing" : "none";
 }
 
 /**
- * Cancel the scheduled removal of a project. Returns false when there was none.
+ * Mark a scheduled removal as started, when it is still due at `dueBy`.
+ * From then on, a cancel is refused, and a retry after a failure does not
+ * back the project up again. Returns false when the removal was cancelled
+ * or moved to a later date meanwhile. One statement, so a cancel from
+ * another process comes either before (false) or after (refused).
  */
-export function cancelScheduledDestroy(name: string): boolean {
+export function startScheduledDestroy(name: string, dueBy: number): boolean {
   const database = getDb();
-  const result = database.prepare("DELETE FROM scheduled_destroys WHERE name = ?").run(name);
+  const result = database
+    .prepare("UPDATE scheduled_destroys SET removing = 1 WHERE name = ? AND destroy_at <= ?")
+    .run(name, dueBy);
   return Number(result.changes) > 0;
 }
 
@@ -200,7 +244,7 @@ export function cancelScheduledDestroy(name: string): boolean {
 export function getScheduledDestroys(dueBy = Number.MAX_SAFE_INTEGER): ScheduledDestroy[] {
   const database = getDb();
   const stmt = database.prepare(`
-    SELECT name, destroy_at as destroyAt, backup, timeout_ms as timeoutMs
+    SELECT ${SCHEDULED_DESTROY_COLUMNS}
     FROM scheduled_destroys
     WHERE destroy_at <= ?
     ORDER BY destroy_at, name
@@ -219,7 +263,7 @@ export function getScheduledDestroy(
 ): ScheduledDestroy | undefined {
   const database = getDb();
   const stmt = database.prepare(`
-    SELECT name, destroy_at as destroyAt, backup, timeout_ms as timeoutMs
+    SELECT ${SCHEDULED_DESTROY_COLUMNS}
     FROM scheduled_destroys
     WHERE name = ? AND destroy_at <= ?
   `);

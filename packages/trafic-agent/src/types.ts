@@ -135,6 +135,11 @@ export interface ScheduledDestroy {
   backup: boolean;
   /** Time limit of the backup (`--timeout`), when one was given */
   timeoutMs?: number;
+  /**
+   * Whether the sweep has started to remove the project, after its backup:
+   * a cancel is then too late, and a retry does not back it up again
+   */
+  removing: boolean;
 }
 
 /**

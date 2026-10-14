@@ -13,6 +13,7 @@ import {
   deleteProject,
   scheduleDestroy,
   cancelScheduledDestroy,
+  startScheduledDestroy,
   getScheduledDestroy,
   getScheduledDestroys,
 } from "../src/utils/db.js";
@@ -246,7 +247,9 @@ describe("db", () => {
     it("records a removal with its date and backup", () => {
       scheduleDestroy("app", NOW + DAY, true);
 
-      expect(getScheduledDestroys()).toEqual([{ name: "app", destroyAt: NOW + DAY, backup: true }]);
+      expect(getScheduledDestroys()).toEqual([
+        { name: "app", destroyAt: NOW + DAY, backup: true, removing: false },
+      ]);
     });
 
     it("replaces the date, backup and timeout of a removal already scheduled", () => {
@@ -254,7 +257,7 @@ describe("db", () => {
       scheduleDestroy("app", NOW + 2 * DAY, false);
 
       expect(getScheduledDestroys()).toEqual([
-        { name: "app", destroyAt: NOW + 2 * DAY, backup: false },
+        { name: "app", destroyAt: NOW + 2 * DAY, backup: false, removing: false },
       ]);
     });
 
@@ -277,19 +280,55 @@ describe("db", () => {
       scheduleDestroy("app", NOW, true);
       scheduleDestroy("other", NOW - HOUR, false);
 
-      expect(getScheduledDestroy("app", NOW)).toEqual({ name: "app", destroyAt: NOW, backup: true });
+      expect(getScheduledDestroy("app", NOW)).toEqual({ name: "app", destroyAt: NOW, backup: true, removing: false });
       expect(getScheduledDestroy("app", NOW - MINUTE)).toBeUndefined();
       expect(getScheduledDestroy("app")).toBeDefined();
       scheduleDestroy("timed", NOW, true, HOUR);
-      expect(getScheduledDestroy("timed")).toEqual({ name: "timed", destroyAt: NOW, backup: true, timeoutMs: HOUR });
+      expect(getScheduledDestroy("timed")).toEqual({
+        name: "timed",
+        destroyAt: NOW,
+        backup: true,
+        timeoutMs: HOUR,
+        removing: false,
+      });
       expect(getScheduledDestroy("unknown")).toBeUndefined();
     });
 
     it("cancels a removal and reports whether there was one", () => {
       scheduleDestroy("app", NOW + DAY, false);
 
-      expect(cancelScheduledDestroy("app")).toBe(true);
-      expect(cancelScheduledDestroy("app")).toBe(false);
+      expect(cancelScheduledDestroy("app")).toBe("cancelled");
+      expect(cancelScheduledDestroy("app")).toBe("none");
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("marks a removal as started only when it is still due", () => {
+      scheduleDestroy("app", NOW, false);
+      scheduleDestroy("later", NOW + HOUR, false);
+
+      expect(startScheduledDestroy("app", NOW)).toBe(true);
+      expect(startScheduledDestroy("later", NOW)).toBe(false);
+      expect(startScheduledDestroy("unknown", NOW)).toBe(false);
+      expect(getScheduledDestroys().map(({ name, removing }) => ({ name, removing }))).toEqual([
+        { name: "app", removing: true },
+        { name: "later", removing: false },
+      ]);
+    });
+
+    it("refuses to cancel a removal that has started", () => {
+      scheduleDestroy("app", NOW, false);
+      startScheduledDestroy("app", NOW);
+
+      expect(cancelScheduledDestroy("app")).toBe("removing");
+      expect(getScheduledDestroy("app")?.removing).toBe(true);
+    });
+
+    it("deletes a started removal with the project records", () => {
+      scheduleDestroy("app", NOW, false);
+      startScheduledDestroy("app", NOW);
+
+      deleteProject("app");
+
       expect(getScheduledDestroys()).toEqual([]);
     });
   });
