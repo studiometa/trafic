@@ -120,7 +120,8 @@ export interface DdevProject {
 export interface ProjectRecord {
   name: string;
   lastAccess: number; // Unix timestamp
-  status: "running" | "stopped" | "starting";
+  /** "destroying": trafic-agent destroy is removing it, see destroyProject */
+  status: "running" | "stopped" | "starting" | "destroying";
 }
 
 /**

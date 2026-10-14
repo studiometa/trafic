@@ -19,6 +19,8 @@ import {
   getProject,
   logAccess,
   getAccessLogs,
+  getIdleProjects,
+  setProjectStatus,
 } from "../src/utils/db.js";
 import type { DdevRunner } from "../src/utils/ddev.js";
 import type { AgentConfig } from "../src/types.js";
@@ -268,6 +270,77 @@ describe("destroyProject", () => {
       );
 
       expect(calls).toEqual([]);
+    });
+
+    it("marks the project destroying while it works on it", async () => {
+      // The idle sweep must not stop the project during the backup
+      createProject("app");
+      updateProjectAccess("app");
+      const statuses = new Map<string, string | undefined>();
+      const ddev = backupRunner([], []);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        statuses.set(args[0]!, getProject("app")?.status);
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await destroyProject("app", config, { backup: true }, run);
+
+      expect(Object.fromEntries(statuses)).toEqual({
+        describe: "destroying",
+        "export-db": "destroying",
+        exec: "destroying",
+        delete: "destroying",
+      });
+      expect(getProject("app")).toBeUndefined();
+    });
+
+    it("keeps the project out of the idle sweep during the backup", async () => {
+      // An old access and a running status: the sweep would stop it
+      createProject("app");
+      updateProjectAccess("app", () => 0);
+      setProjectStatus("app", "running");
+      const idle: string[][] = [];
+      const ddev = backupRunner([], []);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          idle.push(getIdleProjects(60_000).map(({ name }) => name));
+        }
+
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await destroyProject("app", config, { backup: true }, run);
+
+      expect(idle).toEqual([[]]);
+    });
+
+    it("sets a running project back to running when the backup fails", async () => {
+      createProject("app");
+      updateProjectAccess("app");
+
+      await expect(
+        destroyProject("app", config, { backup: true }, backupRunner(["export-db"], [])),
+      ).rejects.toThrow();
+
+      expect(getProject("app")?.status).toBe("running");
+    });
+
+    it("sets any other project back to stopped when the backup fails", async () => {
+      // "starting" or a "destroying" left by a killed run must not stay: the
+      // waiting page and the idle sweep would never handle the project again
+      createProject("app");
+      createProject("other");
+      createProject("new");
+      setProjectStatus("app", "starting");
+      setProjectStatus("other", "destroying");
+
+      for (const name of ["app", "other", "new"]) {
+        await expect(
+          destroyProject(name, config, { backup: true }, backupRunner(["export-db"], [])),
+        ).rejects.toThrow();
+
+        expect(getProject(name)?.status).toBe("stopped");
+      }
     });
 
     it("removes nothing when the backup fails", async () => {

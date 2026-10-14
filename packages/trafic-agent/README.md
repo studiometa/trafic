@@ -78,7 +78,7 @@ The command checks the config as `start` does, and exits with an error before it
 - `db.sql.gz` — the `ddev export-db` dump. Skipped when the project has no database (`omit_containers: [db]`)
 - `files.tar.gz` — the upload directories, with paths relative to the project directory. Skipped when the project has none
 
-The upload directories are the ones DDEV uses: `upload_dirs` from the project's `.ddev/config.yaml`, or the default of the project type (for example `wp-content/uploads` for WordPress). The agent reads them from `DDEV_FILES_DIRS` in the web container. Both steps need the project to run, so the agent starts a stopped project and stops it again after the backup.
+The upload directories are the ones DDEV uses: `upload_dirs` from the project's `.ddev/config.yaml`, or the default of the project type (for example `wp-content/uploads` for WordPress). The agent reads them from `DDEV_FILES_DIRS` in the web container. Both steps need the project to run, so the agent starts a stopped project and stops it again after the backup. While it removes a project, the idle sweep does not stop it: the project has the status `destroying` in the agent database.
 
 The backup has one time limit for the dump and the archive together: 40 minutes by default. `--timeout` sets it, as a duration such as `90s`, `10m` or `1h` (a bare number is minutes). The start and the stop of the project are not part of it. A backup that takes longer fails, and nothing is removed. `trafic destroy --backup` passes its own `--timeout` (default `10m`). A file that changes while the agent archives it (the project runs during the backup) does not fail the backup: the archive has the file as `tar` read it, and the agent prints a warning.
 

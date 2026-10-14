@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { backupProject, type BackupOptions } from "./backup.js";
-import { deleteProject } from "../utils/db.js";
+import { deleteProject, getProject, setProjectStatus } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
 import { isInside } from "../utils/paths.js";
 import type { AgentConfig } from "../types.js";
@@ -123,6 +123,13 @@ function isDirectory(path: string): boolean {
  * already forgotten could otherwise never be cleaned up, and the next deploy
  * would find a stale directory.
  *
+ * While the removal runs, the project has the status "destroying", which the
+ * idle sweep never stops: the backup can take many minutes, and a stop in
+ * the middle of it fails the backup. The status is in the database, so the
+ * service sees it when `trafic-agent destroy` runs from the command line. A
+ * removal that fails sets the status back: "running" when it was, else
+ * "stopped".
+ *
  * The database must be open (`initDb`). Returns false when there was no
  * project directory. The project's records are still deleted then, so a
  * retry after a run that failed between steps 2 and 3 cleans them up.
@@ -143,6 +150,30 @@ export async function destroyProject(
 
   if (options.backup) {
     checkBackupDir(config.backup.dir, dir);
+  }
+
+  const previous = getProject(name)?.status;
+  setProjectStatus(name, "destroying");
+
+  try {
+    await removeProject(name, dir, config, options, run);
+  } catch (error) {
+    setProjectStatus(name, previous === "running" ? "running" : "stopped");
+    throw error;
+  }
+
+  return true;
+}
+
+/** The steps of destroyProject, once the project is marked "destroying". */
+async function removeProject(
+  name: string,
+  dir: string,
+  config: AgentConfig,
+  options: { backup?: boolean } & BackupOptions,
+  run: DdevRunner,
+): Promise<void> {
+  if (options.backup) {
     console.log(`Backing up ${name}`);
     await backupProject(name, dir, config.backup.dir, { timeoutMs: options.timeoutMs }, run);
   }
@@ -159,6 +190,4 @@ export async function destroyProject(
 
   deleteProject(name);
   console.log(`Destroyed: ${name}`);
-
-  return true;
 }
