@@ -109,7 +109,7 @@ describe("destroy", () => {
 
   it("keeps the backup for a scheduled removal", async () => {
     expect(await remoteCommand({ ...baseOptions, backup: true, delay: "48h" })).toMatch(
-      /; trafic-agent destroy 'my-app' --backup --delay '48h'$/,
+      /; trafic-agent destroy 'my-app' --backup --timeout '600s' --delay '48h'$/,
     );
   });
 

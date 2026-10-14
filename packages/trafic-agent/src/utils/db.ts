@@ -152,7 +152,7 @@ export function deleteProject(name: string): void {
 
 /**
  * Schedule the removal of a project, or replace a removal already
- * scheduled. `timeoutMs` is the time limit of each backup step.
+ * scheduled. `timeoutMs` is the time limit of the backup.
  */
 export function scheduleDestroy(
   name: string,

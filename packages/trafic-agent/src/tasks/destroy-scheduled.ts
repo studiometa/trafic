@@ -18,8 +18,8 @@ import type { AgentConfig } from "../types.js";
  * not reliably rewrite the project files, and the sweep must find the date
  * even for a project DDEV has forgotten. The name is checked now, so a bad
  * name or a wrong `projects_dir` fails the CI job, not a sweep two days
- * later. With `backup`, the removal backs the project up first, each backup
- * step within `timeoutMs` when it is given. Returns the date of the removal.
+ * later. With `backup`, the removal backs the project up first, within
+ * `timeoutMs` when it is given. Returns the date of the removal.
  */
 export function scheduleProjectDestroy(
   name: string,

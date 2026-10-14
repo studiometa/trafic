@@ -133,7 +133,7 @@ export interface ScheduledDestroy {
   destroyAt: number;
   /** Whether to back the project up before it is removed */
   backup: boolean;
-  /** Time limit of each backup step (`--timeout`), when one was given */
+  /** Time limit of the backup (`--timeout`), when one was given */
   timeoutMs?: number;
 }
 

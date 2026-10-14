@@ -104,7 +104,7 @@ describe("scheduled removals", () => {
       ]);
     });
 
-    it("records the time limit of the backup steps", () => {
+    it("records the time limit of the backup", () => {
       scheduleProjectDestroy("app", "48h", config, { backup: true, timeoutMs: HOUR }, clock);
 
       expect(getScheduledDestroys()).toEqual([
