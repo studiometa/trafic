@@ -137,19 +137,23 @@ export interface DdevResult {
 /**
  * Runs a ddev command. Injected so tests drive the outcome directly instead
  * of replacing node:child_process for the whole module.
+ *
+ * `cwd` is for the commands that act on the project in that directory rather
+ * than on a project named in `args`.
  */
 export type DdevRunner = (
   args: string[],
   timeoutMs: number,
+  cwd?: string,
 ) => Promise<DdevResult>;
 
 /** The real runner, used unless a caller passes its own. */
-export const nodeDdevRunner: DdevRunner = (args, timeoutMs) =>
+export const nodeDdevRunner: DdevRunner = (args, timeoutMs, cwd) =>
   new Promise((resolve) => {
     execFile(
       "ddev",
       args,
-      { encoding: "utf-8", timeout: timeoutMs },
+      { encoding: "utf-8", timeout: timeoutMs, cwd },
       (error, stdout) => {
         if (error) {
           console.error(`ddev ${args.join(" ")} failed:`, error.message);

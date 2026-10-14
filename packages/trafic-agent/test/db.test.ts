@@ -10,6 +10,7 @@ import {
   logAccess,
   getAccessLogs,
   cleanOldLogs,
+  deleteProject,
 } from "../src/utils/db.js";
 
 const NOW = new Date("2026-09-07T12:00:00Z").getTime();
@@ -205,6 +206,26 @@ describe("db", () => {
 
     it("returns nothing for a project with no accesses", () => {
       expect(getAccessLogs("quiet")).toEqual([]);
+    });
+  });
+
+  describe("deleteProject", () => {
+    it("removes the project row and its access logs", () => {
+      updateProjectAccess("gone", clock);
+      updateProjectAccess("kept", clock);
+      logAccess({ project: "gone", timestamp: NOW, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+      logAccess({ project: "kept", timestamp: NOW, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+
+      deleteProject("gone");
+
+      expect(getProject("gone")).toBeUndefined();
+      expect(getAccessLogs("gone")).toEqual([]);
+      expect(getProject("kept")).toBeDefined();
+      expect(getAccessLogs("kept")).toHaveLength(1);
+    });
+
+    it("does nothing for a project it has never seen", () => {
+      expect(() => deleteProject("nope")).not.toThrow();
     });
   });
 

@@ -81,6 +81,7 @@ Commands:
 - `trafic-agent setup` — Server provisioning (Docker, DDEV, hardening)
 - `trafic-agent upgrade` — Run pending server migrations
 - `trafic-agent audit` — Security audit checks
+- `trafic-agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `trafic destroy` calls it over SSH
 
 ### Agent migrations (`packages/trafic-agent/src/setup/migrations/`)
 

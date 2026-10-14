@@ -51,6 +51,7 @@ export {
   updateProjectAccess,
   getProject,
   setProjectStatus,
+  deleteProject,
   getIdleProjects,
   logAccess,
   getAccessLogs,
@@ -67,6 +68,7 @@ export type { ProjectConfig } from "./utils/project-config.js";
 
 // Tasks
 export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
+export { destroyProject } from "./tasks/destroy-project.js";
 
 // Server
 export { startServer } from "./server.js";

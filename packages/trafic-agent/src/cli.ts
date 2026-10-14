@@ -4,7 +4,8 @@ import { parseArgs } from "node:util";
 import { loadConfig, validateConfig } from "./utils/config.js";
 import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
-import { closeDb } from "./utils/db.js";
+import { closeDb, initDb } from "./utils/db.js";
+import { destroyProject } from "./tasks/destroy-project.js";
 import { setup, audit } from "./setup/index.js";
 import { listMigrations } from "./setup/migrations/index.js";
 import { runUpgrade } from "./setup/upgrade.js";
@@ -23,6 +24,7 @@ Commands:
   upgrade                 Check for a new version, install it, run migrations, restart the service
   update                  Alias for upgrade
   audit                   Run security audit checks
+  destroy <name>          Remove a project: DDEV project, directory, database records
   version                 Show version
   help                    Show this help
 
@@ -44,6 +46,9 @@ Setup options:
   --trusted-proxy-hops <n> Proxies in front of the agent (default: 1; 2 behind a CDN).
                           Written to the generated config; ignored if one exists
   --dry-run               Show what would be done without making changes
+
+Destroy options:
+  -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
 
 Upgrade/update options:
   --dry-run               Show what would be done without making changes
@@ -73,6 +78,9 @@ Examples:
 
   # Run security audit
   trafic-agent audit
+
+  # Remove a project (as the ddev user)
+  trafic-agent destroy preview-42--my-app
 `;
 
 function printHelp(): void {
@@ -115,6 +123,33 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   // Start server and scheduler
   startServer(config);
   startIdleScheduler(config);
+}
+
+/**
+ * Remove a project. Runs as the ddev user, next to the running service: both
+ * open the same database, so the config is read the same way `start` reads it.
+ */
+async function runDestroy(
+  values: Record<string, unknown>,
+  name: string | undefined,
+): Promise<void> {
+  if (!name) {
+    console.error("Error: a project name is required");
+    console.error("Example: trafic-agent destroy preview-42--my-app");
+    process.exit(1);
+  }
+
+  const config = loadConfig(values.config as string | undefined);
+  initDb(config.dbPath);
+
+  try {
+    await destroyProject(name, config);
+  } catch (error) {
+    console.error(`Error: ${(error as Error).message}`);
+    process.exitCode = 1;
+  } finally {
+    closeDb();
+  }
 }
 
 function handleUpgrade(values: Record<string, unknown>): void {
@@ -301,6 +336,10 @@ async function main(): Promise<void> {
 
     case "audit":
       await audit();
+      break;
+
+    case "destroy":
+      await runDestroy(values, positionals[1]);
       break;
 
     default:

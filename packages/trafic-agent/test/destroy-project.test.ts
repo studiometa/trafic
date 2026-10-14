@@ -1,0 +1,173 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { destroyProject, resolveProjectDir } from "../src/tasks/destroy-project.js";
+import {
+  initDb,
+  closeDb,
+  updateProjectAccess,
+  getProject,
+  logAccess,
+  getAccessLogs,
+} from "../src/utils/db.js";
+import type { DdevRunner } from "../src/utils/ddev.js";
+import type { AgentConfig } from "../src/types.js";
+
+// The task reports progress; keep it out of the test output
+console.log = () => {};
+console.warn = () => {};
+
+/** A runner that records each call and answers with the given outcome. */
+function recordingRunner(
+  ok: boolean,
+  calls: { args: string[]; cwd?: string }[],
+): DdevRunner {
+  return (args, _timeoutMs, cwd) => {
+    calls.push({ args, cwd });
+    return Promise.resolve({ ok, stdout: "" });
+  };
+}
+
+describe("destroyProject", () => {
+  let root: string;
+  let config: AgentConfig;
+
+  /** Write DDEV's project list with the given name -> approot entries. */
+  function writeProjectList(entries: Record<string, string>): void {
+    writeFileSync(
+      config.projectListPath,
+      Object.entries(entries)
+        .map(([name, approot]) => `${name}:\n    approot: ${approot}\n`)
+        .join(""),
+    );
+  }
+
+  /** Create a project directory with a file in it. */
+  function createProject(name: string): string {
+    const dir = join(config.projectsDir, name);
+    mkdirSync(join(dir, ".ddev"), { recursive: true });
+    writeFileSync(join(dir, ".ddev", "config.yaml"), `name: ${name}\n`);
+    return dir;
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "trafic-destroy-"));
+    mkdirSync(join(root, "www"));
+
+    config = {
+      tld: "previews.example.com",
+      port: 9876,
+      dbPath: ":memory:",
+      projectListPath: join(root, "project_list.yaml"),
+      projectsDir: join(root, "www"),
+      idleTimeout: "30m",
+      idleCheckInterval: "5m",
+      auth: {
+        defaultPolicy: "basic",
+        allowedIps: [],
+        tokens: [],
+        basicAuth: [],
+        rules: [],
+        trustedProxyHops: 1,
+      },
+      tls: { dnsEnv: {} },
+    };
+
+    initDb(config.dbPath);
+  });
+
+  afterEach(() => {
+    closeDb();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("deletes the DDEV project, its directory and its records", async () => {
+    const dir = createProject("preview-42--app");
+    writeProjectList({ "preview-42--app": dir });
+    updateProjectAccess("preview-42--app");
+    logAccess({ project: "preview-42--app", timestamp: 1, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+    const calls: { args: string[]; cwd?: string }[] = [];
+
+    await expect(destroyProject("preview-42--app", config, recordingRunner(true, calls))).resolves.toBe(true);
+
+    expect(calls).toEqual([{ args: ["delete", "-Oy"], cwd: dir }]);
+    expect(existsSync(dir)).toBe(false);
+    expect(getProject("preview-42--app")).toBeUndefined();
+    expect(getAccessLogs("preview-42--app")).toEqual([]);
+  });
+
+  it("leaves the records of other projects alone", async () => {
+    createProject("app");
+    updateProjectAccess("app");
+    updateProjectAccess("other");
+    logAccess({ project: "other", timestamp: 1, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+
+    await destroyProject("app", config, recordingRunner(true, []));
+
+    expect(getProject("other")).toBeDefined();
+    expect(getAccessLogs("other")).toHaveLength(1);
+  });
+
+  it("does nothing when the project directory is not there", async () => {
+    updateProjectAccess("gone");
+    const calls: { args: string[]; cwd?: string }[] = [];
+
+    await expect(destroyProject("gone", config, recordingRunner(true, calls))).resolves.toBe(false);
+
+    expect(calls).toEqual([]);
+    expect(getProject("gone")).toBeDefined();
+  });
+
+  it("still removes the directory when ddev delete fails", async () => {
+    // Otherwise a project DDEV has already forgotten could never be cleaned
+    // up, and the next deploy would find a stale directory
+    const dir = createProject("app");
+    updateProjectAccess("app");
+
+    await expect(destroyProject("app", config, recordingRunner(false, []))).resolves.toBe(true);
+
+    expect(existsSync(dir)).toBe(false);
+    expect(getProject("app")).toBeUndefined();
+  });
+
+  it("refuses an unsafe name before running anything", async () => {
+    const calls: { args: string[]; cwd?: string }[] = [];
+
+    for (const name of ["", " ", ".", "..", "../etc", "a/b"]) {
+      await expect(destroyProject(name, config, recordingRunner(true, calls))).rejects.toThrow(
+        /Invalid project name/,
+      );
+    }
+
+    expect(calls).toEqual([]);
+    expect(existsSync(config.projectsDir)).toBe(true);
+  });
+
+  describe("resolveProjectDir", () => {
+    it("uses the app root from DDEV's project list", () => {
+      const dir = join(config.projectsDir, "nested", "app");
+      writeProjectList({ app: dir });
+
+      expect(resolveProjectDir("app", config)).toBe(dir);
+    });
+
+    it("falls back to the projects directory for a project DDEV forgot", () => {
+      expect(resolveProjectDir("app", config)).toBe(join(config.projectsDir, "app"));
+    });
+
+    it("refuses an app root outside the projects directory", () => {
+      writeProjectList({ root: "/", home: root, sibling: join(root, "www-other", "app") });
+
+      for (const name of ["root", "home", "sibling"]) {
+        expect(() => resolveProjectDir(name, config)).toThrow(/not inside the projects directory/);
+      }
+    });
+
+    it("refuses the projects directory itself", () => {
+      writeProjectList({ app: `${config.projectsDir}/` });
+
+      expect(() => resolveProjectDir("app", config)).toThrow(/not inside the projects directory/);
+    });
+  });
+});

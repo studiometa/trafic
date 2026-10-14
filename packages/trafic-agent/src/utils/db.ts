@@ -15,10 +15,19 @@ export const systemClock: Clock = () => Date.now();
 let db: DatabaseSync | null = null;
 
 /**
+ * How long a write waits for another connection to release the lock.
+ *
+ * The service and a `trafic-agent destroy` run over SSH open the same file.
+ * WAL lets readers and one writer work together, but a second writer fails
+ * at once with "database is locked" unless it is told to wait.
+ */
+const BUSY_TIMEOUT_MS = 5000;
+
+/**
  * Initialize the database connection and schema
  */
 export function initDb(dbPath: string): DatabaseSync {
-  db = new DatabaseSync(dbPath);
+  db = new DatabaseSync(dbPath, { timeout: BUSY_TIMEOUT_MS });
   db.exec("PRAGMA journal_mode=WAL");
 
   // Create tables
@@ -121,6 +130,15 @@ export function getIdleProjects(
     WHERE last_access < ? AND status = 'running'
   `);
   return stmt.all(cutoff) as unknown as ProjectRecord[];
+}
+
+/**
+ * Delete every record of a project: its status row and its access logs.
+ */
+export function deleteProject(name: string): void {
+  const database = getDb();
+  database.prepare("DELETE FROM projects WHERE name = ?").run(name);
+  database.prepare("DELETE FROM access_logs WHERE project = ?").run(name);
 }
 
 /**

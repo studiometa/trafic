@@ -44,6 +44,25 @@ trafic-agent setup --tld previews.example.com
 
 **Automatic security updates.** Setup installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/50unattended-upgrades`, allowing Ubuntu's release, security and ESM pockets plus Docker Engine (`origin=Docker`, from `download.docker.com`). Docker security releases are therefore applied daily with the rest. Note that a Docker Engine update restarts the daemon and stops running preview containers; the waiting page starts a project again on its next request. DDEV is deliberately excluded — it is updated by `trafic-agent upgrade` instead. The server never reboots on its own (`Unattended-Upgrade::Automatic-Reboot "false"`).
 
+### `trafic-agent destroy`
+
+Remove a project from the server. Run it as the `ddev` user, the user the service runs as.
+
+```bash
+trafic-agent destroy preview-42--my-app
+# or with custom config
+trafic-agent destroy preview-42--my-app --config /etc/trafic/config.toml
+```
+
+Steps:
+1. **DDEV** — runs `ddev delete -Oy` in the project directory (containers and volumes, no snapshot). A failure is reported as a warning and does not stop the removal
+2. **Directory** — removes the project directory
+3. **Database** — deletes the project's rows from the agent database (`projects` and `access_logs`)
+
+The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning and changes nothing. The command refuses a directory that is not inside `projects_dir`, and refuses an empty name, `.`, `..` or a name with a `/`.
+
+`trafic destroy` runs this command over SSH.
+
 ### `trafic-agent upgrade` / `trafic-agent update`
 
 Upgrade the server to the latest version of `trafic-agent` in one command. `update` is an alias for `upgrade`.
