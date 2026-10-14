@@ -18,13 +18,14 @@ import type { AgentConfig } from "../types.js";
  * not reliably rewrite the project files, and the sweep must find the date
  * even for a project DDEV has forgotten. The name is checked now, so a bad
  * name or a wrong `projects_dir` fails the CI job, not a sweep two days
- * later. Returns the date of the removal.
+ * later. With `backup`, the removal backs the project up first, each backup
+ * step within `timeoutMs` when it is given. Returns the date of the removal.
  */
 export function scheduleProjectDestroy(
   name: string,
   delay: string,
   config: AgentConfig,
-  options: { backup?: boolean } = {},
+  options: { backup?: boolean; timeoutMs?: number } = {},
   now: Clock = systemClock,
 ): Date {
   const delayMs = parseDuration(delay);
@@ -36,7 +37,7 @@ export function scheduleProjectDestroy(
   resolveProjectDir(name, config);
 
   const destroyAt = now() + delayMs;
-  scheduleDestroy(name, destroyAt, options.backup ?? false);
+  scheduleDestroy(name, destroyAt, options.backup ?? false, options.timeoutMs);
 
   return new Date(destroyAt);
 }
@@ -81,8 +82,8 @@ export async function destroyScheduledProjects(
       console.log(`Destroying ${name}: its scheduled removal is due`);
 
       try {
-        const { backup } = scheduled;
-        const removed = await destroyProject(name, config, { backup, isCancelled }, run);
+        const { backup, timeoutMs } = scheduled;
+        const removed = await destroyProject(name, config, { backup, timeoutMs, isCancelled }, run);
 
         // A removal clears the schedule itself; a project already gone is not removed
         if (!removed && !isCancelled()) {

@@ -249,8 +249,8 @@ describe("db", () => {
       expect(getScheduledDestroys()).toEqual([{ name: "app", destroyAt: NOW + DAY, backup: true }]);
     });
 
-    it("replaces the date and backup of a removal already scheduled", () => {
-      scheduleDestroy("app", NOW + DAY, true);
+    it("replaces the date, backup and timeout of a removal already scheduled", () => {
+      scheduleDestroy("app", NOW + DAY, true, HOUR);
       scheduleDestroy("app", NOW + 2 * DAY, false);
 
       expect(getScheduledDestroys()).toEqual([
@@ -280,6 +280,8 @@ describe("db", () => {
       expect(getScheduledDestroy("app", NOW)).toEqual({ name: "app", destroyAt: NOW, backup: true });
       expect(getScheduledDestroy("app", NOW - MINUTE)).toBeUndefined();
       expect(getScheduledDestroy("app")).toBeDefined();
+      scheduleDestroy("timed", NOW, true, HOUR);
+      expect(getScheduledDestroy("timed")).toEqual({ name: "timed", destroyAt: NOW, backup: true, timeoutMs: HOUR });
       expect(getScheduledDestroy("unknown")).toBeUndefined();
     });
 

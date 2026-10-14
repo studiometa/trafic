@@ -116,7 +116,7 @@ The CLI runs [`trafic-agent destroy`](../trafic-agent/README.md#trafic-agent-des
 
 With `--backup`, the agent first dumps the database and archives the upload directories to its backup directory (`[backup] dir`, default `/var/backups/trafic`). If the backup fails, nothing is removed and the command fails. The CLI passes `--timeout` to the agent, which uses it as the time limit of the backup (the database dump and the files archive together). The remote command gets that limit plus 10 minutes, for the start and the stop of a stopped project and for `ddev delete`. Raise `--timeout` to back up a large project. See [Backups](../trafic-agent/README.md#backups).
 
-With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`) and removes the project when it is due, with the backup when `--backup` is set. Use it after a merge to keep the preview for a short time. A new `trafic deploy` of the project cancels the removal. See [Scheduled removals](../trafic-agent/README.md#scheduled-removals).
+With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`) and removes the project when it is due, with the backup when `--backup` is set, within the same `--timeout`. Use it after a merge to keep the preview for a short time. A new `trafic deploy` of the project cancels the removal. See [Scheduled removals](../trafic-agent/README.md#scheduled-removals).
 
 **Options:**
 

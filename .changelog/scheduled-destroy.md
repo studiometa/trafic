@@ -1,6 +1,6 @@
 ### Added
 
-- **CLI**: Add the `--delay` option to `trafic destroy`, for example `--delay 48h`. It removes nothing now: the agent records the removal date and removes the project when it is due. With `--backup`, the agent backs up the project before the removal.
+- **CLI**: Add the `--delay` option to `trafic destroy`, for example `--delay 48h`. It removes nothing now: the agent records the removal date and removes the project when it is due. With `--backup`, the agent backs up the project before the removal, and each backup step gets the `--timeout` of the command.
 - **Agent**: Add the `--delay`, `--cancel` and `--list` options to `trafic-agent destroy`. They schedule a removal, cancel it and list the scheduled removals. The agent keeps the dates in its database.
 - **Agent**: The agent service removes the projects whose scheduled removal is due, every `idle_check_interval`. When a removal fails, the agent logs the error and tries again on the next check. The service makes the backups of these removals inside its systemd sandbox, so `[backup] dir` must be inside `/var/backups/trafic`, `/home/ddev` or `/var/lib/trafic`. A backup that cannot write to `[backup] dir` fails with an error that names the sandbox.
 

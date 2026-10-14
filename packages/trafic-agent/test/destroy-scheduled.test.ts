@@ -104,6 +104,14 @@ describe("scheduled removals", () => {
       ]);
     });
 
+    it("records the time limit of the backup steps", () => {
+      scheduleProjectDestroy("app", "48h", config, { backup: true, timeoutMs: HOUR }, clock);
+
+      expect(getScheduledDestroys()).toEqual([
+        { name: "app", destroyAt: NOW + 48 * HOUR, backup: true, timeoutMs: HOUR },
+      ]);
+    });
+
     it("refuses a delay it cannot read", () => {
       for (const delay of ["", "0h", "2d", "soon"]) {
         expect(() => scheduleProjectDestroy("app", delay, config, {}, clock)).toThrow(
@@ -147,6 +155,23 @@ describe("scheduled removals", () => {
 
       expect(calls.map(([command]) => command)).toEqual(["describe", "export-db", "exec", "delete"]);
       expect(readdirSync(join(config.backup.dir, "app"))).toHaveLength(1);
+      expect(getScheduledDestroys()).toEqual([]);
+    });
+
+    it("gives the backup the time limit of the removal", async () => {
+      createProject("app");
+      scheduleDestroy("app", NOW, true, HOUR);
+      const exportTimeouts: number[] = [];
+      const runner = recordingRunner([]);
+
+      await destroyScheduledProjects(config, clock, (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          exportTimeouts.push(timeoutMs);
+        }
+        return runner(args, timeoutMs, cwd);
+      });
+
+      expect(exportTimeouts).toEqual([HOUR]);
       expect(getScheduledDestroys()).toEqual([]);
     });
 

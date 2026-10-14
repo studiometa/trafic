@@ -53,7 +53,8 @@ export function initDb(dbPath: string): DatabaseSync {
     CREATE TABLE IF NOT EXISTS scheduled_destroys (
       name TEXT PRIMARY KEY,
       destroy_at INTEGER NOT NULL,
-      backup INTEGER NOT NULL DEFAULT 0
+      backup INTEGER NOT NULL DEFAULT 0,
+      timeout_ms INTEGER
     );
   `);
 
@@ -150,19 +151,37 @@ export function deleteProject(name: string): void {
 }
 
 /**
- * Schedule the removal of a project, or move the date of a removal already
- * scheduled.
+ * Schedule the removal of a project, or replace a removal already
+ * scheduled. `timeoutMs` is the time limit of each backup step.
  */
-export function scheduleDestroy(name: string, destroyAt: number, backup: boolean): void {
+export function scheduleDestroy(
+  name: string,
+  destroyAt: number,
+  backup: boolean,
+  timeoutMs?: number,
+): void {
   const database = getDb();
   const stmt = database.prepare(`
-    INSERT INTO scheduled_destroys (name, destroy_at, backup)
-    VALUES (?, ?, ?)
+    INSERT INTO scheduled_destroys (name, destroy_at, backup, timeout_ms)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(name) DO UPDATE SET
       destroy_at = excluded.destroy_at,
-      backup = excluded.backup
+      backup = excluded.backup,
+      timeout_ms = excluded.timeout_ms
   `);
-  stmt.run(name, destroyAt, backup ? 1 : 0);
+  stmt.run(name, destroyAt, backup ? 1 : 0, timeoutMs ?? null);
+}
+
+/** A row of scheduled_destroys. */
+interface ScheduledDestroyRow {
+  name: string;
+  destroyAt: number;
+  backup: number;
+  timeoutMs: number | null;
+}
+
+function toScheduledDestroy({ name, destroyAt, backup, timeoutMs }: ScheduledDestroyRow): ScheduledDestroy {
+  return { name, destroyAt, backup: backup === 1, ...(timeoutMs === null ? {} : { timeoutMs }) };
 }
 
 /**
@@ -181,13 +200,13 @@ export function cancelScheduledDestroy(name: string): boolean {
 export function getScheduledDestroys(dueBy = Number.MAX_SAFE_INTEGER): ScheduledDestroy[] {
   const database = getDb();
   const stmt = database.prepare(`
-    SELECT name, destroy_at as destroyAt, backup
+    SELECT name, destroy_at as destroyAt, backup, timeout_ms as timeoutMs
     FROM scheduled_destroys
     WHERE destroy_at <= ?
     ORDER BY destroy_at, name
   `);
-  const rows = stmt.all(dueBy) as unknown as { name: string; destroyAt: number; backup: number }[];
-  return rows.map((row) => ({ ...row, backup: row.backup === 1 }));
+  const rows = stmt.all(dueBy) as unknown as ScheduledDestroyRow[];
+  return rows.map(toScheduledDestroy);
 }
 
 /**
@@ -200,14 +219,12 @@ export function getScheduledDestroy(
 ): ScheduledDestroy | undefined {
   const database = getDb();
   const stmt = database.prepare(`
-    SELECT name, destroy_at as destroyAt, backup
+    SELECT name, destroy_at as destroyAt, backup, timeout_ms as timeoutMs
     FROM scheduled_destroys
     WHERE name = ? AND destroy_at <= ?
   `);
-  const row = stmt.get(name, dueBy) as
-    | { name: string; destroyAt: number; backup: number }
-    | undefined;
-  return row && { ...row, backup: row.backup === 1 };
+  const row = stmt.get(name, dueBy) as ScheduledDestroyRow | undefined;
+  return row && toScheduledDestroy(row);
 }
 
 /**

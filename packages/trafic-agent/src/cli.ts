@@ -205,7 +205,7 @@ async function runDestroy(
           : `No removal scheduled for ${name}`,
       );
     } else if (delay !== undefined) {
-      const destroyAt = scheduleProjectDestroy(name!, delay, config, { backup });
+      const destroyAt = scheduleProjectDestroy(name!, delay, config, { backup, timeoutMs });
       console.log(
         `Scheduled the removal of ${name} at ${destroyAt.toISOString()}${backup ? ", after a backup" : ""}`,
       );
