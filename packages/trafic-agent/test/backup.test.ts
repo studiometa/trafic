@@ -1,6 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,8 +16,10 @@ import {
   backupProject,
   backupTimestamp,
   removeOldBackups,
+  startBackupSweepScheduler,
 } from "../src/tasks/backup.js";
 import type { DdevRunner } from "../src/utils/ddev.js";
+import type { AgentConfig } from "../src/types.js";
 
 // The task reports progress; keep it out of the test output
 console.log = () => {};
@@ -76,6 +86,8 @@ describe("backupProject", () => {
   });
 
   afterEach(() => {
+    // Let the cleanup remove a directory a test made unreadable
+    chmodSync(join(projectDir, "web", "wp-content", "uploads", "2026"), 0o755);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -216,6 +228,44 @@ describe("backupProject", () => {
     expect(exportTimeouts).toEqual([3_600_000]);
   });
 
+  // Root reads the directory anyway
+  it.skipIf(process.getuid?.() === 0)(
+    "fails and keeps no partial backup when the archive fails",
+    async () => {
+      chmodSync(join(projectDir, "web", "wp-content", "uploads", "2026"), 0o000);
+
+      await expect(
+        backupProject(
+          "app",
+          projectDir,
+          backupDir,
+          {},
+          fakeDdev({ filesDirs: "/var/www/html/web/wp-content/uploads" }, []),
+        ),
+      ).rejects.toThrow(/tar/);
+
+      expect(readdirSync(join(backupDir, "app"))).toEqual([]);
+    },
+  );
+
+  it("keeps the backup and warns when the project cannot be stopped again", async () => {
+    const warn = vi.spyOn(console, "warn");
+    const calls: string[][] = [];
+
+    const target = await backupProject(
+      "app",
+      projectDir,
+      backupDir,
+      {},
+      fakeDdev({ status: "stopped", fails: ["stop"] }, calls),
+    );
+
+    expect(calls.at(-1)).toEqual(["stop", "app"]);
+    expect(existsSync(target)).toBe(true);
+    expect(warn).toHaveBeenCalledWith("Could not stop app after the backup");
+    warn.mockRestore();
+  });
+
   it("fails when DDEV does not know the project", async () => {
     await expect(
       backupProject("app", projectDir, backupDir, {}, fakeDdev({ fails: ["describe"] }, [])),
@@ -266,11 +316,14 @@ describe("removeOldBackups", () => {
 
   it("leaves directories it did not create alone", () => {
     mkdirSync(join(dir, "app", "manual-copy"), { recursive: true });
+    // The shape of a backup name, but not a date
+    mkdirSync(join(dir, "app", "2026-13-45T99-99-99Z"));
     writeFileSync(join(dir, "notes.txt"), "keep");
 
     expect(removeOldBackups({ dir, retainDays: 1 }, now)).toBe(0);
 
     expect(existsSync(join(dir, "app", "manual-copy"))).toBe(true);
+    expect(existsSync(join(dir, "app", "2026-13-45T99-99-99Z"))).toBe(true);
     expect(existsSync(join(dir, "notes.txt"))).toBe(true);
   });
 
@@ -279,3 +332,61 @@ describe("removeOldBackups", () => {
   });
 });
 
+describe("startBackupSweepScheduler", () => {
+  let dir: string;
+  let timer: NodeJS.Timeout | undefined;
+  const now = Date.parse("2026-10-14T12:00:00Z");
+
+  /** The agent config with the given backup directory. */
+  function configWith(backupDir: string): AgentConfig {
+    return { backup: { dir: backupDir, retainDays: 14 } } as AgentConfig;
+  }
+
+  /** Create a backup of `app`, 15 days before now, past retain_days. */
+  function createOldBackup(): string {
+    const path = join(dir, "app", backupTimestamp(new Date(now - 15 * DAY_MS)));
+    mkdirSync(path, { recursive: true });
+    return path;
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "trafic-sweep-"));
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    clearInterval(timer);
+    vi.useRealTimers();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("sweeps on start, then once an hour", () => {
+    const first = createOldBackup();
+
+    timer = startBackupSweepScheduler(configWith(dir));
+
+    expect(existsSync(first)).toBe(false);
+
+    const second = createOldBackup();
+    vi.advanceTimersByTime(60 * 60 * 1000);
+
+    expect(existsSync(second)).toBe(false);
+  });
+
+  it("reports a failed sweep and keeps the scheduler running", () => {
+    const error = vi.spyOn(console, "error");
+    // A file where the backup directory should be: the sweep cannot list it
+    const file = join(dir, "not-a-directory");
+    writeFileSync(file, "");
+
+    expect(() => {
+      timer = startBackupSweepScheduler(configWith(file));
+    }).not.toThrow();
+    expect(error).toHaveBeenCalledWith("Backup sweep failed:", expect.any(Error));
+
+    expect(() => vi.advanceTimersByTime(60 * 60 * 1000)).not.toThrow();
+    expect(error).toHaveBeenCalledTimes(2);
+    error.mockRestore();
+  });
+});
