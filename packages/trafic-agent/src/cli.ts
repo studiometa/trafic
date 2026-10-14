@@ -100,7 +100,7 @@ Examples:
   sudo trafic-agent update          # alias for upgrade
 
   # Run security audit
-  trafic-agent audit
+  sudo trafic-agent audit
 
   # Remove a project (as the ddev user, never as root)
   trafic-agent destroy preview-42--my-app

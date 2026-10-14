@@ -29,9 +29,9 @@ This file can be older or newer than the agent on the server. `trafic-agent skil
 
 Which user runs which command:
 
-- As root (or with `sudo`): `setup`, `upgrade`, edits of `config.toml`, `systemctl`. The `ddev` user has no general sudo.
+- As root (or with `sudo`): `setup`, `upgrade`, `audit`, edits of `config.toml`, `systemctl`. The `ddev` user has no general sudo.
 - As `ddev`: `destroy`. It refuses to run as root, because DDEV does not run as root and root could leave files in the database directory that the service cannot write.
-- As any user: `audit`, `upgrade --list`, `version`, `help`, `skill`.
+- As any user: `upgrade --list`, `version`, `help`, `skill`.
 
 ## Service and logs
 
@@ -89,10 +89,10 @@ Steps: install the latest `@studiometa/trafic-agent` from npm when it is newer, 
 ## `trafic-agent audit`
 
 ```bash
-trafic-agent audit
+sudo trafic-agent audit
 ```
 
-It checks SSH, the firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. It exits with code 1 when a check fails, and each failed check prints a fix.
+Run it as root. `ufw status` and the files under `/var/lib/docker` need root, so as another user the firewall and wildcard certificate checks fail. It checks SSH, the firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. It exits with code 1 when a check fails, and each failed check prints a fix.
 
 ## `trafic-agent destroy`
 
@@ -222,7 +222,7 @@ idle_timeout: never  # or a duration such as 2h
 | `Refusing to remove ...: it is not inside the projects directory` | Set `projects_dir` to the directory that `trafic deploy` uses |
 | `The backup timed out ...` | Run again with a larger `--timeout`, for example `1h` |
 | `Cannot write to the backup directory` | Put `[backup] dir` in `/var/backups/trafic`, `/home/ddev` (not `projects_dir`) or `/var/lib/trafic`, owned by `ddev` |
-| Certificate warning on previews | `trafic-agent audit`. Without `--email` at setup, projects use mkcert. Per-host certificates are limited to 50 new ones per domain per week; use `[tls]` for one wildcard |
+| Certificate warning on previews | `sudo trafic-agent audit`. Without `--email` at setup, projects use mkcert. Per-host certificates are limited to 50 new ones per domain per week; use `[tls]` for one wildcard |
 | Ports 8025, 8026, 8142, 8143 reachable | The `DOCKER-USER` rules are missing: `sudo iptables -S DOCKER-USER`, `sudo systemctl status trafic-docker-firewall` |
 
 ## CI side

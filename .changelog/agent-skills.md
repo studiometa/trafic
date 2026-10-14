@@ -7,3 +7,4 @@
 ### Fixed
 
 - **CLI**: `trafic deploy --timeout` also sets the time limit of the rsync of each `--sync` path. Before, a `--sync` always stopped after 10 minutes
+- **Agent**: The help and the README of `trafic-agent audit` say to run it with `sudo`. As another user, the firewall and wildcard certificate checks fail

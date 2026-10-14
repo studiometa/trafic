@@ -72,10 +72,10 @@ sudo trafic-agent setup --tld=previews.example.com
 
 ### `trafic-agent audit`
 
-Check the security state of the server: SSH, firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. The command exits with code 1 when a check fails.
+Check the security state of the server: SSH, firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. The command exits with code 1 when a check fails. Run it as root: `ufw status` and the files under `/var/lib/docker` need root.
 
 ```bash
-trafic-agent audit
+sudo trafic-agent audit
 ```
 
 ### `trafic-agent version` / `trafic-agent help`
@@ -391,7 +391,7 @@ router container and starts one running project. DDEV regenerates the static
 config on any project start, but reads `router-compose.*.yaml` only when it
 recreates the router, so the removal is what gets the credentials into the
 container. The router is back within seconds. With no project running, the
-next deploy applies it. `trafic-agent audit` reports whether the certificate
+next deploy applies it. `sudo trafic-agent audit` reports whether the certificate
 was issued.
 
 The first order takes about a minute after the router starts: lego waits for
