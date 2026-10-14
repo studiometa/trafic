@@ -65,7 +65,6 @@ export async function stopIdleProjects(config: AgentConfig): Promise<void> {
 
   await enforceRunningLimit({
     max: config.maxRunningProjects,
-    reserve: 0,
     neverStops: (name) => {
       const projectDir = projects.get(name);
       return projectDir ? shouldNeverStop(loadProjectConfig(projectDir)) : false;

@@ -4,7 +4,7 @@ import {
   updateProjectAccess,
 } from "../utils/db.js";
 import { listProjects, stopProject } from "../utils/ddev.js";
-import type { DdevProject } from "../types.js";
+import type { DdevProject, ProjectRecord } from "../types.js";
 
 /**
  * What the limit needs from the outside world. Injected so a test can set
@@ -30,8 +30,6 @@ export const nodeRunningLimitDeps: RunningLimitDeps = {
 export interface RunningLimitOptions {
   /** max_running_projects: 0 means no limit */
   max: number;
-  /** Slots to keep free: 1 before the agent starts a project, else 0 */
-  reserve: number;
   /** Whether a project's own config says never to stop it */
   neverStops: (name: string) => boolean;
 }
@@ -46,13 +44,18 @@ function isUp(project: DdevProject): boolean {
 }
 
 /**
- * Stop the least recently used projects until `max - reserve` or fewer run.
+ * Stop the least recently used projects until `max` or fewer run.
  *
- * The count comes from `ddev list`, not from the database: `trafic deploy`
- * runs `ddev start` itself, so the database does not know about every
- * running project.
+ * A project runs when `ddev list` shows it up, or when the agent is starting
+ * it (status "starting" in the database). `ddev list` is the source because
+ * `trafic deploy` runs `ddev start` itself, so the database does not know
+ * about every running project. The projects the agent is starting count too,
+ * because DDEV shows them stopped until their containers exist: the waiting
+ * page marks its project "starting" before it calls this, so that project
+ * counts once whether DDEV shows it up or not, and calls made for starts at
+ * the same time each see all of them.
  *
- * For the same reason, the database is first brought in line with DDEV. A
+ * Because of deploys, the database is first brought in line with DDEV. A
  * project that runs while the database says it is stopped (or has no record
  * of it) was started outside the agent, most likely by a deploy. Its last
  * access is then old or missing, which would make it the first one stopped,
@@ -70,12 +73,11 @@ export async function enforceRunningLimit(
   options: RunningLimitOptions,
   deps: RunningLimitDeps = nodeRunningLimitDeps,
 ): Promise<string[]> {
-  const { max, reserve, neverStops } = options;
+  const { max, neverStops } = options;
 
   if (max <= 0) return [];
 
   const projects = await deps.listProjects();
-  const up = projects.filter(isUp);
 
   for (const project of projects) {
     const status = deps.getProject(project.name)?.status;
@@ -88,13 +90,21 @@ export async function enforceRunningLimit(
     }
   }
 
-  const excess = up.length + reserve - max;
+  const running: ProjectRecord[] = [];
+
+  for (const project of projects) {
+    const record = deps.getProject(project.name);
+
+    if (record && (isUp(project) || record.status === "starting")) {
+      running.push(record);
+    }
+  }
+
+  const excess = running.length - max;
 
   if (excess <= 0) return [];
 
-  const candidates = up
-    .map((project) => deps.getProject(project.name))
-    .filter((record) => record !== undefined)
+  const candidates = running
     .filter((record) => record.status !== "starting" && !neverStops(record.name))
     .sort((a, b) => a.lastAccess - b.lastAccess)
     .slice(0, excess);
@@ -103,7 +113,7 @@ export async function enforceRunningLimit(
 
   for (const record of candidates) {
     console.log(
-      `Stopping ${record.name}: ${up.length} projects running, max_running_projects is ${max}`,
+      `Stopping ${record.name}: ${running.length} projects running, max_running_projects is ${max}`,
     );
 
     if (await deps.stopProject(record.name)) {
@@ -116,7 +126,7 @@ export async function enforceRunningLimit(
 
   if (stopped.length < excess) {
     console.warn(
-      `${up.length - stopped.length} projects running, max_running_projects is ${max}: no other project can be stopped`,
+      `${running.length - stopped.length} projects running, max_running_projects is ${max}: no other project can be stopped`,
     );
   }
 

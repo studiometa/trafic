@@ -161,7 +161,8 @@ describe("handleErrors", () => {
     );
     await settle();
 
-    expect(recorded.steps).toEqual(["make room", "start app"]);
+    // Marked "starting" first: that is how the limit counts it as running
+    expect(recorded.steps).toEqual(["app starting", "make room", "start app", "app running"]);
   });
 
   it("still starts the project when making room fails", async () => {

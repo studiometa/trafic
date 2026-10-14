@@ -7,7 +7,7 @@ export interface Recorded {
   logged: { project: string; path: string; ip: string }[];
   statuses: [string, string][];
   started: string[];
-  /** Room making and starts, in the order they happened */
+  /** Status changes, room making and starts, in the order they happened */
   steps: string[];
 }
 
@@ -89,8 +89,10 @@ export function createFakeDeps(options: FakeDepsOptions = {}): {
         ? { name, lastAccess: 0, status: record.status }
         : undefined;
     },
-    setProjectStatus: (name, status) =>
-      void recorded.statuses.push([name, status]),
+    setProjectStatus: (name, status) => {
+      recorded.statuses.push([name, status]);
+      recorded.steps.push(`${name} ${status}`);
+    },
     startProject: (name) => {
       recorded.started.push(name);
       recorded.steps.push(`start ${name}`);

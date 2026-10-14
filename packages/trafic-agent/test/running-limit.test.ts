@@ -80,7 +80,7 @@ describe("enforceRunningLimit", () => {
     accessed("a", HOUR);
     const { deps, stopped, listed } = createDeps(ddev({ a: "running" }));
 
-    await enforceRunningLimit({ max: 0, reserve: 1, neverStops: nothingIsNever }, deps);
+    await enforceRunningLimit({ max: 0, neverStops: nothingIsNever }, deps);
 
     expect(listed()).toBe(0);
     expect(stopped).toEqual([]);
@@ -91,7 +91,7 @@ describe("enforceRunningLimit", () => {
     accessed("b", MINUTE);
     const { deps, stopped } = createDeps(ddev({ a: "running", b: "running" }));
 
-    await enforceRunningLimit({ max: 2, reserve: 0, neverStops: nothingIsNever }, deps);
+    await enforceRunningLimit({ max: 2, neverStops: nothingIsNever }, deps);
 
     expect(stopped).toEqual([]);
   });
@@ -105,7 +105,7 @@ describe("enforceRunningLimit", () => {
     );
 
     const result = await enforceRunningLimit(
-      { max: 1, reserve: 0, neverStops: nothingIsNever },
+      { max: 1, neverStops: nothingIsNever },
       deps,
     );
 
@@ -116,13 +116,48 @@ describe("enforceRunningLimit", () => {
   });
 
   it("frees one slot for a project about to start", async () => {
+    // The waiting page marks the project "starting" before it makes room,
+    // and ddev still shows it stopped
+    setProjectStatus("target", "starting");
     accessed("a", 2 * HOUR);
     accessed("b", HOUR);
-    const { deps, stopped } = createDeps(ddev({ a: "running", b: "running" }));
+    const { deps, stopped } = createDeps(
+      ddev({ target: "stopped", a: "running", b: "running" }),
+    );
 
-    await enforceRunningLimit({ max: 2, reserve: 1, neverStops: nothingIsNever }, deps);
+    await enforceRunningLimit({ max: 2, neverStops: nothingIsNever }, deps);
 
     expect(stopped).toEqual(["a"]);
+    expect(getProject("target")?.status).toBe("starting");
+  });
+
+  it("counts a starting project once when ddev already shows it up", async () => {
+    // A running app that answers 503 shows the waiting page too: the project
+    // is "starting" in the database and already up in ddev
+    setProjectStatus("target", "starting");
+    accessed("a", 2 * HOUR);
+    const { deps, stopped } = createDeps(ddev({ target: "running", a: "running" }));
+
+    await enforceRunningLimit({ max: 2, neverStops: nothingIsNever }, deps);
+
+    expect(stopped).toEqual([]);
+  });
+
+  it("frees one slot for each project starting at the same time", async () => {
+    // ddev shows both stopped until their containers exist: each call must
+    // count both, or each frees the same single slot
+    setProjectStatus("first", "starting");
+    setProjectStatus("second", "starting");
+    accessed("a", 3 * HOUR);
+    accessed("b", 2 * HOUR);
+    accessed("c", HOUR);
+    const { deps, stopped } = createDeps(
+      ddev({ first: "stopped", second: "stopped", a: "running", b: "running", c: "running" }),
+    );
+
+    await enforceRunningLimit({ max: 3, neverStops: nothingIsNever }, deps);
+
+    expect(stopped).toEqual(["a", "b"]);
   });
 
   it("counts from ddev, not from the database", async () => {
@@ -132,7 +167,7 @@ describe("enforceRunningLimit", () => {
     accessed("b", HOUR);
     const { deps, stopped } = createDeps(ddev({ a: "stopped", b: "running" }));
 
-    await enforceRunningLimit({ max: 1, reserve: 0, neverStops: nothingIsNever }, deps);
+    await enforceRunningLimit({ max: 1, neverStops: nothingIsNever }, deps);
 
     expect(stopped).toEqual([]);
     // Stopped outside the agent: recorded, so its next start is seen
@@ -147,7 +182,7 @@ describe("enforceRunningLimit", () => {
       ddev({ a: "unhealthy", b: "starting", c: "paused" }),
     );
 
-    await enforceRunningLimit({ max: 1, reserve: 0, neverStops: nothingIsNever }, deps);
+    await enforceRunningLimit({ max: 1, neverStops: nothingIsNever }, deps);
 
     expect(stopped).toEqual(["a"]);
   });
@@ -161,7 +196,7 @@ describe("enforceRunningLimit", () => {
     );
 
     await enforceRunningLimit(
-      { max: 2, reserve: 0, neverStops: (name) => name === "pinned" },
+      { max: 2, neverStops: (name) => name === "pinned" },
       deps,
     );
 
@@ -174,7 +209,7 @@ describe("enforceRunningLimit", () => {
     accessed("a", HOUR);
     const { deps, stopped } = createDeps(ddev({ booting: "starting", a: "running" }));
 
-    await enforceRunningLimit({ max: 1, reserve: 0, neverStops: nothingIsNever }, deps);
+    await enforceRunningLimit({ max: 1, neverStops: nothingIsNever }, deps);
 
     expect(stopped).toEqual(["a"]);
   });
@@ -185,10 +220,10 @@ describe("enforceRunningLimit", () => {
     accessed("b", MINUTE);
     const { deps, stopped } = createDeps(ddev({ a: "running", b: "running" }));
 
-    await enforceRunningLimit({ max: 2, reserve: 1, neverStops: () => true }, deps);
+    await enforceRunningLimit({ max: 1, neverStops: () => true }, deps);
 
     expect(stopped).toEqual([]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("max_running_projects is 2"));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("max_running_projects is 1"));
   });
 
   it("leaves the status alone when a stop fails", async () => {
@@ -199,7 +234,7 @@ describe("enforceRunningLimit", () => {
     const { deps, stopped } = createDeps(ddev({ a: "running", b: "running" }), false);
 
     const result = await enforceRunningLimit(
-      { max: 1, reserve: 0, neverStops: nothingIsNever },
+      { max: 1, neverStops: nothingIsNever },
       deps,
     );
 
@@ -223,7 +258,7 @@ describe("enforceRunningLimit", () => {
         ddev({ deployed: "running", a: "running", b: "running" }),
       );
 
-      await enforceRunningLimit({ max: 2, reserve: 0, neverStops: nothingIsNever }, deps);
+      await enforceRunningLimit({ max: 2, neverStops: nothingIsNever }, deps);
 
       expect(stopped).toEqual(["a"]);
       expect(getProject("deployed")).toMatchObject({ status: "running" });
@@ -237,7 +272,7 @@ describe("enforceRunningLimit", () => {
         ddev({ deployed: "running", a: "running", b: "running" }),
       );
 
-      await enforceRunningLimit({ max: 2, reserve: 0, neverStops: nothingIsNever }, deps);
+      await enforceRunningLimit({ max: 2, neverStops: nothingIsNever }, deps);
 
       expect(stopped).toEqual(["a"]);
       expect(getProject("deployed")?.status).toBe("running");

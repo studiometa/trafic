@@ -51,7 +51,10 @@ export interface ServerDeps {
   getProject: (name: string) => ReturnType<typeof getProject>;
   setProjectStatus: (name: string, status: "running" | "stopped" | "starting") => void;
   startProject: (name: string) => Promise<boolean>;
-  /** Stop projects so that one more fits under max_running_projects */
+  /**
+   * Stop projects until the running ones fit under max_running_projects. The
+   * project marked "starting" counts as running, so it has its slot.
+   */
   makeRoom: () => Promise<unknown>;
   getProjectInfo: (name: string) => ReturnType<typeof getProjectInfo>;
 }
@@ -380,7 +383,6 @@ export function startServer(agentConfig: AgentConfig): void {
     makeRoom: () =>
       enforceRunningLimit({
         max: config.maxRunningProjects,
-        reserve: 1,
         neverStops: (name) => shouldNeverStop(projectConfigs.get(name) ?? {}),
       }),
     getProjectInfo,
