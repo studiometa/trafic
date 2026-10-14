@@ -60,6 +60,7 @@ export {
   getScheduledDestroys,
   getIdleProjects,
   releaseStaleStatuses,
+  deleteUnlistedProjects,
   isProcessAlive,
   logAccess,
   getAccessLogs,

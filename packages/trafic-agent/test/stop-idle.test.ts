@@ -97,6 +97,23 @@ describe("stopIdleProjects", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("deletes the records of a project DDEV no longer lists, without asking DDEV", async () => {
+    // Left behind by a removal outside the agent; set back to running, it
+    // would make every sweep run ddev describe on a project DDEV does not know
+    register({ app: undefined });
+    accessed("app", HOUR);
+    accessed("gone", 30 * HOUR);
+    setProjectStatus("gone", "starting");
+    getDb().prepare("UPDATE projects SET status_pid = NULL WHERE name = ?").run("gone");
+    const calls: string[][] = [];
+
+    await stopIdleProjects(config, runningDdev(["app"], calls));
+
+    expect(getProject("gone")).toBeUndefined();
+    expect(calls.some((args) => args.includes("gone"))).toBe(false);
+    expect(getProject("app")?.status).toBe("running");
+  });
+
   it("stops a project idle longer than its own idle_timeout, shorter than the global one", async () => {
     // Global 24h: only the project's 30m makes it idle
     register({ short: "idle_timeout: 30m\n", global: undefined });

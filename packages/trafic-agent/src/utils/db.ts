@@ -228,13 +228,63 @@ export function getIdleProjects(
 
 /**
  * Delete every record of a project: its status row, its access logs and its
- * scheduled removal.
+ * scheduled removal. Returns whether there was any.
  */
-export function deleteProject(name: string): void {
+export function deleteProject(name: string): boolean {
   const database = getDb();
-  database.prepare("DELETE FROM projects WHERE name = ?").run(name);
-  database.prepare("DELETE FROM access_logs WHERE project = ?").run(name);
-  database.prepare("DELETE FROM scheduled_destroys WHERE name = ?").run(name);
+  const changes = [
+    database.prepare("DELETE FROM projects WHERE name = ?").run(name),
+    database.prepare("DELETE FROM access_logs WHERE project = ?").run(name),
+    database.prepare("DELETE FROM scheduled_destroys WHERE name = ?").run(name),
+  ].reduce((total, result) => total + Number(result.changes), 0);
+  return changes > 0;
+}
+
+/**
+ * Delete the records of the projects that DDEV no longer lists, and return
+ * their names.
+ *
+ * A project removed outside the agent (`ddev delete` by hand, or a
+ * `trafic destroy` older than the agent's own removal) leaves its row behind.
+ * releaseStaleStatuses would set that row back to "running", and every sweep
+ * would then ask DDEV about a project it does not know.
+ *
+ * A project with a busy status whose process lives is kept: `ddev delete`
+ * takes it out of the list before its removal deletes the records. A project
+ * with a scheduled removal is kept too: `ddev delete` by hand leaves its
+ * directory, and the scheduled removal still has to remove it. An empty
+ * list is kept as is too: a missing or unreadable project list is more likely
+ * than a server with no project, and keeping the rows is harmless.
+ */
+export function deleteUnlistedProjects(
+  listed: ReadonlySet<string>,
+  isAlive: (pid: number) => boolean = isProcessAlive,
+): string[] {
+  if (listed.size === 0) {
+    return [];
+  }
+
+  const rows = getDb()
+    .prepare(
+      "SELECT name, status, status_pid AS pid FROM projects WHERE name NOT IN (SELECT name FROM scheduled_destroys)",
+    )
+    .all() as unknown as { name: string; status: ProjectRecord["status"]; pid: number | null }[];
+  const deleted: string[] = [];
+
+  for (const { name, status, pid } of rows) {
+    if (listed.has(name)) {
+      continue;
+    }
+
+    if (BUSY_STATUSES.includes(status) && pid !== null && isAlive(pid)) {
+      continue;
+    }
+
+    deleteProject(name);
+    deleted.push(name);
+  }
+
+  return deleted;
 }
 
 /**

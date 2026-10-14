@@ -1,4 +1,9 @@
-import { getIdleProjects, releaseStaleStatuses, setProjectStatus } from "../utils/db.js";
+import {
+  deleteUnlistedProjects,
+  getIdleProjects,
+  releaseStaleStatuses,
+  setProjectStatus,
+} from "../utils/db.js";
 import {
   stopProject,
   getProjectInfo,
@@ -19,7 +24,8 @@ import type { AgentConfig } from "../types.js";
  * Only projects with the status "running" are idle: a project the agent is
  * starting or removing is never stopped here. A start or a removal whose
  * process was killed is set back to "running" first, so its project is not
- * left up for good.
+ * left up for good. Before that, the records of projects that DDEV no longer
+ * lists are deleted, so the sweep does not ask DDEV about them.
  *
  * Then brings the server back under max_running_projects: a deploy runs
  * `ddev start` without asking the agent, so only the sweep sees it.
@@ -32,6 +38,10 @@ export async function stopIdleProjects(
 
   // Get all projects to check their individual configs
   const projects = loadProjectList(config.projectListPath);
+
+  for (const name of deleteUnlistedProjects(new Set(projects.keys()))) {
+    console.log(`Removed ${name} from the agent database: DDEV no longer lists it`);
+  }
 
   for (const name of releaseStaleStatuses()) {
     console.log(`Set ${name} back to running: the process that started or removed it is gone`);
