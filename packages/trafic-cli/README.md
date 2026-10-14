@@ -99,7 +99,7 @@ trafic deploy \
 | `--timeout` | Per-command timeout, e.g. `10m`, `90s`, `1h` | `10m` |
 | `--projects-dir` | Projects directory on the server. Must match `projects_dir` in the agent config | `~/www` |
 | `--no-start` | Skip `ddev start` | `false` |
-| `--branch` | Git branch name | auto-detected from CI |
+| `--branch` | Git branch name | `$CI_COMMIT_REF_NAME`, `$GITHUB_HEAD_REF` or `$GITHUB_REF_NAME` |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--repo` | Repository URL | auto-detected from CI |
 | `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"`. A quoted value with spaces, such as `-o ProxyCommand="ssh -i key -W %h:%p bastion"` for a jump host that needs its own `-i`, reaches ssh as one argument with the quotes stripped | - |
@@ -179,11 +179,8 @@ deploy_preview:
         --host ${{ vars.SSH_HOST }}
         --name ${{ github.event.repository.name }}
         --preview ${{ github.event.pull_request.number }}
-        --branch ${{ github.head_ref }}
         --sync "dist/"
 ```
-
-Pass `--branch ${{ github.head_ref }}` on `pull_request` events: there, `GITHUB_REF_NAME` is `<number>/merge`, which is not a branch the server can clone.
 
 ## How it works
 

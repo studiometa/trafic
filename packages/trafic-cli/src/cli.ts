@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
+import { detectBranch, detectRepo } from "./ci.js";
 import { deploy } from "./commands/deploy.js";
 import { destroy } from "./commands/destroy.js";
 import { setup } from "./commands/setup.js";
@@ -43,7 +44,8 @@ const HELP = `
 
   Deploy options:
     --repo <url>               Git repo URL (default: $CI_REPOSITORY_URL or $GITHUB_SERVER_URL/$GITHUB_REPOSITORY)
-    --branch <branch>          Branch to deploy (default: $CI_COMMIT_REF_NAME or $GITHUB_REF_NAME)
+    --branch <branch>          Branch to deploy (default: $CI_COMMIT_REF_NAME,
+                               $GITHUB_HEAD_REF or $GITHUB_REF_NAME)
     --name <name>              DDEV project name (required)
     --preview <iid>            MR/PR number → creates preview-<iid>--<name>
     --sync <paths>             Paths to rsync, comma-separated
@@ -142,40 +144,6 @@ function exitOnParseError(err: unknown): never {
   error((err as Error).message);
   console.log(HELP);
   process.exit(1);
-}
-
-/**
- * Detect the git repo URL from CI environment variables.
- */
-function detectRepo(): string | undefined {
-  // GitLab CI
-  if (process.env.CI_REPOSITORY_URL) {
-    return process.env.CI_REPOSITORY_URL;
-  }
-
-  // GitHub Actions
-  if (process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY) {
-    return `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}.git`;
-  }
-
-  return undefined;
-}
-
-/**
- * Detect the git branch from CI environment variables.
- */
-function detectBranch(): string | undefined {
-  // GitLab CI
-  if (process.env.CI_COMMIT_REF_NAME) {
-    return process.env.CI_COMMIT_REF_NAME;
-  }
-
-  // GitHub Actions (refs/heads/main → main)
-  if (process.env.GITHUB_REF_NAME) {
-    return process.env.GITHUB_REF_NAME;
-  }
-
-  return undefined;
 }
 
 function main(): void {
@@ -351,7 +319,7 @@ function main(): void {
 
       if (!branch) {
         error(
-          "Missing --branch and could not detect from CI environment ($CI_COMMIT_REF_NAME or $GITHUB_REF_NAME)",
+          "Missing --branch and could not detect from CI environment ($CI_COMMIT_REF_NAME, $GITHUB_HEAD_REF or $GITHUB_REF_NAME)",
         );
         process.exit(1);
       }

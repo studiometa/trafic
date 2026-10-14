@@ -134,7 +134,6 @@ deploy_preview:
         --host ${{ vars.SSH_HOST }}
         --name ${{ github.event.repository.name }}
         --preview ${{ github.event.pull_request.number }}
-        --branch ${{ github.head_ref }}
         --sync "dist/"
         --script "composer install --no-dev"
 
