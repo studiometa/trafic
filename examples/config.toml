@@ -1,5 +1,8 @@
 # Trafic agent configuration
-# Place this file at /etc/trafic/config.toml on your DDEV server
+# Place this file at /etc/trafic/config.toml on your DDEV server.
+# Without --config, the agent reads the first file it finds of
+# /etc/trafic/config.toml, ./config.toml and ./trafic.toml, or uses the
+# defaults when there is none.
 
 # Required: TLD for DDEV projects
 tld = "previews.example.com"
@@ -74,7 +77,8 @@ retain_days = 14
 
 # Authentication configuration
 [auth]
-# Default policy: "allow", "deny", or "basic" (default: basic)
+# Default policy: "allow", "deny", "basic" or "token" (default: basic).
+# "basic" also accepts the bearer tokens below.
 default_policy = "basic"
 
 # Number of proxies in front of the agent (default: 1)
@@ -103,6 +107,7 @@ tokens = [
 ]
 
 # Basic auth credentials (format: "username:password")
+# or as tables: basic_auth = [{ username = "preview", password = "changeme" }]
 basic_auth = [
   "preview:changeme",
   "admin:supersecret",
@@ -121,3 +126,4 @@ policy = "basic"
 match = "api.*"
 policy = "token"
 tokens = ["api-specific-token"]
+allowed_ips = ["203.0.113.10"]  # optional: these IPs pass this rule

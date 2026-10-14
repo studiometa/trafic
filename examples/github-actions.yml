@@ -5,6 +5,9 @@
 #
 # Required variables:
 #   SSH_HOST — Server hostname or IP
+#
+# On pull_request events, GITHUB_REF_NAME is "<number>/merge", which is not
+# a branch the server can clone: deploy_preview passes --branch.
 
 name: Deploy
 
@@ -69,6 +72,7 @@ jobs:
           --host ${{ vars.SSH_HOST }}
           --name ${{ github.event.repository.name }}
           --preview ${{ github.event.pull_request.number }}
+          --branch ${{ github.head_ref }}
           --sync "dist/"
           --script "composer install --no-dev"
 
@@ -79,6 +83,8 @@ jobs:
       - uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      # Add --backup to keep the database and uploads, or --delay 48h to keep
+      # the preview for 2 days
       - run: >-
           npx @studiometa/trafic-cli destroy
           --host ${{ vars.SSH_HOST }}
