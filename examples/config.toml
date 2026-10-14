@@ -14,7 +14,8 @@ db_path = "/var/lib/trafic/db.sqlite"
 project_list_path = "/home/ddev/.ddev/project_list.yaml"
 
 # Directory where projects are stored (default: /home/ddev/www)
-# `trafic-agent destroy` never removes a directory outside of it.
+# `trafic-agent destroy` never removes a directory outside of it, so keep it
+# the same as the `--projects-dir` of `trafic deploy` (default ~/www).
 projects_dir = "/home/ddev/www"
 
 # Scale-to-zero: stop idle projects after this duration (default: 30m)

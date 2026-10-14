@@ -30,7 +30,8 @@ export function resolveProjectDir(name: string, config: AgentConfig): string {
 
   if (!path || isAbsolute(path) || path.split(sep)[0] === "..") {
     throw new Error(
-      `Refusing to remove ${dir}: it is not inside the projects directory ${projectsDir}`,
+      `Refusing to remove ${dir}: it is not inside the projects directory ${projectsDir}. ` +
+        "Set projects_dir in the agent config to the directory that `trafic deploy` uses",
     );
   }
 
