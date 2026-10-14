@@ -97,6 +97,43 @@ describe("stopIdleProjects", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("stops a project idle longer than its own idle_timeout, shorter than the global one", async () => {
+    // Global 24h: only the project's 30m makes it idle
+    register({ short: "idle_timeout: 30m\n", global: undefined });
+    accessed("short", HOUR);
+    accessed("global", HOUR);
+    const calls: string[][] = [];
+
+    await stopIdleProjects(config, runningDdev(["short", "global"], calls));
+
+    expect(calls).toEqual([["describe", "short", "-j"], ["stop", "short"]]);
+    expect(getProject("short")?.status).toBe("stopped");
+    expect(getProject("global")?.status).toBe("running");
+  });
+
+  it("keeps a project idle longer than the global idle_timeout but not its own", async () => {
+    register({ long: "idle_timeout: 48h\n", global: undefined });
+    accessed("long", 30 * HOUR);
+    accessed("global", 30 * HOUR);
+    const calls: string[][] = [];
+
+    await stopIdleProjects(config, runningDdev(["long", "global"], calls));
+
+    expect(calls).toEqual([["describe", "global", "-j"], ["stop", "global"]]);
+    expect(getProject("long")?.status).toBe("running");
+  });
+
+  it("never stops a project with idle_timeout: never", async () => {
+    register({ pinned: "idle_timeout: never\n" });
+    accessed("pinned", 30 * HOUR);
+    const calls: string[][] = [];
+
+    await stopIdleProjects(config, runningDdev(["pinned"], calls));
+
+    expect(calls).toEqual([]);
+    expect(getProject("pinned")?.status).toBe("running");
+  });
+
   it("stops the next least recently used project over max_running_projects, never one with idle_timeout: never", async () => {
     // None is idle: only the limit can stop a project here
     register({ pinned: "idle_timeout: never\n", a: undefined, b: undefined });

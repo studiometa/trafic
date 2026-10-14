@@ -13,7 +13,8 @@ import type { AgentConfig } from "../types.js";
 
 /**
  * Stop idle projects that haven't been accessed recently
- * Respects per-project idle_timeout settings from .ddev/config.trafic.yaml
+ * A project's idle_timeout in .ddev/config.trafic.yaml replaces the global
+ * one, shorter or longer
  *
  * Only projects with the status "running" are idle: a project the agent is
  * starting or removing is never stopped here. A start or a removal whose
@@ -36,30 +37,21 @@ export async function stopIdleProjects(
     console.log(`Set ${name} back to running: the process that started or removed it is gone`);
   }
 
-  // Get projects idle according to global threshold
-  const idleProjects = getIdleProjects(globalThresholdMs);
-
-  for (const project of idleProjects) {
+  // Every running project: its own idle_timeout can be shorter than the
+  // global one, so the global one cannot pick the candidates
+  for (const project of getIdleProjects(0)) {
     const projectDir = projects.get(project.name);
+    const projectConfig = projectDir ? loadProjectConfig(projectDir) : {};
 
-    // Load per-project config if available
-    if (projectDir) {
-      const projectConfig = loadProjectConfig(projectDir);
+    if (shouldNeverStop(projectConfig)) {
+      continue;
+    }
 
-      // Skip if project is configured to never stop
-      if (shouldNeverStop(projectConfig)) {
-        continue;
-      }
+    // The project's idle_timeout replaces the global one, shorter or longer
+    const thresholdMs = getIdleTimeoutMs(projectConfig) ?? globalThresholdMs;
 
-      // Check project-specific idle timeout
-      const projectThresholdMs = getIdleTimeoutMs(projectConfig);
-      if (projectThresholdMs !== undefined) {
-        const idleDuration = Date.now() - project.lastAccess;
-        if (idleDuration < projectThresholdMs) {
-          // Not idle according to project-specific timeout
-          continue;
-        }
-      }
+    if (Date.now() - project.lastAccess < thresholdMs) {
+      continue;
     }
 
     // Double-check project is actually running via DDEV
