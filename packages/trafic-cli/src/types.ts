@@ -102,6 +102,8 @@ export interface DestroyOptions extends SSHOptions {
   name: string;
   /** MR/PR number for preview environments */
   preview?: string;
+  /** Whether the agent backs up the project before it removes it */
+  backup: boolean;
 }
 
 /**

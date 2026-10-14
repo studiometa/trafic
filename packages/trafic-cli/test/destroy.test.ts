@@ -18,6 +18,7 @@ const baseOptions: DestroyOptions = {
   port: 22,
   sshOptions: "",
   name: "my-app",
+  backup: false,
 };
 
 /** The one remote command a destroy runs. */
@@ -45,6 +46,12 @@ describe("destroy", () => {
   it("targets the preview environment when one is given", async () => {
     expect(await remoteCommand({ ...baseOptions, preview: "42" })).toMatch(
       /; trafic-agent destroy 'preview-42--my-app'$/,
+    );
+  });
+
+  it("asks the agent for a backup when one is wanted", async () => {
+    expect(await remoteCommand({ ...baseOptions, preview: "42", backup: true })).toMatch(
+      /; trafic-agent destroy 'preview-42--my-app' --backup$/,
     );
   });
 

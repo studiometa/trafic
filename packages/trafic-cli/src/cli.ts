@@ -61,6 +61,9 @@ const HELP = `
   Destroy options:
     --name <name>              DDEV project name (required)
     --preview <iid>            MR/PR number (computes the name)
+    --backup                   Back up the database and upload directories on the
+                               server first. If the backup fails, nothing is removed
+    --timeout <duration>       Timeout (default: 10m). Raise it to back up a large project
 
   Other:
     --version                  Show version
@@ -76,6 +79,7 @@ const HELP = `
     trafic deploy --host server.example.com --name my-app --preview 42 --sync "dist/"
     trafic deploy --host server.example.com --name my-app --env COMPOSER_AUTH --env CI=true
     trafic destroy --host server.example.com --name my-app --preview 42
+    trafic destroy --host server.example.com --name my-app --preview 42 --backup
 `;
 
 /**
@@ -219,6 +223,7 @@ function main(): void {
         "create-script": { type: "string" },
         "projects-dir": { type: "string", default: "~/www" },
         "no-start": { type: "boolean", default: false },
+        backup: { type: "boolean", default: false },
         timeout: { type: "string", default: "10m" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
@@ -372,6 +377,8 @@ function main(): void {
         ...sshBase,
         name: values.name!,
         preview: values.preview,
+        backup: values.backup!,
+        timeout: values.timeout!,
       };
 
       destroy(destroyOptions).catch((err: Error) => {

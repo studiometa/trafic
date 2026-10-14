@@ -9,7 +9,9 @@ import { resolveProjectName } from "../types.js";
  * The removal itself lives in the agent, `trafic-agent destroy`, so the
  * server can also remove a project on its own. The agent finds the project
  * directory from its own config and deletes the DDEV project, the directory
- * and the project's records in its database.
+ * and the project's records in its database. With `backup`, the agent first
+ * backs up the database and the upload directories, and removes nothing if
+ * that fails.
  *
  * One remote command checks that the agent is installed and runs it. A
  * separate check could not tell a missing agent from an SSH failure, and
@@ -22,7 +24,8 @@ export async function destroy(
   resetSteps();
 
   const projectName = resolveProjectName(options.name, options.preview);
-  const destroyCommand = `trafic-agent destroy ${ssh.shellQuote(projectName)}`;
+  const backup = options.backup ? " --backup" : "";
+  const destroyCommand = `trafic-agent destroy ${ssh.shellQuote(projectName)}${backup}`;
   const missingAgent = ssh.shellQuote(
     `trafic-agent is not on the PATH of ${options.user}@${options.host}. Set the server up with \`trafic setup\`, then try again`,
   );

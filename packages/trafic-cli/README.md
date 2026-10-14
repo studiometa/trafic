@@ -108,10 +108,13 @@ Remove a DDEV project from the server.
 trafic destroy \
   --host server.example.com \
   --name my-project \
-  --preview 123
+  --preview 123 \
+  --backup
 ```
 
 The CLI runs [`trafic-agent destroy`](../trafic-agent/README.md#trafic-agent-destroy) on the server, which deletes the DDEV project, the project directory and the project's records in the agent database. The agent finds the project directory from its own config (`projects_dir` in `/etc/trafic/config.toml`), so `destroy` has no `--projects-dir` option. Set `projects_dir` to the directory that `trafic deploy --projects-dir` uses (default `~/www`, which is `/home/ddev/www` for the `ddev` user). If you deploy to another directory, set `projects_dir` before you upgrade: the agent refuses to remove a directory outside of it. Connect as the `ddev` user (the default `--user`): the agent reads `/etc/trafic/config.toml` and writes to `/var/lib/trafic`, which only the `ddev` user can do. The command fails when `trafic-agent` is not on the `PATH` of the SSH user.
+
+With `--backup`, the agent first dumps the database and archives the upload directories to its backup directory (`[backup] dir`, default `/var/backups/trafic`). If the backup fails, nothing is removed and the command fails. See [Backups](../trafic-agent/README.md#backups).
 
 **Options:**
 
@@ -120,6 +123,8 @@ The CLI runs [`trafic-agent destroy`](../trafic-agent/README.md#trafic-agent-des
 | `--host` | SSH host (required) | - |
 | `--name` | Project name (required) | - |
 | `--preview` | Preview environment ID (MR/PR number) | - |
+| `--backup` | Back up the database and upload directories on the server first | - |
+| `--timeout` | Timeout of the remote command. Raise it to back up a large project | `10m` |
 | `--user` | SSH user | `ddev` |
 | `--port` | SSH port | `22` |
 | `--ssh-options` | Extra SSH options | - |
