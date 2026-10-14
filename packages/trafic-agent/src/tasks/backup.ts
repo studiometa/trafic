@@ -131,9 +131,30 @@ async function writeBackup(
 
   const file = join(target, "files.tar.gz");
   console.log(`Archiving ${uploadDirs.join(", ")} to ${file}`);
-  await execFileAsync("tar", ["-czf", file, "-C", dir, "--", ...uploadDirs], {
-    timeout: timeoutMs ?? ARCHIVE_TIMEOUT_MS,
-  });
+  await archive(file, dir, uploadDirs, timeoutMs ?? ARCHIVE_TIMEOUT_MS);
+}
+
+/**
+ * Archive paths of a directory to a tar.gz file.
+ *
+ * The project runs during the archive, and can write to its upload
+ * directories at any time. GNU tar then exits with code 1 ("some files
+ * differ"): the archive is written, with the changed file as tar read it.
+ * That is accepted with a warning. Code 2 or more (a fatal error, such as an
+ * unreadable file) and a timeout fail the archive.
+ */
+async function archive(file: string, dir: string, paths: string[], timeoutMs: number): Promise<void> {
+  try {
+    await execFileAsync("tar", ["-czf", file, "-C", dir, "--", ...paths], { timeout: timeoutMs });
+  } catch (error) {
+    const { code, killed } = error as { code?: unknown; killed?: boolean };
+
+    if (code !== 1 || killed) {
+      throw error;
+    }
+
+    console.warn("Some files changed while tar read them: the archive has them as tar read them");
+  }
 }
 
 /**

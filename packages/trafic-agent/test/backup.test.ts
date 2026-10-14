@@ -248,6 +248,62 @@ describe("backupProject", () => {
     },
   );
 
+  describe("with a tar that exits with an error code", () => {
+    let path: string | undefined;
+
+    /** Put a tar first on the PATH that writes the archive and exits with `code`. */
+    function fakeTar(code: number): void {
+      const bin = join(root, "bin");
+      mkdirSync(bin);
+      // tar -czf <file> ...
+      writeFileSync(join(bin, "tar"), `#!/bin/sh\necho archive > "$2"\nexit ${code}\n`);
+      chmodSync(join(bin, "tar"), 0o755);
+      path = process.env.PATH;
+      process.env.PATH = `${bin}:${path}`;
+    }
+
+    afterEach(() => {
+      if (path !== undefined) {
+        process.env.PATH = path;
+        path = undefined;
+      }
+    });
+
+    it("keeps the archive and warns when files changed while tar read them", async () => {
+      // GNU tar exits with 1 then; a running project can write to its uploads
+      fakeTar(1);
+      const warn = vi.spyOn(console, "warn");
+
+      const target = await backupProject(
+        "app",
+        projectDir,
+        backupDir,
+        {},
+        fakeDdev({ filesDirs: "/var/www/html/web/wp-content/uploads" }, []),
+      );
+
+      expect(readdirSync(target).sort()).toEqual(["files.tar.gz"]);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/changed while tar read them/));
+      warn.mockRestore();
+    });
+
+    it("fails and keeps no partial backup on a fatal tar error", async () => {
+      fakeTar(2);
+
+      await expect(
+        backupProject(
+          "app",
+          projectDir,
+          backupDir,
+          {},
+          fakeDdev({ filesDirs: "/var/www/html/web/wp-content/uploads" }, []),
+        ),
+      ).rejects.toThrow(/tar/);
+
+      expect(readdirSync(join(backupDir, "app"))).toEqual([]);
+    });
+  });
+
   it("keeps the backup and warns when the project cannot be stopped again", async () => {
     const warn = vi.spyOn(console, "warn");
     const calls: string[][] = [];
