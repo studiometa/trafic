@@ -1,5 +1,7 @@
 # Plan : CLI de déploiement `trafic deploy` (côté CI)
 
+> Historical plan (February 2026). It does not describe the current code. See the package READMEs.
+
 ## Contexte
 
 ### Flow actuel

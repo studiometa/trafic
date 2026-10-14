@@ -1,5 +1,7 @@
 # Plan : Rendre Trafic open-source
 
+> Historical plan (February 2026). It does not describe the current code. See the package READMEs.
+
 ## Analyse : Qu'est-ce qui est spécifique à Studio Meta ?
 
 ### Code agent (quasi-générique)

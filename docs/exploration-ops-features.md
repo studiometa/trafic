@@ -1,6 +1,6 @@
 # Exploration: Ops & Management Features
 
-> Status: **exploration** — evaluating approaches, not yet committed to implementation.
+> Status: **exploration (Feb 2026), partly superseded.** Backups, hardening, audit, HTTPS and per-project config now exist with a different design: see the agent README.
 
 ## Table of Contents
 
