@@ -99,7 +99,7 @@ Commands:
 `skills/<name>/SKILL.md` follow the [Agent Skills spec](https://agentskills.io/specification). `npx skills add studiometa/trafic` and `gh skill install studiometa/trafic` install them from this directory, and `trafic skill` / `trafic-agent skill` print the copy bundled in the package (Vite `?raw` import).
 
 - **Update the skills with each user-visible change** of the CLI or the agent: commands, options, defaults, config keys, error messages, CI patterns. Check the skill against the code, like the READMEs
-- Frontmatter: only spec keys (`name` = directory name, `description` of 1024 characters or less saying what and when, `license`). No Claude Code-only keys
+- Frontmatter: only spec keys (`name` = directory name, `description` of 1024 characters or less saying what and when, on one line that YAML reads in full: no `: ` or ` #` unless you quote it, `license`). No Claude Code-only keys
 - Body under 500 lines. `packages/trafic-cli/test/skills-spec.test.ts` checks these rules
 
 ### Agent migrations (`packages/trafic-agent/src/setup/migrations/`)
