@@ -1,6 +1,6 @@
 # @studiometa/trafic-agent
 
-Server agent for DDEV preview environments — auth, scale-to-zero, and auto-start.
+Server agent for DDEV preview environments — auth, scale-to-zero, auto-start, scheduled removals and backups.
 
 Part of [Trafic](https://github.com/studiometa/trafic), a tool for managing DDEV preview environments on Linux servers.
 
@@ -11,6 +11,8 @@ Part of [Trafic](https://github.com/studiometa/trafic), a tool for managing DDEV
 - **Auto-start** — Show a waiting page and restart stopped projects on request
 - **Per-project config** — Override auth and idle timeout per project
 - **Backups on removal** — Dump the database and archive the upload directories before a project is removed
+- **Scheduled removal** — Remove a project after a delay; a new deploy cancels it
+- **Running limit** — `max_running_projects` stops the least recently used projects
 
 ## Installation
 
@@ -20,23 +22,46 @@ npm install -g @studiometa/trafic-agent
 
 ## Commands
 
-### `trafic-agent serve`
+### `trafic-agent start`
 
-Start the agent server.
+Start the agent server. Setup installs a systemd service that runs this command.
 
 ```bash
-trafic-agent serve
+trafic-agent start
 # or with custom config
-trafic-agent serve --config /etc/trafic/config.toml
+trafic-agent start --config /etc/trafic/config.toml
+# or on another port than the one in the config
+trafic-agent start --port 9877
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-c`, `--config` | Path to the config file | first of `/etc/trafic/config.toml`, `./config.toml`, `./trafic.toml` |
+| `-p`, `--port` | Port of the agent HTTP server. Replaces `port` from the config | `port` from the config |
 
 ### `trafic-agent setup`
 
-Interactive server setup — installs Docker, DDEV, configures DNS, and sets up the agent as a systemd service.
+Server setup, run as root. It installs Docker, DDEV and Node.js, configures DDEV and Traefik for forward auth, writes `/etc/trafic/config.toml`, installs the agent as a systemd service and hardens the server. You configure the wildcard DNS yourself. Setup takes its options from flags only: it asks no questions.
 
 ```bash
-trafic-agent setup --tld previews.example.com
+sudo trafic-agent setup --tld=previews.example.com
 ```
+
+`trafic setup` runs this command over SSH. See the [CLI README](../trafic-cli/README.md#trafic-setup).
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--tld` | TLD for DDEV projects. Required on the first run; a re-run reuses `tld` from the config | `tld` from the config |
+| `--email` | Email for Let's Encrypt certificates. Without it, projects use a mkcert certificate | - |
+| `--dns-provider` | DNS-01 provider (lego name, e.g. `cloudflare`), for one wildcard `*.<tld>` certificate. Requires `--email`. A re-run reuses `[tls] dns_provider` from the config, and then `--email` is required again. See [TLS](#tls) | `[tls] dns_provider` from the config |
+| `--dns-env` | Credential for that provider as `KEY=VALUE`, repeatable | `[tls.dns_env]` from the config |
+| `--ssh-users` | SSH users to allow, comma-separated | `ddev` |
+| `--trusted-proxy-hops` | Proxies in front of the agent (`2` behind a CDN). Written to a new config only; ignored when the config exists | `1` |
+| `--no-hardening` | Skip server hardening | `false` |
+| `--no-root-ssh` | Disable root SSH login (recovery via rescue mode only) | `false` |
+| `--no-docker` | Skip Docker installation | `false` |
+| `--no-ddev` | Skip DDEV installation | `false` |
+| `--dry-run` | Show what would be done without making changes | `false` |
 
 **Requirements:**
 - Ubuntu 24.04 LTS
@@ -44,6 +69,18 @@ trafic-agent setup --tld previews.example.com
 - Wildcard DNS pointing to the server
 
 **Automatic security updates.** Setup installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/50unattended-upgrades`, allowing Ubuntu's release, security and ESM pockets plus Docker Engine (`origin=Docker`, from `download.docker.com`). Docker security releases are therefore applied daily with the rest. Note that a Docker Engine update restarts the daemon and stops running preview containers; the waiting page starts a project again on its next request. DDEV is deliberately excluded — it is updated by `trafic-agent upgrade` instead. The server never reboots on its own (`Unattended-Upgrade::Automatic-Reboot "false"`).
+
+### `trafic-agent audit`
+
+Check the security state of the server: SSH, firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. The command exits with code 1 when a check fails.
+
+```bash
+trafic-agent audit
+```
+
+### `trafic-agent version` / `trafic-agent help`
+
+`trafic-agent version` (also `-v`, `--version`) prints the version. `trafic-agent help` (also `-h`, `--help`) prints the help with every option.
 
 ### `trafic-agent destroy`
 
@@ -146,7 +183,9 @@ Migration state is stored in `/etc/trafic/.migrations.json` and updated after ea
 
 ## Configuration
 
-Create `/etc/trafic/config.toml`:
+Setup writes `/etc/trafic/config.toml`. Edit it, then run `sudo systemctl restart trafic-agent`. See [examples/config.toml](../../examples/config.toml) for every key.
+
+Without `--config`, the agent reads the first file it finds of `/etc/trafic/config.toml`, `./config.toml` and `./trafic.toml`. When there is none, it uses the defaults.
 
 ```toml
 # Required: TLD for DDEV projects
@@ -155,8 +194,14 @@ tld = "previews.example.com"
 # Agent HTTP server port (default: 9876)
 port = 9876
 
-# Scale-to-zero: stop idle projects after this duration
+# Must match trafic deploy --projects-dir (default: /home/ddev/www)
+projects_dir = "/home/ddev/www"
+
+# Scale-to-zero: stop idle projects after this duration (default: 30m; setup writes 4h)
 idle_timeout = "4h"
+
+# Idle, running-limit and scheduled-removal sweeps (default: 5m)
+idle_check_interval = "5m"
 
 # Most projects running at the same time (default: 0, no limit)
 max_running_projects = 8
@@ -168,7 +213,7 @@ retain_days = 14             # default; older backups are removed
 
 # Authentication
 [auth]
-default_policy = "basic"  # allow, deny, basic, or token
+default_policy = "basic"  # allow, deny, basic, or token; basic also accepts the tokens
 
 # Proxies in front of the agent (default: 1 = ddev-router/Traefik alone).
 # Raise by one for each extra proxy: a CDN or load balancer ahead of
@@ -182,13 +227,14 @@ allowed_ips = ["192.168.1.0/24", "10.0.0.0/8"]
 # Bearer tokens for CI/API access
 tokens = ["your-ci-token"]
 
-# Basic auth credentials
+# Basic auth credentials, as "user:password" or { username, password } tables
 basic_auth = ["user:password"]
 
-# Per-hostname rules
+# Per-hostname rules (first match wins, after the global allowed_ips)
 [[auth.rules]]
 match = "*.public.*"
 policy = "allow"
+allowed_ips = ["203.0.113.0/24"]  # optional, per rule
 
 [[auth.rules]]
 match = "admin.*"
@@ -214,6 +260,10 @@ auth_policy: allow  # allow, deny, basic, or token
 # Override idle timeout (or disable with "never")
 idle_timeout: never
 ```
+
+- `idle_timeout` replaces the global `idle_timeout` for this project, shorter or longer. The idle sweep reads it at each check.
+- `auth_policy` replaces only `default_policy`. The global `allowed_ips` and a matching `[[auth.rules]]` still apply first.
+- The agent reads `auth_policy` when it starts and when DDEV's `project_list.yaml` changes. After you change it, restart the agent: `sudo systemctl restart trafic-agent`.
 
 ## Running project limit
 
@@ -241,6 +291,7 @@ Traefik (DDEV router)
      └─► 502 error → errors middleware → trafic-agent
                           │
                           ├─► known project → Waiting page + auto-start
+                          ├─► project being removed → Error page (503)
                           └─► unknown → Error page
 ```
 

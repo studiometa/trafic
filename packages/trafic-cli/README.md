@@ -47,7 +47,7 @@ trafic setup \
 | `--dns-env` | Credential for that provider as `KEY=VALUE`, repeatable — e.g. `--dns-env CF_DNS_API_TOKEN=...`. Written to the agent config and passed to the router container | - |
 | `--user` | SSH user | `root` |
 | `--port` | SSH port | `22` |
-| `--agent-version` | Agent version to install | `latest` |
+| `--agent-version` | Agent version to install. `trafic-agent setup` keeps this version | `latest` |
 | `--ssh-users` | SSH users to allow after hardening, comma-separated. The `--user` value is always added | `ddev` |
 | `--trusted-proxy-hops` | Proxies in front of the agent — `2` behind a CDN. Fresh installs only | `1` |
 | `--no-hardening` | Skip server hardening | `false` |
@@ -72,6 +72,8 @@ The command is safe to run again: each step is skipped when the server is alread
 
 Deploy a project to a DDEV server. The first step cancels a removal of the project scheduled with `trafic destroy --delay`, so the deploy fails when `trafic-agent` is not on the `PATH` of the SSH user.
 
+Upgrade the agent on the server before this CLI version, and connect as the `ddev` user (the default `--user`): the agent reads `/etc/trafic/config.toml` and writes to `/var/lib/trafic`. An older agent does not know `trafic-agent destroy --cancel`, and `trafic-agent destroy` refuses to run as root.
+
 ```bash
 trafic deploy \
   --host server.example.com \
@@ -88,13 +90,15 @@ trafic deploy \
 | `--name` | Project name (required) | - |
 | `--user` | SSH user | `ddev` |
 | `--port` | SSH port | `22` |
-| `--sync` | Comma-separated local paths to sync. Directories and files both work | `.` |
+| `--sync` | Comma-separated local paths to sync. Directories and files both work (nothing is synced without it) | - |
 | `--script` | Post-sync script to run in DDEV | - |
 | `--env` | Environment for `--script`, repeatable. `KEY=VALUE`, or bare `KEY` to take the runner's value | - |
 | `--before-script` | Script to run before deploy (on server, outside the container) | - |
 | `--after-script` | Script to run after deploy (on server, outside the container) | - |
 | `--create-script` | Script to run only on the deploy that creates the project (on server) | - |
 | `--timeout` | Per-command timeout, e.g. `10m`, `90s`, `1h` | `10m` |
+| `--projects-dir` | Projects directory on the server. Must match `projects_dir` in the agent config | `~/www` |
+| `--no-start` | Skip `ddev start` | `false` |
 | `--branch` | Git branch name | auto-detected from CI |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--repo` | Repository URL | auto-detected from CI |
@@ -116,7 +120,7 @@ The CLI runs [`trafic-agent destroy`](../trafic-agent/README.md#trafic-agent-des
 
 With `--backup`, the agent first dumps the database and archives the upload directories to its backup directory (`[backup] dir`, default `/var/backups/trafic`). If the backup fails, nothing is removed and the command fails. The CLI passes `--timeout` to the agent, which uses it as the time limit of the backup (the database dump and the files archive together). The remote command gets that limit plus 10 minutes, for the start and the stop of a stopped project and for `ddev delete`. Raise `--timeout` to back up a large project. See [Backups](../trafic-agent/README.md#backups).
 
-With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`) and removes the project when it is due, with the backup when `--backup` is set, within the same `--timeout`. Use it after a merge to keep the preview for a short time. A new `trafic deploy` of the project cancels the removal, or fails when the agent has already started to remove the project. See [Scheduled removals](../trafic-agent/README.md#scheduled-removals).
+With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`; hours, minutes and seconds only, no days) and removes the project when it is due, with the backup when `--backup` is set, within the same `--timeout`. Use it after a merge to keep the preview for a short time. A new `trafic deploy` of the project cancels the removal, or fails when the agent has already started to remove the project. See [Scheduled removals](../trafic-agent/README.md#scheduled-removals).
 
 **Options:**
 
@@ -126,7 +130,7 @@ With `--delay`, nothing is removed now. The agent records the removal date (now 
 | `--name` | Project name (required) | - |
 | `--preview` | Preview environment ID (MR/PR number) | - |
 | `--backup` | Back up the database and upload directories on the server first | - |
-| `--delay` | Remove nothing now: the agent removes the project after this delay, e.g. `48h` | - |
+| `--delay` | Remove nothing now: the agent removes the project after this delay. Hours, minutes and seconds only, such as `48h` or `1h30m` (no days). The agent checks the value | - |
 | `--timeout` | Timeout of the remote command. With `--backup`, the time limit of the backup on the server (`trafic-agent destroy --timeout`), and the remote command gets 10 more minutes. Raise it to back up a large project | `10m` |
 | `--user` | SSH user | `ddev` |
 | `--port` | SSH port | `22` |
@@ -175,8 +179,11 @@ deploy_preview:
         --host ${{ vars.SSH_HOST }}
         --name ${{ github.event.repository.name }}
         --preview ${{ github.event.pull_request.number }}
+        --branch ${{ github.head_ref }}
         --sync "dist/"
 ```
+
+Pass `--branch ${{ github.head_ref }}` on `pull_request` events: there, `GITHUB_REF_NAME` is `<number>/merge`, which is not a branch the server can clone.
 
 ## How it works
 
@@ -184,7 +191,7 @@ The setup command executes 5 steps over SSH:
 
 1. **Check the server** — Read the OS, resolve root or sudo privileges
 2. **Install Node.js** — Install Node.js 24 from the NodeSource apt repository (skipped when already present)
-3. **Install the agent** — `npm install -g @studiometa/trafic-agent`
+3. **Install the agent** — `npm install -g @studiometa/trafic-agent@<version>` (`--agent-version`, default `latest`)
 4. **Setup the server** — Run `trafic-agent setup` (Docker, DDEV, Traefik, systemd, hardening)
 5. **Verify** — Check that the `trafic-agent` service is active
 
@@ -198,7 +205,7 @@ The deploy command executes 9 steps over SSH:
 6. **Create-script** — Optional, on the server, and **only on the deploy that created the project**. For one-time seeding such as `ddev pull`, which overwrites the database and so must not repeat
 7. **Run script** — Optional, inside the container, with `--env` values available to it
 8. **After-script** — Optional, on the server, outside the container
-9. **Verify** — Run `ddev describe` and return the project URL
+9. **Verify** — Run `ddev describe` and print its output. A failure is logged but does not fail the deploy
 
 ### Seeding a database once
 
