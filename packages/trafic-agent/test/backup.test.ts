@@ -349,6 +349,25 @@ describe("removeOldBackups", () => {
     expect(existsSync(join(dir, "notes.txt"))).toBe(true);
   });
 
+  it("leaves an empty directory alone when it removed no backup from it", () => {
+    // backup.dir can be a shared directory such as /home/ddev
+    mkdirSync(join(dir, "empty"));
+    createBackup("app", 1);
+
+    removeOldBackups({ dir, retainDays: 14 }, now);
+
+    expect(readdirSync(dir).sort()).toEqual(["app", "empty"]);
+  });
+
+  it("keeps a project directory that holds other files after the sweep", () => {
+    createBackup("app", 30);
+    writeFileSync(join(dir, "app", "notes.txt"), "keep");
+
+    expect(removeOldBackups({ dir, retainDays: 14 }, now)).toBe(1);
+
+    expect(readdirSync(join(dir, "app"))).toEqual(["notes.txt"]);
+  });
+
   it("does nothing when the backup directory does not exist", () => {
     expect(removeOldBackups({ dir: join(dir, "missing"), retainDays: 14 }, now)).toBe(0);
   });

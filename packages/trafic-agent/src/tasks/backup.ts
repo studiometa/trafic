@@ -225,8 +225,10 @@ function listDirs(path: string): string[] {
 
 /**
  * Remove the backups older than `retainDays`, and the project directories
- * left empty. Only directories with a backup timestamp name are removed.
- * Returns the number of backups removed.
+ * that this removal leaves empty. Only directories with a backup timestamp
+ * name are removed, and a project directory only when this sweep removed a
+ * backup from it: `dir` can be a shared directory, with empty directories
+ * that are not backups. Returns the number of backups removed.
  */
 export function removeOldBackups(config: BackupConfig, now = Date.now()): number {
   const cutoff = now - config.retainDays * DAY_MS;
@@ -234,6 +236,7 @@ export function removeOldBackups(config: BackupConfig, now = Date.now()): number
 
   for (const project of listDirs(config.dir)) {
     const projectDir = join(config.dir, project);
+    let removedFromProject = 0;
 
     for (const name of listDirs(projectDir)) {
       const time = parseBackupTimestamp(name);
@@ -241,8 +244,14 @@ export function removeOldBackups(config: BackupConfig, now = Date.now()): number
       if (time !== undefined && time < cutoff) {
         rmSync(join(projectDir, name), { recursive: true, force: true });
         console.log(`Removed old backup: ${project}/${name}`);
-        removed++;
+        removedFromProject++;
       }
+    }
+
+    removed += removedFromProject;
+
+    if (removedFromProject === 0) {
+      continue;
     }
 
     try {
