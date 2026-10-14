@@ -61,7 +61,6 @@ const HELP = `
   Destroy options:
     --name <name>              DDEV project name (required)
     --preview <iid>            MR/PR number (computes the name)
-    --projects-dir <path>      Projects directory (default: ~/www)
 
   Other:
     --version                  Show version
@@ -373,7 +372,6 @@ function main(): void {
         ...sshBase,
         name: values.name!,
         preview: values.preview,
-        projectsDir: values["projects-dir"]!,
       };
 
       destroy(destroyOptions).catch((err: Error) => {

@@ -111,6 +111,19 @@ trafic destroy \
   --preview 123
 ```
 
+The CLI runs [`trafic-agent destroy`](../trafic-agent/README.md#trafic-agent-destroy) on the server, which deletes the DDEV project, the project directory and the project's records in the agent database. The agent finds the project directory from its own config (`projects_dir` in `/etc/trafic/config.toml`), so `destroy` has no `--projects-dir` option. The command fails when `trafic-agent` is not on the `PATH` of the SSH user.
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | SSH host (required) | - |
+| `--name` | Project name (required) | - |
+| `--preview` | Preview environment ID (MR/PR number) | - |
+| `--user` | SSH user | `ddev` |
+| `--port` | SSH port | `22` |
+| `--ssh-options` | Extra SSH options | - |
+
 ## CI Examples
 
 ### GitLab CI

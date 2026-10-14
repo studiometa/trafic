@@ -14,26 +14,16 @@ const baseOptions: DestroyOptions = {
   port: 22,
   sshOptions: "",
   name: "my-app",
-  projectsDir: "~/www",
 };
 
 describe("destroy", () => {
-  it("does nothing when the project is not there", async () => {
-    const io = createFakeSshIo({ exists: false });
-
-    await destroy(baseOptions, io);
-
-    expect(io.commands).toEqual([]);
-  });
-
-  it("deletes the DDEV project and then the directory", async () => {
+  it("hands the removal to trafic-agent on the server", async () => {
     const io = createFakeSshIo({ exists: true });
 
     await destroy(baseOptions, io);
 
-    expect(io.commands).toHaveLength(2);
-    expect(io.commands[0]).toContain("ddev delete");
-    expect(io.commands[1]).toContain("rm -rf");
+    expect(io.tested).toEqual(["command -v trafic-agent"]);
+    expect(io.commands).toEqual(["trafic-agent destroy 'my-app'"]);
   });
 
   it("targets the preview environment when one is given", async () => {
@@ -41,18 +31,30 @@ describe("destroy", () => {
 
     await destroy({ ...baseOptions, preview: "42" }, io);
 
-    expect(io.tested[0]).toContain("preview-42--my-app");
-    expect(io.commands[0]).toContain("preview-42--my-app");
+    expect(io.commands).toEqual(["trafic-agent destroy 'preview-42--my-app'"]);
   });
 
-  it("still removes the directory when ddev delete fails", async () => {
-    // Otherwise a project DDEV has already forgotten could never be cleaned
-    // up, and the next deploy would find a stale directory
-    const io = createFakeSshIo({ exists: true, fails: ["ddev delete"] });
+  it("quotes the project name for the remote shell", async () => {
+    const io = createFakeSshIo({ exists: true });
 
-    await destroy(baseOptions, io);
+    await destroy({ ...baseOptions, name: "app; rm -rf ~" }, io);
 
-    expect(io.commands).toHaveLength(2);
-    expect(io.commands[1]).toContain("rm -rf");
+    expect(io.commands).toEqual([`trafic-agent destroy 'app; rm -rf ~'`]);
+  });
+
+  it("fails with a clear message when the agent is not installed", async () => {
+    const io = createFakeSshIo({ exists: false });
+
+    await expect(destroy(baseOptions, io)).rejects.toThrow(
+      /trafic-agent is not on the PATH of ddev@server\.example\.com/,
+    );
+    expect(io.commands).toEqual([]);
+  });
+
+  it("fails when the agent fails", async () => {
+    // An unsafe path or a database error must fail the CI job, not pass it
+    const io = createFakeSshIo({ exists: true, fails: ["trafic-agent destroy"] });
+
+    await expect(destroy(baseOptions, io)).rejects.toThrow();
   });
 });

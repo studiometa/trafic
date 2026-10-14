@@ -1,14 +1,19 @@
 import * as ssh from "../ssh.js";
-import { info, step, success, resetSteps, warn } from "../steps.js";
+import { info, step, success, resetSteps } from "../steps.js";
 import type { DestroyOptions } from "../types.js";
 import { resolveProjectName } from "../types.js";
 
 /**
  * Destroy a DDEV project on a remote server.
  *
+ * The removal itself lives in the agent, `trafic-agent destroy`, so the
+ * server can also remove a project on its own. The agent finds the project
+ * directory from its own config and deletes the DDEV project, the directory
+ * and the project's records in its database.
+ *
  * Steps:
- * 1. Stop and delete the DDEV project
- * 2. Remove the project directory
+ * 1. Check that the agent is installed
+ * 2. Run `trafic-agent destroy` on the server
  */
 export async function destroy(
   options: DestroyOptions,
@@ -17,37 +22,23 @@ export async function destroy(
   resetSteps();
 
   const projectName = resolveProjectName(options.name, options.preview);
-  const projectDir = `${options.projectsDir}/${projectName}`;
 
   info(`Project: ${projectName}`);
   info(`Server: ${options.user}@${options.host}:${options.port}`);
-  info(`Directory: ${projectDir}`);
 
-  // Check if the project directory exists
-  const exists = await io.test(options, `test -d ${projectDir}`);
+  // 1. Check the agent
+  step("Check the Trafic agent");
 
-  if (!exists) {
-    warn(`Project directory ${projectDir} does not exist — nothing to destroy`);
-    return;
-  }
-
-  // 1. Stop and delete DDEV project
-  step("Delete DDEV project");
-
-  try {
-    await io.exec(
-      options,
-      `cd ${projectDir} && ddev delete -Oy`,
+  if (!(await io.test(options, "command -v trafic-agent"))) {
+    throw new Error(
+      `trafic-agent is not on the PATH of ${options.user}@${options.host}. Set the server up with \`trafic setup\`, then try again`,
     );
-  } catch (err) {
-    warn("DDEV delete failed — project may not be a valid DDEV project");
-    info(String(err));
   }
 
-  // 2. Remove the project directory
-  step("Remove project directory");
+  // 2. Destroy the project
+  step("Destroy the project");
 
-  await io.exec(options, `rm -rf ${projectDir}`);
+  await io.exec(options, `trafic-agent destroy ${ssh.shellQuote(projectName)}`);
 
-  success(`Destroyed ${projectName}`);
+  success(`Destroy of ${projectName} complete`);
 }

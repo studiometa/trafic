@@ -102,8 +102,6 @@ export interface DestroyOptions extends SSHOptions {
   name: string;
   /** MR/PR number for preview environments */
   preview?: string;
-  /** Projects directory on the server (default: "~/www") */
-  projectsDir: string;
 }
 
 /**
