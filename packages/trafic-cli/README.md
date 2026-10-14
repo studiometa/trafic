@@ -188,16 +188,17 @@ The setup command executes 5 steps over SSH:
 4. **Setup the server** — Run `trafic-agent setup` (Docker, DDEV, Traefik, systemd, hardening)
 5. **Verify** — Check that the `trafic-agent` service is active
 
-The deploy command executes 8 steps over SSH:
+The deploy command executes 9 steps over SSH:
 
-1. **Update source code** — Clone the repository, or fetch and check out the branch when it is already there. A clone also writes `.ddev/config.local.yaml` with the project name and the server's router ports, read from `ddev config global`
-2. **Start DDEV** — Run `ddev start` unless the project is already running
-3. **Before-script** — Optional, on the server, outside the container
-4. **Rsync files** — Sync local paths to the server. A directory is mirrored with `--delete`, so a file the build stops producing is removed from the server too; a single file is copied as itself. A path that does not exist stops the deploy
-5. **Create-script** — Optional, on the server, and **only on the deploy that created the project**. For one-time seeding such as `ddev pull`, which overwrites the database and so must not repeat
-6. **Run script** — Optional, inside the container, with `--env` values available to it
-7. **After-script** — Optional, on the server, outside the container
-8. **Verify** — Run `ddev describe` and return the project URL
+1. **Cancel a scheduled removal** — Run `trafic-agent destroy <name> --cancel`, so the agent cannot remove a project scheduled with `trafic destroy --delay` while it is deployed. The deploy fails when `trafic-agent` is not on the `PATH` of the SSH user
+2. **Update source code** — Clone the repository, or fetch and check out the branch when it is already there. A clone also writes `.ddev/config.local.yaml` with the project name and the server's router ports, read from `ddev config global`
+3. **Start DDEV** — Run `ddev start` unless the project is already running
+4. **Before-script** — Optional, on the server, outside the container
+5. **Rsync files** — Sync local paths to the server. A directory is mirrored with `--delete`, so a file the build stops producing is removed from the server too; a single file is copied as itself. A path that does not exist stops the deploy
+6. **Create-script** — Optional, on the server, and **only on the deploy that created the project**. For one-time seeding such as `ddev pull`, which overwrites the database and so must not repeat
+7. **Run script** — Optional, inside the container, with `--env` values available to it
+8. **After-script** — Optional, on the server, outside the container
+9. **Verify** — Run `ddev describe` and return the project URL
 
 ### Seeding a database once
 

@@ -63,7 +63,7 @@ packages/
 Runs on CI runners. Orchestrates deployments via SSH/rsync. **Zero runtime dependencies** (uses native `node:child_process` for SSH).
 
 Commands:
-- `trafic deploy` — 7-step DDEV deployment
+- `trafic deploy` — 9-step DDEV deployment
 - `trafic destroy` — Remove project from server
 
 ### Agent (`packages/trafic-agent/`)
