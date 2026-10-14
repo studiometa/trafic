@@ -113,6 +113,12 @@ describe("destroy", () => {
     );
   });
 
+  it("gives the agent the timeout for the backup of a scheduled removal", async () => {
+    expect(
+      await remoteCommand({ ...baseOptions, backup: true, timeout: "1h", delay: "48h" }),
+    ).toMatch(/; trafic-agent destroy 'my-app' --backup --timeout '1h' --delay '48h'$/);
+  });
+
   it("quotes the delay for the remote shell", async () => {
     expect(await remoteCommand({ ...baseOptions, delay: "48h; rm -rf ~" })).toMatch(
       /; trafic-agent destroy 'my-app' --delay '48h; rm -rf ~'$/,
