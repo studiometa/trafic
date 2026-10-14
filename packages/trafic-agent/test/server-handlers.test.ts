@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   handleAuth,
   handleErrors,
@@ -8,6 +10,7 @@ import {
   getEffectiveAuthConfig,
   makeRoomUnderLimit,
   releaseStatusesAtStart,
+  deleteUnlistedAtStart,
 } from "../src/server.js";
 import {
   initDb,
@@ -535,5 +538,44 @@ describe("releaseStatusesAtStart", () => {
 
     expect(releaseStatusesAtStart(() => false)).toEqual(["app"]);
     expect(getProject("app")?.status).toBe("running");
+  });
+});
+
+describe("deleteUnlistedAtStart", () => {
+  let root: string;
+  let projectListPath: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "trafic-unlisted-"));
+    projectListPath = join(root, "project_list.yaml");
+    writeFileSync(projectListPath, "app:\n    approot: /home/ddev/www/app\n");
+    initDb(":memory:");
+  });
+
+  afterEach(() => {
+    closeDb();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("deletes the records of the projects missing from project_list.yaml", () => {
+    updateProjectAccess("app");
+    updateProjectAccess("preview-42--my-app");
+
+    expect(deleteUnlistedAtStart(projectListPath)).toEqual(["preview-42--my-app"]);
+    expect(getProject("preview-42--my-app")).toBeUndefined();
+    expect(getProject("app")).toBeDefined();
+  });
+
+  it("counts its own id as gone, as after a reboot", () => {
+    setProjectStatus("gone", "destroying");
+
+    expect(deleteUnlistedAtStart(projectListPath, () => true)).toEqual(["gone"]);
+  });
+
+  it("keeps every record when project_list.yaml is missing", () => {
+    updateProjectAccess("app");
+
+    expect(deleteUnlistedAtStart(join(root, "missing.yaml"))).toEqual([]);
+    expect(getProject("app")).toBeDefined();
   });
 });

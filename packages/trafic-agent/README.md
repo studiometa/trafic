@@ -116,7 +116,9 @@ Steps:
 3. **Directory** — removes the project directory
 4. **Database** — deletes the project's rows from the agent database (`projects`, `access_logs` and `scheduled_destroys`)
 
-The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning, does not run DDEV and only deletes the project's rows from the agent database, so a retry after a failed run cleans them up. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
+The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command does not run DDEV and only deletes the project's rows from the agent database, so a retry after a failed run cleans them up. Its warning says whether it deleted rows.
+
+The agent service also deletes the rows of projects that DDEV no longer lists (removed with `ddev delete` by hand, for example) when it starts and at each idle sweep. It keeps the rows of a project that a running `trafic-agent destroy` is removing, and of a project with a scheduled removal (the scheduled removal still removes its directory). It keeps all rows when `project_list.yaml` is missing or empty. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
 
 The command checks the config as `start` does, and exits with an error before it changes anything when the config is not valid (for example a relative `[backup] dir`).
 

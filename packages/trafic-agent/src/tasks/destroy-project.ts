@@ -226,8 +226,11 @@ export async function destroyProject(
   const dir = resolveProjectDir(name, config);
 
   if (!isDirectory(dir)) {
-    console.warn(`Project directory ${dir} does not exist — nothing to destroy`);
-    deleteProject(name);
+    console.warn(
+      deleteProject(name)
+        ? `Project directory ${dir} does not exist: removed ${name} from the agent database`
+        : `Project directory ${dir} does not exist — nothing to destroy`,
+    );
     return false;
   }
 

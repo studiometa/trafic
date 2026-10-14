@@ -122,6 +122,7 @@ Safety rules of the command:
 
 - It refuses a project directory outside `projects_dir`, also after it follows symbolic links, and a project directory that is a symbolic link. It refuses an empty name, `.`, `..` and names with `/`.
 - When the directory does not exist, it only deletes the database rows. So you can run it again after a failed removal.
+- The service deletes by itself the rows of projects that DDEV no longer lists, when it starts and at each idle sweep. A project removed with `ddev delete` by hand needs no `destroy`.
 - It checks the config as `start` does, and stops before any change when the config is not valid.
 
 Scheduled removals:

@@ -143,6 +143,25 @@ describe("destroyProject", () => {
     expect(getProject("other")).toBeDefined();
   });
 
+  it("says whether it removed records when the directory is gone", async () => {
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(message);
+
+    try {
+      updateProjectAccess("gone");
+      await destroyProject("gone", config, {}, recordingRunner(true, []));
+      await destroyProject("never", config, {}, recordingRunner(true, []));
+    } finally {
+      console.warn = warn;
+    }
+
+    expect(warnings).toEqual([
+      `Project directory ${join(config.projectsDir, "gone")} does not exist: removed gone from the agent database`,
+      `Project directory ${join(config.projectsDir, "never")} does not exist — nothing to destroy`,
+    ]);
+  });
+
   it("still removes the directory when ddev delete fails", async () => {
     // Otherwise a project DDEV has already forgotten could never be cleaned
     // up, and the next deploy would find a stale directory

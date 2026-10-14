@@ -21,6 +21,7 @@ import {
   getProject,
   isProcessAlive,
   releaseStaleStatuses,
+  deleteUnlistedProjects,
 } from "./utils/db.js";
 import {
   loadProjectConfig,
@@ -400,6 +401,20 @@ export function releaseStatusesAtStart(
 }
 
 /**
+ * Delete the records of the projects that DDEV no longer lists, when the
+ * service starts. Its own id counts as gone, as in releaseStatusesAtStart.
+ */
+export function deleteUnlistedAtStart(
+  projectListPath: string,
+  isAlive: (pid: number) => boolean = isProcessAlive,
+): string[] {
+  return deleteUnlistedProjects(
+    new Set(loadProjectList(projectListPath).keys()),
+    (pid) => pid !== process.pid && isAlive(pid),
+  );
+}
+
+/**
  * Start the agent server
  */
 export function startServer(agentConfig: AgentConfig): void {
@@ -407,6 +422,10 @@ export function startServer(agentConfig: AgentConfig): void {
 
   // Initialize database
   initDb(config.dbPath);
+
+  for (const name of deleteUnlistedAtStart(config.projectListPath)) {
+    console.log(`Removed ${name} from the agent database: DDEV no longer lists it`);
+  }
 
   for (const name of releaseStatusesAtStart()) {
     console.log(`Set ${name} back to running: the process that started or removed it is gone`);

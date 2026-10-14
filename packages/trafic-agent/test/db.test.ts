@@ -22,6 +22,7 @@ import {
   getScheduledDestroys,
   isProcessAlive,
   releaseStaleStatuses,
+  deleteUnlistedProjects,
 } from "../src/utils/db.js";
 
 const NOW = new Date("2026-09-07T12:00:00Z").getTime();
@@ -357,7 +358,13 @@ describe("db", () => {
     });
 
     it("does nothing for a project it has never seen", () => {
-      expect(() => deleteProject("nope")).not.toThrow();
+      expect(deleteProject("nope")).toBe(false);
+    });
+
+    it("says whether it deleted records", () => {
+      logAccess({ project: "logged", timestamp: NOW, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+
+      expect(deleteProject("logged")).toBe(true);
     });
 
     it("cancels the scheduled removal of the project", () => {
@@ -366,6 +373,56 @@ describe("db", () => {
       deleteProject("gone");
 
       expect(getScheduledDestroys()).toEqual([]);
+    });
+  });
+
+  describe("deleteUnlistedProjects", () => {
+    it("deletes the records of the projects DDEV no longer lists", () => {
+      // Removed with ddev delete by hand, or by a CLI older than the agent's
+      // own removal
+      updateProjectAccess("listed", clock);
+      updateProjectAccess("gone", clock);
+      logAccess({ project: "gone", timestamp: NOW, ip: "1.2.3.4", userAgent: "ua", path: "/" });
+
+      expect(deleteUnlistedProjects(new Set(["listed"]))).toEqual(["gone"]);
+      expect(getProject("gone")).toBeUndefined();
+      expect(getAccessLogs("gone")).toEqual([]);
+      expect(getProject("listed")).toBeDefined();
+    });
+
+    it("keeps a project whose removal is scheduled", () => {
+      // ddev delete by hand leaves the directory: the scheduled removal
+      // still has to remove it
+      updateProjectAccess("scheduled", clock);
+      scheduleDestroy("scheduled", NOW, false);
+
+      expect(deleteUnlistedProjects(new Set(["other"]))).toEqual([]);
+      expect(getProject("scheduled")).toBeDefined();
+      expect(getScheduledDestroys()).toHaveLength(1);
+    });
+
+    it("keeps a project whose start or removal is still running", () => {
+      // ddev delete takes the project out of the list before the removal
+      // deletes the records
+      setProjectStatus("removing", "destroying", clock);
+
+      expect(deleteUnlistedProjects(new Set(["other"]), () => true)).toEqual([]);
+      expect(getProject("removing")?.status).toBe("destroying");
+    });
+
+    it("deletes a project whose removal was killed", () => {
+      setProjectStatus("removing", "destroying", clock);
+
+      expect(deleteUnlistedProjects(new Set(["other"]), () => false)).toEqual(["removing"]);
+      expect(getProject("removing")).toBeUndefined();
+    });
+
+    it("keeps every record when the list is empty", () => {
+      // A missing or unreadable project_list.yaml must not wipe the database
+      updateProjectAccess("app", clock);
+
+      expect(deleteUnlistedProjects(new Set())).toEqual([]);
+      expect(getProject("app")).toBeDefined();
     });
   });
 
