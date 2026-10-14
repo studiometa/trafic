@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -11,7 +12,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { destroyProject, resolveProjectDir } from "../src/tasks/destroy-project.js";
+import {
+  destroyProject,
+  loadDestroyConfig,
+  openDestroyDb,
+  resolveProjectDir,
+} from "../src/tasks/destroy-project.js";
 import {
   initDb,
   closeDb,
@@ -435,5 +441,41 @@ describe("destroyProject", () => {
 
       expect(() => resolveProjectDir("app", config)).toThrow(/not inside the projects directory/);
     });
+  });
+
+  // Root reads and writes anyway
+  describe.skipIf(process.getuid?.() === 0)("as a user without access", () => {
+    afterEach(() => {
+      // Let the cleanup remove what a test locked
+      chmodSync(root, 0o755);
+    });
+
+    it("says which user to connect as when it cannot read the config", () => {
+      const path = join(root, "config.toml");
+      writeFileSync(path, 'tld = "previews.example.com"\n');
+      chmodSync(path, 0o000);
+
+      expect(() => loadDestroyConfig(path)).toThrow(
+        `cannot read ${path} (EACCES): connect as the ddev user`,
+      );
+    });
+
+    it("says which user to connect as when it cannot open the database", () => {
+      closeDb();
+      chmodSync(root, 0o555);
+      const path = join(root, "db.sqlite");
+
+      expect(() => openDestroyDb(path)).toThrow(
+        `cannot open the database ${path} (unable to open database file): connect as the ddev user`,
+      );
+    });
+  });
+
+  it("passes on a config error that is not about access", () => {
+    const path = join(root, "config.toml");
+    writeFileSync(path, "tld = \n");
+
+    expect(() => loadDestroyConfig(path)).toThrow();
+    expect(() => loadDestroyConfig(path)).not.toThrow(/ddev user/);
   });
 });

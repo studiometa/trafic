@@ -4,8 +4,8 @@ import { parseArgs } from "node:util";
 import { loadConfig, parseTimeout, validateConfig } from "./utils/config.js";
 import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
-import { cancelScheduledDestroy, closeDb, getScheduledDestroys, initDb } from "./utils/db.js";
-import { destroyProject } from "./tasks/destroy-project.js";
+import { cancelScheduledDestroy, closeDb, getScheduledDestroys } from "./utils/db.js";
+import { destroyProject, loadDestroyConfig, openDestroyDb } from "./tasks/destroy-project.js";
 import {
   scheduleProjectDestroy,
   startScheduledDestroyScheduler,
@@ -188,16 +188,16 @@ async function runDestroy(
     process.exit(1);
   }
 
-  // A relative or empty backup.dir would put the backup in the working
-  // directory, which start refuses
-  const config = loadConfig(values.config as string | undefined);
-  exitOnConfigErrors(config);
-  initDb(config.dbPath);
-
   const backup = values.backup as boolean | undefined;
   const delay = values.delay as string | undefined;
 
   try {
+    const config = loadDestroyConfig(values.config as string | undefined);
+    // A relative or empty backup.dir would put the backup in the working
+    // directory, which start refuses
+    exitOnConfigErrors(config);
+    openDestroyDb(config.dbPath);
+
     if (values.list) {
       printScheduledDestroys();
     } else if (values.cancel) {

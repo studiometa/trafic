@@ -1,13 +1,64 @@
 import { existsSync, lstatSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { backupProject, type BackupOptions } from "./backup.js";
-import { deleteProject, getProject, setProjectStatus } from "../utils/db.js";
+import { deleteProject, getProject, initDb, setProjectStatus } from "../utils/db.js";
 import { loadProjectList, nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
+import { loadConfig } from "../utils/config.js";
 import { isInside } from "../utils/paths.js";
 import type { AgentConfig } from "../types.js";
 
 /** Removing containers and volumes is slower than a stop. */
 const DELETE_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * What to do when `trafic-agent destroy` cannot read the config or open the
+ * database. Only the ddev user can do both: the config is readable by root
+ * and the ddev group only (640 root:ddev), and the database directory
+ * belongs to ddev. `trafic destroy` connects as ddev by default.
+ */
+const DDEV_USER_HINT = "connect as the ddev user";
+
+/** SQLite result codes of a database that the user cannot open or write. */
+const SQLITE_ACCESS_ERRORS = new Set([3 /* PERM */, 8 /* READONLY */, 14 /* CANTOPEN */]);
+
+/**
+ * Read the agent config for `trafic-agent destroy`. A permission error says
+ * which user to connect as.
+ */
+export function loadDestroyConfig(configPath?: string): AgentConfig {
+  try {
+    return loadConfig(configPath);
+  } catch (error) {
+    const { code, path } = error as NodeJS.ErrnoException;
+
+    if (code !== "EACCES" && code !== "EPERM") {
+      throw error;
+    }
+
+    throw new Error(`cannot read ${path ?? configPath} (${code}): ${DDEV_USER_HINT}`, { cause: error });
+  }
+}
+
+/**
+ * Open the agent database for `trafic-agent destroy`. A permission error
+ * says which user to connect as.
+ */
+export function openDestroyDb(dbPath: string): void {
+  try {
+    initDb(dbPath);
+  } catch (error) {
+    // The extended result code holds the primary one in its low byte
+    const { errcode } = error as { errcode?: number };
+
+    if (errcode === undefined || !SQLITE_ACCESS_ERRORS.has(errcode & 0xff)) {
+      throw error;
+    }
+
+    throw new Error(`cannot open the database ${dbPath} (${(error as Error).message}): ${DDEV_USER_HINT}`, {
+      cause: error,
+    });
+  }
+}
 
 /**
  * Find the directory of a project, and refuse one outside the projects
