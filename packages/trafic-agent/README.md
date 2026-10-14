@@ -234,11 +234,11 @@ basic_auth = ["user:password"]
 [[auth.rules]]
 match = "*.public.*"
 policy = "allow"
-allowed_ips = ["203.0.113.0/24"]  # optional, per rule
 
 [[auth.rules]]
 match = "admin.*"
 policy = "basic"
+allowed_ips = ["203.0.113.0/24"]  # optional: these IPs skip basic auth
 
 # Optional: one wildcard certificate instead of one per preview.
 # See the TLS section below.
