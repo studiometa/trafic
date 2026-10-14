@@ -5,6 +5,7 @@ import { detectBranch, detectRepo } from "./ci.js";
 import { deploy } from "./commands/deploy.js";
 import { destroy } from "./commands/destroy.js";
 import { setup } from "./commands/setup.js";
+import { skill } from "./commands/skill.js";
 import { parseDuration } from "./ssh.js";
 import { error } from "./steps.js";
 import type { DeployOptions, DestroyOptions, SetupOptions } from "./types.js";
@@ -18,6 +19,7 @@ const HELP = `
     trafic setup [options]     Setup a new DDEV server over SSH
     trafic deploy [options]    Deploy a project to a DDEV server
     trafic destroy [options]   Destroy a DDEV project
+    trafic skill               Print the agent skill (SKILL.md) of this version
 
   Common options:
     --host <host>              SSH host (required)
@@ -158,6 +160,11 @@ function main(): void {
   if (command === "--version" || command === "-v") {
     console.log(__VERSION__);
     process.exit(0);
+  }
+
+  if (command === "skill") {
+    skill();
+    return;
   }
 
   // Parse arguments (skip the command name).

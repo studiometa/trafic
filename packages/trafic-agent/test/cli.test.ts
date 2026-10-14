@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { version: string };
+const skill = readFileSync(new URL("../../../skills/trafic-agent/SKILL.md", import.meta.url), "utf-8");
 
 describe("trafic-agent", () => {
   const argv = process.argv;
@@ -36,6 +37,19 @@ describe("trafic-agent", () => {
 
   it.each([["version"], ["--version"], ["-v"]])("prints the version with %s", async (arg) => {
     expect((await run([arg])).out).toEqual([pkg.version]);
+  });
+
+  it("prints the skill of the agent", async () => {
+    const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    process.argv = ["node", "trafic-agent", "skill"];
+
+    await import("../src/cli.js");
+    await vi.waitFor(() => expect(write).toHaveBeenCalled());
+
+    const out = write.mock.calls.map(([chunk]) => String(chunk)).join("");
+    write.mockRestore();
+    expect(out).toBe(skill);
+    expect(out).toMatch(/^---\nname: trafic-agent\n/);
   });
 
   // Root reads the config anyway, and destroy refuses to run as root

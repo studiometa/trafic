@@ -17,6 +17,7 @@ import { isRoot } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
 import { runUpgrade } from "./setup/upgrade.js";
 import type { AgentConfig } from "./types.js";
+import SKILL from "../../../skills/trafic-agent/SKILL.md?raw";
 
 declare const __VERSION__: string;
 
@@ -34,6 +35,7 @@ Commands:
   audit                   Run security audit checks
   destroy <name>          Remove a project: DDEV project, directory, database records,
                           now or after a delay
+  skill                   Print the agent skill (SKILL.md) of this version
   version                 Show version (also -v, --version)
   help                    Show this help (also -h, --help)
 
@@ -431,6 +433,11 @@ async function main(): Promise<void> {
 
     case "version":
       printVersion();
+      break;
+
+    case "skill":
+      // The skill bundled at build time, so it matches this version
+      process.stdout.write(SKILL);
       break;
 
     case "start":
