@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  EXPORT_TIMEOUT_MS,
+  BACKUP_TIMEOUT_MS,
   backupProject,
   backupTimestamp,
   removeOldBackups,
@@ -91,15 +91,12 @@ describe("backupProject", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  /** A fake ddev that also records the time limit of the export. */
-  function timedDdev(exportTimeouts: number[]): DdevRunner {
-    const ddev = fakeDdev({}, []);
+  /** A fake ddev that records the time limit of each command. */
+  function timedDdev(timeouts: Map<string, number>, options: FakeDdevOptions = {}): DdevRunner {
+    const ddev = fakeDdev(options, []);
 
     return (args, timeoutMs, cwd) => {
-      if (args[0] === "export-db") {
-        exportTimeouts.push(timeoutMs);
-      }
-
+      timeouts.set(args[0]!, timeoutMs);
       return ddev(args, timeoutMs, cwd);
     };
   }
@@ -212,20 +209,71 @@ describe("backupProject", () => {
     ).rejects.toThrow(/upload directories/);
   });
 
-  it("gives the export 10 minutes by default", async () => {
-    const exportTimeouts: number[] = [];
+  describe("time limit", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.parse("2026-10-14T07:40:24Z"));
+    });
 
-    await backupProject("app", projectDir, backupDir, {}, timedDdev(exportTimeouts));
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    expect(exportTimeouts).toEqual([EXPORT_TIMEOUT_MS]);
-  });
+    it("gives the backup 40 minutes by default", async () => {
+      const timeouts = new Map<string, number>();
 
-  it("gives the export the time limit it is given", async () => {
-    const exportTimeouts: number[] = [];
+      await backupProject("app", projectDir, backupDir, {}, timedDdev(timeouts));
 
-    await backupProject("app", projectDir, backupDir, { timeoutMs: 3_600_000 }, timedDdev(exportTimeouts));
+      expect(BACKUP_TIMEOUT_MS).toBe(40 * 60 * 1000);
+      expect(timeouts.get("export-db")).toBe(BACKUP_TIMEOUT_MS);
+    });
 
-    expect(exportTimeouts).toEqual([3_600_000]);
+    it("gives each step the time the steps before it left", async () => {
+      // One limit for the whole backup: the caller, such as trafic destroy
+      // over SSH, knows how long the backup can take
+      const timeouts = new Map<string, number>();
+      const ddev = timedDdev(timeouts);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          vi.advanceTimersByTime(59 * 60 * 1000 + 30_000);
+        }
+
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await backupProject("app", projectDir, backupDir, { timeoutMs: 3_600_000 }, run);
+
+      expect(timeouts.get("export-db")).toBe(3_600_000);
+      expect(timeouts.get("exec")).toBe(30_000);
+    });
+
+    it("caps the reading of the upload directories at one minute", async () => {
+      const timeouts = new Map<string, number>();
+
+      await backupProject("app", projectDir, backupDir, { timeoutMs: 3_600_000 }, timedDdev(timeouts));
+
+      expect(timeouts.get("exec")).toBe(60_000);
+    });
+
+    it("fails and keeps no partial backup when no time is left", async () => {
+      const calls: string[][] = [];
+      const ddev = fakeDdev({ status: "stopped" }, calls);
+      const run: DdevRunner = (args, timeoutMs, cwd) => {
+        if (args[0] === "export-db") {
+          vi.advanceTimersByTime(60_000);
+        }
+
+        return ddev(args, timeoutMs, cwd);
+      };
+
+      await expect(backupProject("app", projectDir, backupDir, { timeoutMs: 60_000 }, run)).rejects.toThrow(
+        /longer than its time limit/,
+      );
+
+      expect(calls.some(([command]) => command === "exec")).toBe(false);
+      expect(readdirSync(join(backupDir, "app"))).toEqual([]);
+      expect(calls.at(-1)).toEqual(["stop", "app"]);
+    });
   });
 
   // Root reads the directory anyway

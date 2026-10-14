@@ -54,9 +54,9 @@ Destroy options:
   -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
   --backup                Back up the database and upload directories first, to
                           [backup] dir. If the backup fails, nothing is removed
-  --timeout <duration>    Time limit of each backup step, the database dump and the
-                          files archive: 10m, 90s, 1h; a bare number is minutes
-                          (default: 10m for the dump, 30m for the archive)
+  --timeout <duration>    Time limit of the backup, the database dump and the files
+                          archive together: 10m, 90s, 1h; a bare number is minutes
+                          (default: 40m)
 
 Upgrade/update options:
   --dry-run               Show what would be done without making changes

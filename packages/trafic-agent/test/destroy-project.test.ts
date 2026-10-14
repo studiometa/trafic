@@ -237,7 +237,9 @@ describe("destroyProject", () => {
 
       await destroyProject("app", config, { backup: true, timeoutMs: 3_600_000 }, run);
 
-      expect(timeouts.get("export-db")).toBe(3_600_000);
+      // The time left of the backup, a few milliseconds after it began
+      expect(timeouts.get("export-db")).toBeLessThanOrEqual(3_600_000);
+      expect(timeouts.get("export-db")).toBeGreaterThan(3_590_000);
     });
 
     it("removes nothing when the backup fails", async () => {

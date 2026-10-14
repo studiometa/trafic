@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { destroy } from "../src/commands/destroy.js";
+import { BACKUP_MARGIN_MS, destroy } from "../src/commands/destroy.js";
 import { createFakeSshIo } from "./helpers/fake-ssh-io.js";
 import type { DestroyOptions } from "../src/types.js";
 
@@ -51,27 +51,54 @@ describe("destroy", () => {
 
   it("asks the agent for a backup when one is wanted", async () => {
     expect(await remoteCommand({ ...baseOptions, preview: "42", backup: true })).toMatch(
-      /; trafic-agent destroy 'preview-42--my-app' --backup$/,
+      /; trafic-agent destroy 'preview-42--my-app' --backup --timeout '600s'$/,
     );
   });
 
-  it("gives the agent the timeout for the backup steps", async () => {
+  it("gives the agent the timeout as the time limit of the backup", async () => {
     expect(await remoteCommand({ ...baseOptions, backup: true, timeout: "1h" })).toMatch(
       /; trafic-agent destroy 'my-app' --backup --timeout '1h'$/,
     );
   });
 
-  it("quotes the timeout for the remote shell", async () => {
-    expect(await remoteCommand({ ...baseOptions, backup: true, timeout: "1h; rm -rf ~" })).toMatch(
-      /; trafic-agent destroy 'my-app' --backup --timeout '1h; rm -rf ~'$/,
+  it("gives the remote command more time than the backup", async () => {
+    // Else the SSH connection is cut before the agent fails a slow backup
+    // cleanly, and the start, the stop and ddev delete have no time left
+    const io = createFakeSshIo();
+
+    await destroy({ ...baseOptions, backup: true, timeout: "1h" }, io);
+
+    expect(BACKUP_MARGIN_MS).toBe(10 * 60 * 1000);
+    expect(io.execOptions[0]?.timeoutMs).toBe(60 * 60 * 1000 + BACKUP_MARGIN_MS);
+  });
+
+  it("gives the remote command the default timeout plus the margin without a timeout", async () => {
+    const io = createFakeSshIo();
+
+    await destroy({ ...baseOptions, backup: true }, io);
+
+    expect(io.execOptions[0]?.timeoutMs).toBe(10 * 60 * 1000 + BACKUP_MARGIN_MS);
+  });
+
+  it("refuses a timeout that is not a duration before it connects", async () => {
+    const io = createFakeSshIo();
+
+    await expect(destroy({ ...baseOptions, backup: true, timeout: "1h; rm -rf ~" }, io)).rejects.toThrow(
+      /Invalid timeout/,
     );
+
+    expect(io.commands).toEqual([]);
   });
 
   it("keeps the timeout to itself without a backup", async () => {
-    // The agent uses it for the backup steps only
-    expect(await remoteCommand({ ...baseOptions, timeout: "1h" })).toMatch(
-      /; trafic-agent destroy 'my-app'$/,
-    );
+    // The agent uses it for the backup only; the remote command gets it as
+    // it is
+    const io = createFakeSshIo();
+
+    await destroy({ ...baseOptions, timeout: "1h" }, io);
+
+    expect(io.commands[0]).toMatch(/; trafic-agent destroy 'my-app'$/);
+    expect(io.execOptions[0]?.timeoutMs).toBeUndefined();
   });
 
   it("quotes the project name for the remote shell", async () => {

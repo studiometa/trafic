@@ -16,11 +16,15 @@ const execFileAsync = promisify(execFile);
 /** Where DDEV mounts the project in the web container. */
 const CONTAINER_APPROOT = "/var/www/html";
 
-/** A dump of a large database takes minutes. */
-export const EXPORT_TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Default time limit of a backup, the database dump and the files archive
+ * together: a large database takes minutes, and upload directories can hold
+ * gigabytes.
+ */
+export const BACKUP_TIMEOUT_MS = 40 * 60 * 1000;
 
-/** Upload directories can hold gigabytes. */
-const ARCHIVE_TIMEOUT_MS = 30 * 60 * 1000;
+/** Reading the upload directories is quick. */
+const UPLOAD_DIRS_TIMEOUT_MS = 60_000;
 
 /** Retention is counted in days, so an hourly sweep is enough. */
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
@@ -70,8 +74,8 @@ function isDirectory(path: string): boolean {
  *
  * A directory that does not exist on the host is left out.
  */
-async function findUploadDirs(dir: string, run: DdevRunner): Promise<string[]> {
-  const { ok, stdout } = await run(["exec", "printenv", "DDEV_FILES_DIRS"], 60_000, dir);
+async function findUploadDirs(dir: string, timeoutMs: number, run: DdevRunner): Promise<string[]> {
+  const { ok, stdout } = await run(["exec", "printenv", "DDEV_FILES_DIRS"], timeoutMs, dir);
 
   if (!ok) {
     throw new Error("Could not read the upload directories (DDEV_FILES_DIRS)");
@@ -89,31 +93,40 @@ async function findUploadDirs(dir: string, run: DdevRunner): Promise<string[]> {
 /** Options of a backup. */
 export interface BackupOptions {
   /**
-   * Time limit of each step, the database dump and the files archive.
-   * Defaults to EXPORT_TIMEOUT_MS for the dump and ARCHIVE_TIMEOUT_MS for
-   * the archive.
+   * Time limit of the backup: the database dump, the reading of the upload
+   * directories and the files archive together (default:
+   * BACKUP_TIMEOUT_MS). Starting and stopping the project are not part of
+   * it.
    */
   timeoutMs?: number;
 }
 
+/** The time left before the deadline of the backup. */
+function timeLeft(deadline: number): number {
+  const left = deadline - Date.now();
+
+  if (left <= 0) {
+    throw new Error("The backup took longer than its time limit");
+  }
+
+  return left;
+}
+
 /**
  * Write the database dump and the upload archive of a running project.
+ * Each step gets the time left before `deadline`.
  */
 async function writeBackup(
   hasDatabase: boolean,
   dir: string,
   target: string,
-  { timeoutMs }: BackupOptions,
+  deadline: number,
   run: DdevRunner,
 ): Promise<void> {
   if (hasDatabase) {
     const file = join(target, "db.sql.gz");
     console.log(`Exporting the database to ${file}`);
-    const { ok } = await run(
-      ["export-db", `--file=${file}`],
-      timeoutMs ?? EXPORT_TIMEOUT_MS,
-      dir,
-    );
+    const { ok } = await run(["export-db", `--file=${file}`], timeLeft(deadline), dir);
 
     if (!ok) {
       throw new Error("Could not export the database");
@@ -122,7 +135,11 @@ async function writeBackup(
     console.log("No database container — skipping the database dump");
   }
 
-  const uploadDirs = await findUploadDirs(dir, run);
+  const uploadDirs = await findUploadDirs(
+    dir,
+    Math.min(UPLOAD_DIRS_TIMEOUT_MS, timeLeft(deadline)),
+    run,
+  );
 
   if (uploadDirs.length === 0) {
     console.log("No upload directory — skipping the files archive");
@@ -131,7 +148,7 @@ async function writeBackup(
 
   const file = join(target, "files.tar.gz");
   console.log(`Archiving ${uploadDirs.join(", ")} to ${file}`);
-  await archive(file, dir, uploadDirs, timeoutMs ?? ARCHIVE_TIMEOUT_MS);
+  await archive(file, dir, uploadDirs, timeLeft(deadline));
 }
 
 /**
@@ -185,9 +202,9 @@ function createBackupDir(target: string, name: string): void {
  *   project directory, unless the project has none
  *
  * Both need the project running, so a stopped project is started, then
- * stopped again. A failed backup, or a step that takes longer than its time
- * limit, throws and leaves no backup directory. Returns the backup
- * directory.
+ * stopped again. A failed backup, or a backup that takes longer than its
+ * time limit (`timeoutMs`), throws and leaves no backup directory. Returns
+ * the backup directory.
  */
 export async function backupProject(
   name: string,
@@ -218,7 +235,10 @@ export async function backupProject(
     }
 
     try {
-      await writeBackup(info.dbType !== undefined, dir, target, options, run);
+      // One time limit for all the steps, so the caller knows how long the
+      // backup can take
+      const deadline = Date.now() + (options.timeoutMs ?? BACKUP_TIMEOUT_MS);
+      await writeBackup(info.dbType !== undefined, dir, target, deadline, run);
     } finally {
       if (!wasRunning && !(await stopProject(name, run))) {
         console.warn(`Could not stop ${name} after the backup`);

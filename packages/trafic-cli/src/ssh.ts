@@ -66,7 +66,7 @@ function buildDestination(options: SSHOptions): string {
 /**
  * Default timeout for a remote command (10 minutes).
  */
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+export const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Duration suffixes accepted in a timeout, in milliseconds. */
 const DURATION_UNITS: Record<string, number> = {

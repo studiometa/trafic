@@ -63,8 +63,9 @@ const HELP = `
     --preview <iid>            MR/PR number (computes the name)
     --backup                   Back up the database and upload directories on the
                                server first. If the backup fails, nothing is removed
-    --timeout <duration>       Timeout of the remote command and, with --backup, of
-                               each backup step on the server (default: 10m). Raise
+    --timeout <duration>       Timeout of the remote command (default: 10m). With
+                               --backup, the time limit of the backup on the server,
+                               and the remote command gets 10 more minutes. Raise
                                it to back up a large project
 
   Other:

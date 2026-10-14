@@ -98,8 +98,8 @@ function isDirectory(path: string): boolean {
  * Remove a project from the server.
  *
  * Steps:
- * 1. With `backup`, back up the database and the upload directories, each
- *    step within `timeoutMs` when it is given
+ * 1. With `backup`, back up the database and the upload directories, all
+ *    within `timeoutMs` when it is given
  * 2. Delete the DDEV project (containers, volumes, no snapshot)
  * 3. Remove the project directory
  * 4. Delete the project's records from the agent database

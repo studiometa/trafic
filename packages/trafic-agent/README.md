@@ -55,7 +55,7 @@ trafic-agent destroy preview-42--my-app
 trafic-agent destroy preview-42--my-app --config /etc/trafic/config.toml
 # back up the project first
 trafic-agent destroy preview-42--my-app --backup
-# give each backup step up to one hour
+# give the backup up to one hour
 trafic-agent destroy preview-42--my-app --backup --timeout 1h
 ```
 
@@ -80,7 +80,7 @@ The command checks the config as `start` does, and exits with an error before it
 
 The upload directories are the ones DDEV uses: `upload_dirs` from the project's `.ddev/config.yaml`, or the default of the project type (for example `wp-content/uploads` for WordPress). The agent reads them from `DDEV_FILES_DIRS` in the web container. Both steps need the project to run, so the agent starts a stopped project and stops it again after the backup.
 
-Each step has a time limit: 10 minutes for the dump and 30 minutes for the archive. `--timeout` sets the limit of both steps, as a duration such as `90s`, `10m` or `1h` (a bare number is minutes). A step that takes longer fails the backup, and nothing is removed. `trafic destroy --backup` passes its own `--timeout` (default `10m`).
+The backup has one time limit for the dump and the archive together: 40 minutes by default. `--timeout` sets it, as a duration such as `90s`, `10m` or `1h` (a bare number is minutes). The start and the stop of the project are not part of it. A backup that takes longer fails, and nothing is removed. `trafic destroy --backup` passes its own `--timeout` (default `10m`). A file that changes while the agent archives it (the project runs during the backup) does not fail the backup: the archive has the file as `tar` read it, and the agent prints a warning.
 
 The agent service removes backups older than `retain_days` once an hour. It can only write to `/var/backups/trafic` and `/home/ddev`: if you set `dir` to another path, remove old backups yourself. Setup creates `/var/backups/trafic`, owned by `ddev` with mode `700`.
 
