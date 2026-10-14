@@ -8,7 +8,7 @@ Trafic is a CLI tool and server agent for managing DDEV preview environments on 
 
 ```
 packages/
-├── trafic-cli/      # @studiometa/trafic-cli — CLI for CI (deploy, destroy)
+├── trafic-cli/      # @studiometa/trafic-cli — CLI for CI and operators (setup, deploy, destroy)
 └── trafic-agent/    # @studiometa/trafic-agent — Server agent (auth, scale-to-zero, setup)
 ```
 
@@ -30,7 +30,7 @@ packages/
 
 ## Versioning
 
-- Each merge into `main` releases: the `Release` workflow (`publish.yml`, `weareikko/changelog` action) runs the tests, computes the version from the fragments, folds `.changelog/` into `CHANGELOG.md`, bumps all packages, commits `Release <version>`, tags (no `v` prefix), creates the GitHub release, then publishes to npm. Without a fragment, nothing is released
+- Each merge into `main` releases: the `Release` workflow (`publish.yml`, `weareikko/changelog` action) runs the tests, computes the version from the fragments, folds `.changelog/` into `CHANGELOG.md`, bumps all packages, commits `Release <version>`, tags (no `v` prefix), creates the GitHub release, then publishes to npm. Without a fragment or a merged Renovate PR since the last release, nothing is released
 - Version from the fragments: on 0.x, a breaking entry gives a minor bump, any other entry a patch bump. Force a bump with `gh workflow run publish.yml -f version=major` (or `patch` / `minor`)
 - Prereleases: add `.changelog/prerelease` with one identifier (`alpha`, `beta`, `rc`); each merge with fragments then releases a prerelease on the `next` npm dist-tag. Delete the file to release the stable version. See [Prereleases](https://github.com/weareikko/changelog#prereleases)
 - npm trusted publishing (OIDC, no npm token) is bound to `publish.yml`: keep the publish job in that file, never call it from another workflow
@@ -63,6 +63,7 @@ packages/
 Runs on CI runners. Orchestrates deployments via SSH/rsync. **Zero runtime dependencies** (uses native `node:child_process` for SSH).
 
 Commands:
+- `trafic setup` — 5-step server setup over SSH (Node.js, agent, `trafic-agent setup`)
 - `trafic deploy` — 9-step DDEV deployment
 - `trafic destroy` — Remove project from server
 
@@ -73,15 +74,20 @@ Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + 
 - Scale-to-zero (stop idle projects)
 - Waiting pages (auto-start on request)
 - Project discovery (watches DDEV project_list.yaml)
-- TOML configuration via c12
+- TOML configuration (`/etc/trafic/config.toml`, parsed with smol-toml)
 - Per-project config via `.ddev/config.trafic.yaml`
+- Project removal, now or scheduled (`trafic-agent destroy`, `--delay`), swept every `idle_check_interval`
+- Backups before removal (`[backup]`), old backups removed hourly
+- `max_running_projects` limit
+- Access logs older than 30 days removed hourly
 
 Commands:
-- `trafic-agent start` — Start the agent server
+- `trafic-agent start` — Start the agent server (`-c/--config`, `-p/--port`)
 - `trafic-agent setup` — Server provisioning (Docker, DDEV, hardening)
-- `trafic-agent upgrade` — Run pending server migrations
+- `trafic-agent upgrade` (alias `update`) — Install the latest agent, run pending migrations, upgrade DDEV, restart the service
 - `trafic-agent audit` — Security audit checks
-- `trafic-agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `trafic destroy` calls it over SSH
+- `trafic-agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `trafic destroy` calls it over SSH. Options: `--backup`, `--timeout`, `--delay`, `--cancel`, `--list`
+- `trafic-agent version` / `help` — Print the version (also `-v`, `--version`) or the help (also `-h`, `--help`)
 
 ### Agent migrations (`packages/trafic-agent/src/setup/migrations/`)
 
@@ -107,8 +113,8 @@ Migrations fix server state on **existing** servers when the correct behaviour c
 
 ## Testing
 
-- **Unit tests**: `npm test` (77 tests across both packages)
-- **Integration tests**: `npm run test:integration` (Docker-based SSH tests)
+- **Unit tests**: `npm test` (unit tests of both packages)
+- **Integration tests**: `npm run test:integration --workspace=@studiometa/trafic-cli` (Docker-based SSH tests)
 - **Coverage**: `npm run test:ci` (with Codecov upload in CI)
 
 ## Documentation
@@ -116,5 +122,5 @@ Migrations fix server state on **existing** servers when the correct behaviour c
 - [CLI README](packages/trafic-cli/README.md) — Deploy and destroy commands
 - [Agent README](packages/trafic-agent/README.md) — Server setup and configuration
 - [Example config](examples/config.toml) — Full configuration reference
-- [Open-source plan](docs/open-source-plan.md) — Architecture, conventions
-- [Deploy CLI plan](docs/deploy-cli-plan.md) — CLI design, SSH orchestration
+- [Open-source plan](docs/open-source-plan.md) — Historical plan (Feb 2026), not the current architecture
+- [Deploy CLI plan](docs/deploy-cli-plan.md) — Historical plan (Feb 2026), not the current CLI
