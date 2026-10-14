@@ -9,6 +9,7 @@ import {
   stopProject,
   type DdevRunner,
 } from "../utils/ddev.js";
+import { BACKUP_DIR } from "../setup/agent.js";
 import type { AgentConfig, BackupConfig } from "../types.js";
 
 const execFileAsync = promisify(execFile);
@@ -88,6 +89,35 @@ async function findUploadDirs(dir: string, timeoutMs: number, run: DdevRunner): 
     .map((path) => posix.relative(CONTAINER_APPROOT, path))
     .filter((path) => path && !path.startsWith("..") && !posix.isAbsolute(path))
     .filter((path) => isDirectory(join(dir, path)));
+}
+
+/**
+ * Create the backup directory of one backup (see createBackupDir).
+ *
+ * The agent service runs in a systemd sandbox (`ProtectSystem=strict`) that
+ * can write to a few paths only. A `[backup] dir` outside of them is
+ * read-only for the service, so every scheduled backup fails and the
+ * project is never removed: say so in the error, which the sweep logs.
+ */
+function createBackupTarget(target: string, backupDir: string, name: string): void {
+  try {
+    mkdirSync(join(backupDir, name), { recursive: true });
+    createBackupDir(target, name);
+  } catch (error) {
+    const { code } = error as NodeJS.ErrnoException;
+
+    if (code !== "EROFS" && code !== "EACCES") {
+      throw error;
+    }
+
+    throw new Error(
+      `Cannot write to the backup directory ${backupDir} (${code}). ` +
+        "The agent service runs in a systemd sandbox (ProtectSystem=strict) and can only write to " +
+        `/var/lib/trafic, /home/ddev and ${BACKUP_DIR}: set [backup] dir inside one of them, ` +
+        "writable by the ddev user",
+      { cause: error },
+    );
+  }
 }
 
 /** Options of a backup. */
@@ -222,8 +252,7 @@ export async function backupProject(
   const target = join(backupDir, name, backupTimestamp(new Date()));
   const wasRunning = info.status === "running";
 
-  mkdirSync(join(backupDir, name), { recursive: true });
-  createBackupDir(target, name);
+  createBackupTarget(target, backupDir, name);
 
   try {
     if (!wasRunning) {

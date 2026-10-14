@@ -28,10 +28,12 @@ idle_check_interval = "5m"
 # Backups made by `trafic-agent destroy --backup` (and `trafic destroy --backup`)
 [backup]
 # Directory for the backups, as <dir>/<project>/<timestamp>/ (default: /var/backups/trafic).
-# The agent service can only write to /var/backups/trafic and /home/ddev, so
-# with another directory it cannot remove old backups. The directory must not
-# be projects_dir, be inside it or contain it (so not /home/ddev itself): the
-# removal of a project would remove its backup.
+# The agent service runs in a systemd sandbox and can only write to
+# /var/backups/trafic, /home/ddev and /var/lib/trafic. With another directory,
+# it cannot remove old backups, and every backup of a scheduled removal
+# (`trafic destroy --delay --backup`) fails, so the project is never removed.
+# The directory must not be projects_dir, be inside it or contain it (so not
+# /home/ddev itself): the removal of a project would remove its backup.
 dir = "/var/backups/trafic"
 
 # The agent removes backups older than this number of days (default: 14)

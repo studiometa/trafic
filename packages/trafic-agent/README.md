@@ -83,6 +83,8 @@ The command checks the config as `start` does, and exits with an error before it
 
 The agent service checks the scheduled removals every `idle_check_interval` (default `5m`). It removes each project whose date is past with the same steps as `trafic-agent destroy`. When a removal fails (for example, the backup fails), the agent logs the error, keeps the removal scheduled and tries again on the next check. A failure on one project does not stop the removal of the others.
 
+The service makes the backup of a scheduled removal itself, inside its systemd sandbox (`ProtectSystem=strict`). The sandbox lets it write to `/var/backups/trafic`, `/home/ddev` and `/var/lib/trafic` only. When `[backup] dir` is another directory, each scheduled backup fails with a `Cannot write to the backup directory` error that names the sandbox, and the project is never removed. Keep `[backup] dir` inside one of these directories.
+
 `trafic deploy` cancels the scheduled removal of the project it deploys. To cancel it by hand, run `trafic-agent destroy <name> --cancel`. A cancel stops a removal that is due but not started, or that is still in its backup. Once `ddev delete` has started, the project is removed. `trafic-agent destroy --list` shows the scheduled removals, soonest first.
 
 The date is kept in the agent database, not in `.ddev/config.trafic.yaml`: the agent finds it even when DDEV no longer knows the project, and a deploy cancels it with one command.
@@ -98,7 +100,7 @@ The upload directories are the ones DDEV uses: `upload_dirs` from the project's 
 
 The backup has one time limit for the dump and the archive together: 40 minutes by default. `--timeout` sets it, as a duration such as `90s`, `10m` or `1h` (a bare number is minutes). The start and the stop of the project are not part of it. A backup that takes longer fails, and nothing is removed. `trafic destroy --backup` passes its own `--timeout` (default `10m`). A file that changes while the agent archives it (the project runs during the backup) does not fail the backup: the archive has the file as `tar` read it, and the agent prints a warning.
 
-The agent service removes backups older than `retain_days` once an hour. It can only write to `/var/backups/trafic` and `/home/ddev`: if you set `dir` to another path, remove old backups yourself. `dir` must not be `projects_dir`, be inside it or contain it (so not `/home/ddev` itself, with the default `projects_dir`), because the removal of a project would remove its backup: the agent refuses such a config. Setup creates `/var/backups/trafic`, owned by `ddev` with mode `700`.
+The agent service removes backups older than `retain_days` once an hour. It can only write to `/var/backups/trafic`, `/home/ddev` and `/var/lib/trafic`: if you set `dir` to another path, remove old backups yourself, and do not use `--delay` with `--backup` (see [Scheduled removals](#scheduled-removals)). `dir` must not be `projects_dir`, be inside it or contain it (so not `/home/ddev` itself, with the default `projects_dir`), because the removal of a project would remove its backup: the agent refuses such a config. Setup creates `/var/backups/trafic`, owned by `ddev` with mode `700`.
 
 To restore a backup into a project:
 

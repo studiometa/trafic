@@ -352,6 +352,35 @@ describe("backupProject", () => {
     });
   });
 
+  // Root writes to the directory anyway
+  it.skipIf(process.getuid?.() === 0)(
+    "names the systemd sandbox when it cannot write to the backup directory",
+    async () => {
+      // A read-only directory, as [backup] dir outside ReadWritePaths is for the service
+      mkdirSync(backupDir, { mode: 0o500 });
+      const calls: string[][] = [];
+
+      await expect(backupProject("app", projectDir, backupDir, {}, fakeDdev({}, calls))).rejects.toThrow(
+        new RegExp(
+          `Cannot write to the backup directory ${backupDir} \\(EACCES\\)\\. ` +
+            "The agent service runs in a systemd sandbox \\(ProtectSystem=strict\\) " +
+            "and can only write to /var/lib/trafic, /home/ddev and /var/backups/trafic",
+        ),
+      );
+
+      // Nothing started, nothing exported
+      expect(calls.map(([command]) => command)).toEqual(["describe"]);
+    },
+  );
+
+  it("keeps any other error on the backup directory as it is", async () => {
+    writeFileSync(backupDir, "");
+
+    await expect(backupProject("app", projectDir, backupDir, {}, fakeDdev({}, []))).rejects.toThrow(
+      /ENOTDIR/,
+    );
+  });
+
   it("keeps the backup and warns when the project cannot be stopped again", async () => {
     const warn = vi.spyOn(console, "warn");
     const calls: string[][] = [];
