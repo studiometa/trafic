@@ -96,8 +96,8 @@ describe("validateConfig", () => {
     expect(validateConfig(config)).toEqual([]);
   });
 
-  it("requires an absolute backup directory", () => {
-    const config = { ...validConfig, backup: { ...validConfig.backup, dir: "backups" } };
+  it.each(["backups", ""])("requires an absolute backup directory, not %j", (dir) => {
+    const config = { ...validConfig, backup: { ...validConfig.backup, dir } };
     expect(validateConfig(config)).toContain("backup.dir must be an absolute path");
   });
 

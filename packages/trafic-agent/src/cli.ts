@@ -11,6 +11,7 @@ import { setup, audit } from "./setup/index.js";
 import { isRoot } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
 import { runUpgrade } from "./setup/upgrade.js";
+import type { AgentConfig } from "./types.js";
 
 declare const __VERSION__: string;
 
@@ -96,6 +97,19 @@ function printVersion(): void {
   console.log(__VERSION__);
 }
 
+/** Print the configuration errors and exit with code 1, if there are any. */
+function exitOnConfigErrors(config: AgentConfig): void {
+  const errors = validateConfig(config);
+
+  if (errors.length > 0) {
+    console.error("Configuration errors:");
+    for (const error of errors) {
+      console.error(`  - ${error}`);
+    }
+    process.exit(1);
+  }
+}
+
 async function runStart(values: Record<string, unknown>): Promise<void> {
   // Load config
   const config = loadConfig(values.config as string | undefined);
@@ -105,15 +119,7 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
     config.port = parseInt(values.port as string, 10);
   }
 
-  // Validate config
-  const errors = validateConfig(config);
-  if (errors.length > 0) {
-    console.error("Configuration errors:");
-    for (const error of errors) {
-      console.error(`  - ${error}`);
-    }
-    process.exit(1);
-  }
+  exitOnConfigErrors(config);
 
   // Graceful shutdown
   const shutdown = (): void => {
@@ -153,7 +159,10 @@ async function runDestroy(
     process.exit(1);
   }
 
+  // A relative or empty backup.dir would put the backup in the working
+  // directory, which start refuses
   const config = loadConfig(values.config as string | undefined);
+  exitOnConfigErrors(config);
   initDb(config.dbPath);
 
   try {

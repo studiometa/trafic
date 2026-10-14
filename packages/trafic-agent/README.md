@@ -65,6 +65,8 @@ Steps:
 
 The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning, does not run DDEV and only deletes the project's rows from the agent database, so a retry after a failed run cleans them up. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
 
+The command checks the config as `start` does, and exits with an error before it changes anything when the config is not valid (for example a relative `[backup] dir`).
+
 `trafic destroy` runs this command over SSH.
 
 ### Backups
