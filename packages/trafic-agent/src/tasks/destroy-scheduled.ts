@@ -1,0 +1,141 @@
+import { destroyProject, resolveProjectDir } from "./destroy-project.js";
+import {
+  getScheduledDestroy,
+  getScheduledDestroys,
+  scheduleDestroy,
+  startScheduledDestroy,
+  systemClock,
+  type Clock,
+} from "../utils/db.js";
+import { parseDuration } from "../utils/config.js";
+
+/** Hours, minutes and seconds, in this order: "48h", "1h30m", "90s". */
+const DELAY_REGEX = /^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/;
+import { nodeDdevRunner, type DdevRunner } from "../utils/ddev.js";
+import type { AgentConfig } from "../types.js";
+
+/**
+ * Schedule the removal of a project, `delay` from now ("48h", "1h30m").
+ *
+ * The date goes to the agent database, not to the project: a redeploy does
+ * not reliably rewrite the project files, and the sweep must find the date
+ * even for a project DDEV has forgotten. The name is checked now, so a bad
+ * name or a wrong `projects_dir` fails the CI job, not a sweep two days
+ * later. With `backup`, the removal backs the project up first, within
+ * `timeoutMs` when it is given. A removal that the sweep already started
+ * cannot be scheduled again. Returns the date of the removal.
+ */
+export function scheduleProjectDestroy(
+  name: string,
+  delay: string,
+  config: AgentConfig,
+  options: { backup?: boolean; timeoutMs?: number } = {},
+  now: Clock = systemClock,
+): Date {
+  // The whole string: parseDuration reads "1h30" as 1h and drops the rest
+  const delayMs = DELAY_REGEX.test(delay) ? parseDuration(delay) : 0;
+
+  if (delayMs <= 0) {
+    throw new Error(`Invalid delay: "${delay}". Use hours, minutes or seconds, e.g. 48h or 1h30m`);
+  }
+
+  resolveProjectDir(name, config);
+
+  if (getScheduledDestroy(name)?.removing) {
+    throw new Error(`The removal of ${name} is in progress`);
+  }
+
+  const destroyAt = now() + delayMs;
+  scheduleDestroy(name, destroyAt, options.backup ?? false, options.timeoutMs);
+
+  return new Date(destroyAt);
+}
+
+/** A removal can take longer than the sweep interval; one sweep at a time. */
+let sweeping = false;
+
+/**
+ * Remove each project whose scheduled removal is due, through the same
+ * removal as `trafic-agent destroy`, with a backup when one was asked for.
+ *
+ * A failure on one project does not stop the sweep: it is logged, and the
+ * removal stays scheduled so the next sweep tries again. A project already
+ * gone has its schedule cleared.
+ *
+ * A removal can take minutes, and a deploy or a `--cancel` can cancel the
+ * removal of a project meanwhile. So the sweep reads each removal again just
+ * before it starts, and once more after the backup. There, it marks the
+ * removal as started (startScheduledDestroy) before `ddev delete`: a later
+ * cancel is refused, so the deploy fails instead of deploying a project
+ * that is about to go. A retry of a started removal does not back the
+ * project up again: the backup exists, and DDEV may have forgotten the
+ * project already.
+ */
+export async function destroyScheduledProjects(
+  config: AgentConfig,
+  now: Clock = systemClock,
+  run: DdevRunner = nodeDdevRunner,
+): Promise<void> {
+  if (sweeping) {
+    return;
+  }
+
+  sweeping = true;
+
+  try {
+    for (const { name } of getScheduledDestroys(now())) {
+      // Not the row read above: an earlier removal of this sweep took time
+      const scheduled = getScheduledDestroy(name, now());
+
+      if (!scheduled) {
+        continue;
+      }
+
+      console.log(
+        `Destroying ${name}: its scheduled removal is ${scheduled.removing ? "in progress" : "due"}`,
+      );
+
+      try {
+        // destroyProject clears the schedule, also for a project already gone
+        await destroyProject(
+          name,
+          config,
+          {
+            backup: scheduled.backup && !scheduled.removing,
+            timeoutMs: scheduled.timeoutMs,
+            beforeDelete: () => startScheduledDestroy(name, now()),
+          },
+          run,
+        );
+      } catch (error) {
+        console.error(
+          `Scheduled removal of ${name} failed, retrying on the next sweep: ${(error as Error).message}`,
+        );
+      }
+    }
+  } finally {
+    sweeping = false;
+  }
+}
+
+/** A sweep that throws must not take the scheduler down with it. */
+function reportSweepError(error: unknown): void {
+  console.error("Scheduled removal sweep failed:", error);
+}
+
+/**
+ * Start the scheduled removal sweep, on the idle check interval
+ */
+export function startScheduledDestroyScheduler(config: AgentConfig): NodeJS.Timeout {
+  const intervalMs = parseDuration(config.idleCheckInterval);
+
+  console.log(`Scheduled removal sweep started: checking every ${config.idleCheckInterval}`);
+
+  // Run immediately on start
+  void destroyScheduledProjects(config).catch(reportSweepError);
+
+  // Then run on interval
+  return setInterval(() => {
+    void destroyScheduledProjects(config).catch(reportSweepError);
+  }, intervalMs);
+}

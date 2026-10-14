@@ -102,8 +102,13 @@ export interface DestroyOptions extends SSHOptions {
   name: string;
   /** MR/PR number for preview environments */
   preview?: string;
-  /** Projects directory on the server (default: "~/www") */
-  projectsDir: string;
+  /** Whether the agent backs up the project before it removes it */
+  backup: boolean;
+  /**
+   * Delay before the removal, such as "48h". When set, the agent only
+   * records the removal date and removes the project once it is due.
+   */
+  delay?: string;
 }
 
 /**

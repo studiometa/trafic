@@ -66,7 +66,7 @@ function buildDestination(options: SSHOptions): string {
 /**
  * Default timeout for a remote command (10 minutes).
  */
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+export const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Duration suffixes accepted in a timeout, in milliseconds. */
 const DURATION_UNITS: Record<string, number> = {
@@ -140,7 +140,10 @@ export async function exec(
 export interface ExecOptions {
   /** Timeout in milliseconds (default: 10 minutes) */
   timeoutMs?: number;
-  /** Printed instead of the command itself, for commands holding secrets */
+  /**
+   * Printed instead of the command itself, for commands holding secrets or
+   * wrapped in a guard that would hide the part worth reading
+   */
   log?: string;
   /** Overrides how the command is run. Tests pass their own. */
   runner?: CommandRunner;
@@ -322,7 +325,8 @@ export async function rsync(
 
   info(`rsync ${localPath} → ${options.host}:${remotePath}`);
 
-  return runner("rsync", args, DEFAULT_TIMEOUT_MS);
+  // A large sync takes as long as a slow remote command: --timeout covers both
+  return runner("rsync", args, parseDuration(options.timeout) ?? DEFAULT_TIMEOUT_MS);
 }
 
 /**

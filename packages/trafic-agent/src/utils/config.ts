@@ -1,6 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { parse } from "smol-toml";
-import type { AgentConfig, AuthConfig, AuthRule, TlsConfig } from "../types.js";
+import type { AgentConfig, AuthConfig, AuthRule, BackupConfig, TlsConfig } from "../types.js";
+import { isInside } from "./paths.js";
 
 const DEFAULT_CONFIG_PATHS = [
   "/etc/trafic/config.toml",
@@ -16,6 +18,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   projectsDir: "/home/ddev/www",
   idleTimeout: "30m",
   idleCheckInterval: "5m",
+  maxRunningProjects: 0,
   auth: {
     defaultPolicy: "basic",
     allowedIps: [],
@@ -26,6 +29,10 @@ const DEFAULT_CONFIG: AgentConfig = {
   },
   tls: {
     dnsEnv: {},
+  },
+  backup: {
+    dir: "/var/backups/trafic",
+    retainDays: 14,
   },
 };
 
@@ -42,6 +49,24 @@ export function parseDuration(duration: string): number {
   const seconds = parseInt(match[3] ?? "0", 10);
 
   return (hours * 3600 + minutes * 60 + seconds) * 1000;
+}
+
+/** Duration suffixes accepted in a timeout, in milliseconds. */
+const TIMEOUT_UNITS: Record<string, number> = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000 };
+
+/**
+ * Parse a command-line timeout such as "10m", "90s" or "1h"; a bare number
+ * is minutes. The grammar is the one of `trafic --timeout`, which the CLI
+ * passes on as is. Returns undefined for anything else, or for zero.
+ */
+export function parseTimeout(value: string): number | undefined {
+  const match = /^(\d+)([smh])?$/.exec(value.trim());
+
+  if (!match || Number(match[1]) <= 0) {
+    return undefined;
+  }
+
+  return Number(match[1]) * TIMEOUT_UNITS[match[2] ?? "m"]!;
 }
 
 /**
@@ -65,6 +90,7 @@ export function loadConfig(configPath?: string): AgentConfig {
   // Merge with defaults
   const auth = mergeAuthConfig(parsed.auth as Record<string, unknown>);
   const tls = mergeTlsConfig(parsed.tls as Record<string, unknown>);
+  const backup = mergeBackupConfig(parsed.backup as Record<string, unknown>);
 
   return {
     tld: (parsed.tld as string) ?? DEFAULT_CONFIG.tld,
@@ -78,8 +104,25 @@ export function loadConfig(configPath?: string): AgentConfig {
     idleCheckInterval:
       (parsed.idle_check_interval as string) ??
       DEFAULT_CONFIG.idleCheckInterval,
+    maxRunningProjects:
+      (parsed.max_running_projects as number) ??
+      DEFAULT_CONFIG.maxRunningProjects,
     auth,
     tls,
+    backup,
+  };
+}
+
+/**
+ * Read the [backup] section. validateConfig reports a bad value.
+ */
+function mergeBackupConfig(raw?: Record<string, unknown>): BackupConfig {
+  if (!raw) return DEFAULT_CONFIG.backup;
+
+  return {
+    dir: (raw.dir as string | undefined) ?? DEFAULT_CONFIG.backup.dir,
+    retainDays:
+      (raw.retain_days as number | undefined) ?? DEFAULT_CONFIG.backup.retainDays,
   };
 }
 
@@ -181,6 +224,13 @@ export function validateConfig(config: AgentConfig): string[] {
   }
 
   if (
+    !Number.isInteger(config.maxRunningProjects) ||
+    config.maxRunningProjects < 0
+  ) {
+    errors.push("max_running_projects must be a whole number, 0 or more");
+  }
+
+  if (
     config.auth.defaultPolicy !== "allow" &&
     config.auth.defaultPolicy !== "deny" &&
     config.auth.defaultPolicy !== "basic" &&
@@ -197,6 +247,24 @@ export function validateConfig(config: AgentConfig): string[] {
     if (typeof value !== "string") {
       errors.push(`tls.dns_env.${key} must be a string`);
     }
+  }
+
+  if (typeof config.backup.dir !== "string" || !isAbsolute(config.backup.dir)) {
+    errors.push("backup.dir must be an absolute path");
+  } else {
+    // trafic-agent destroy removes the project directories: a backup in
+    // one of them would be removed right after it is written
+    const backupDir = resolve(config.backup.dir);
+    const projectsDir = resolve(config.projectsDir);
+
+    if (backupDir === projectsDir || isInside(projectsDir, backupDir) || isInside(backupDir, projectsDir)) {
+      errors.push("backup.dir must not be projects_dir, be inside it or contain it");
+    }
+  }
+
+  // 0 would remove each backup as soon as the sweep sees it
+  if (!Number.isInteger(config.backup.retainDays) || config.backup.retainDays < 1) {
+    errors.push("backup.retain_days must be a whole number of 1 or more");
   }
 
   return errors;

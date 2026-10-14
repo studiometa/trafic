@@ -1,6 +1,6 @@
 # @studiometa/trafic-agent
 
-Server agent for DDEV preview environments — auth, scale-to-zero, and auto-start.
+Server agent for DDEV preview environments — auth, scale-to-zero, auto-start, scheduled removals and backups.
 
 Part of [Trafic](https://github.com/studiometa/trafic), a tool for managing DDEV preview environments on Linux servers.
 
@@ -10,6 +10,9 @@ Part of [Trafic](https://github.com/studiometa/trafic), a tool for managing DDEV
 - **Scale-to-zero** — Automatically stop idle DDEV projects to save RAM
 - **Auto-start** — Show a waiting page and restart stopped projects on request
 - **Per-project config** — Override auth and idle timeout per project
+- **Backups on removal** — Dump the database and archive the upload directories before a project is removed
+- **Scheduled removal** — Remove a project after a delay; a new deploy cancels it
+- **Running limit** — `max_running_projects` stops the least recently used projects
 
 ## Installation
 
@@ -19,23 +22,46 @@ npm install -g @studiometa/trafic-agent
 
 ## Commands
 
-### `trafic-agent serve`
+### `trafic-agent start`
 
-Start the agent server.
+Start the agent server. Setup installs a systemd service that runs this command.
 
 ```bash
-trafic-agent serve
+trafic-agent start
 # or with custom config
-trafic-agent serve --config /etc/trafic/config.toml
+trafic-agent start --config /etc/trafic/config.toml
+# or on another port than the one in the config
+trafic-agent start --port 9877
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-c`, `--config` | Path to the config file | first of `/etc/trafic/config.toml`, `./config.toml`, `./trafic.toml` |
+| `-p`, `--port` | Port of the agent HTTP server. Replaces `port` from the config | `port` from the config |
 
 ### `trafic-agent setup`
 
-Interactive server setup — installs Docker, DDEV, configures DNS, and sets up the agent as a systemd service.
+Server setup, run as root. It installs Docker, DDEV and Node.js, configures DDEV and Traefik for forward auth, writes `/etc/trafic/config.toml`, installs the agent as a systemd service and hardens the server. You configure the wildcard DNS yourself. Setup takes its options from flags only: it asks no questions.
 
 ```bash
-trafic-agent setup --tld previews.example.com
+sudo trafic-agent setup --tld=previews.example.com
 ```
+
+`trafic setup` runs this command over SSH. See the [CLI README](../trafic-cli/README.md#trafic-setup).
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--tld` | TLD for DDEV projects. Required on the first run; a re-run reuses `tld` from the config | `tld` from the config |
+| `--email` | Email for Let's Encrypt certificates. Without it, projects use a mkcert certificate | - |
+| `--dns-provider` | DNS-01 provider (lego name, e.g. `cloudflare`), for one wildcard `*.<tld>` certificate. Requires `--email`. A re-run reuses `[tls] dns_provider` from the config, and then `--email` is required again. See [TLS](#tls) | `[tls] dns_provider` from the config |
+| `--dns-env` | Credential for that provider as `KEY=VALUE`, repeatable | `[tls.dns_env]` from the config |
+| `--ssh-users` | SSH users to allow, comma-separated | `ddev` |
+| `--trusted-proxy-hops` | Proxies in front of the agent (`2` behind a CDN). Written to a new config only; ignored when the config exists | `1` |
+| `--no-hardening` | Skip server hardening | `false` |
+| `--no-root-ssh` | Disable root SSH login (recovery via rescue mode only) | `false` |
+| `--no-docker` | Skip Docker installation | `false` |
+| `--no-ddev` | Skip DDEV installation | `false` |
+| `--dry-run` | Show what would be done without making changes | `false` |
 
 **Requirements:**
 - Ubuntu 24.04 LTS
@@ -43,6 +69,90 @@ trafic-agent setup --tld previews.example.com
 - Wildcard DNS pointing to the server
 
 **Automatic security updates.** Setup installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/50unattended-upgrades`, allowing Ubuntu's release, security and ESM pockets plus Docker Engine (`origin=Docker`, from `download.docker.com`). Docker security releases are therefore applied daily with the rest. Note that a Docker Engine update restarts the daemon and stops running preview containers; the waiting page starts a project again on its next request. DDEV is deliberately excluded — it is updated by `trafic-agent upgrade` instead. The server never reboots on its own (`Unattended-Upgrade::Automatic-Reboot "false"`).
+
+### `trafic-agent audit`
+
+Check the security state of the server: SSH, firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. The command exits with code 1 when a check fails. Run it as root: `ufw status` and the files under `/var/lib/docker` need root.
+
+```bash
+sudo trafic-agent audit
+```
+
+### `trafic-agent version` / `trafic-agent help`
+
+`trafic-agent version` (also `-v`, `--version`) prints the version. `trafic-agent help` (also `-h`, `--help`) prints the help with every option.
+
+### `trafic-agent skill`
+
+Print the [`trafic-agent` agent skill](../../skills/trafic-agent/SKILL.md) of this version to stdout. A coding agent reads it to operate the server. To install the skill from the repository instead, run `npx skills add studiometa/trafic` or `gh skill install studiometa/trafic`.
+
+```bash
+trafic-agent skill
+```
+
+### `trafic-agent destroy`
+
+Remove a project from the server. Run it as the `ddev` user, the user the service runs as. The command refuses to run as root: DDEV does not run as root, and root could leave files in the database directory that the service cannot write to.
+
+```bash
+trafic-agent destroy preview-42--my-app
+# or with custom config
+trafic-agent destroy preview-42--my-app --config /etc/trafic/config.toml
+# back up the project first
+trafic-agent destroy preview-42--my-app --backup
+# give the backup up to one hour
+trafic-agent destroy preview-42--my-app --backup --timeout 1h
+# remove the project in 48 hours, after a backup
+trafic-agent destroy preview-42--my-app --delay 48h --backup
+# cancel that removal
+trafic-agent destroy preview-42--my-app --cancel
+# list the scheduled removals
+trafic-agent destroy --list
+```
+
+Steps:
+1. **Backup** (with `--backup` only) — see [Backups](#backups). If the backup fails, the command removes nothing and exits with an error
+2. **DDEV** — runs `ddev delete -Oy` in the project directory (containers and volumes, no snapshot). A failure is reported as a warning and does not stop the removal
+3. **Directory** — removes the project directory
+4. **Database** — deletes the project's rows from the agent database (`projects`, `access_logs` and `scheduled_destroys`)
+
+The project directory is the `approot` from DDEV's `project_list.yaml`, or `<projects_dir>/<name>` when DDEV no longer knows the project. When the directory does not exist, the command prints a warning, does not run DDEV and only deletes the project's rows from the agent database, so a retry after a failed run cleans them up. The command refuses a directory that is not inside `projects_dir`, also after it follows symbolic links, and refuses a project directory that is a symbolic link. It also refuses an empty name, `.`, `..` or a name with a `/`.
+
+The command checks the config as `start` does, and exits with an error before it changes anything when the config is not valid (for example a relative `[backup] dir`).
+
+`trafic destroy` runs this command over SSH.
+
+### Scheduled removals
+
+`trafic-agent destroy <name> --delay <duration>` removes nothing. It records the removal date (now plus the delay) in the agent database and exits. The delay uses hours, minutes and seconds, in this order and without spaces: `48h`, `1h30m`, `90m`. The command refuses any other delay, for example `2d`, `1h30` or `48h 30m`. With `--backup`, the agent backs up the project before the scheduled removal, and keeps `--timeout` as the time limit of that backup. A new `--delay` for the same project replaces the date, the backup choice and the timeout, unless the removal has started.
+
+The agent service checks the scheduled removals every `idle_check_interval` (default `5m`). It removes each project whose date is past with the same steps as `trafic-agent destroy`. When a removal fails (for example, the backup fails), the agent logs the error, keeps the removal scheduled and tries again on the next check. A removal that fails after its backup (for example, the service stops during `ddev delete`) does not back up again on the next check: the backup is already made. A failure on one project does not stop the removal of the others.
+
+The service makes the backup of a scheduled removal itself, inside its systemd sandbox (`ProtectSystem=strict`). The sandbox lets it write to `/var/backups/trafic`, `/home/ddev` and `/var/lib/trafic` only. When `[backup] dir` is another directory, each scheduled backup fails with a `Cannot write to the backup directory` error that names the sandbox, and the project is never removed. Keep `[backup] dir` inside one of these directories.
+
+`trafic deploy` cancels the scheduled removal of the project it deploys. To cancel it by hand, run `trafic-agent destroy <name> --cancel`. A cancel stops a removal that is due but not started, or that is still in its backup. After the backup, the agent marks the removal as started, just before `ddev delete`. From then on, `--cancel` fails with `the removal of <name> is in progress` and the project is removed, so a `trafic deploy` fails at its first step instead of deploying a project that is about to go. `trafic-agent destroy --list` shows the scheduled removals, soonest first, and marks a started removal as `in progress`.
+
+The date is kept in the agent database, not in `.ddev/config.trafic.yaml`: the agent finds it even when DDEV no longer knows the project, and a deploy cancels it with one command.
+
+### Backups
+
+`trafic-agent destroy --backup` writes a backup to `<backup.dir>/<project>/<timestamp>/`, for example `/var/backups/trafic/preview-42--my-app/2026-10-14T07-40-24Z/`:
+
+- `db.sql.gz` — the `ddev export-db` dump. Skipped when the project has no database (`omit_containers: [db]`)
+- `files.tar.gz` — the upload directories, with paths relative to the project directory. Skipped when the project has none
+
+The upload directories are the ones DDEV uses: `upload_dirs` from the project's `.ddev/config.yaml`, or the default of the project type (for example `wp-content/uploads` for WordPress). The agent reads them from `DDEV_FILES_DIRS` in the web container. Both steps need the project to run, so the agent starts a stopped project and stops it again after the backup. While it removes a project, the idle sweep and [`max_running_projects`](#running-project-limit) do not stop it, and the waiting page does not start it again (it shows an error page): the project has the status `destroying` in the agent database. When the removal is killed (for example, the CI job is cancelled or the SSH connection drops), the agent sets the status back to `running` once the `trafic-agent destroy` process is gone, at the next idle sweep or request. The idle sweep then stops the project when it is idle.
+
+The backup has one time limit for the dump and the archive together: 40 minutes by default. `--timeout` sets it, as a duration such as `90s`, `10m` or `1h` (a bare number is minutes). The start and the stop of the project are not part of it. A backup that takes longer fails, and nothing is removed. `trafic destroy --backup` passes its own `--timeout` (default `10m`). A file that changes while the agent archives it (the project runs during the backup) does not fail the backup: the archive has the file as `tar` read it, and the agent prints a warning.
+
+The agent service removes backups older than `retain_days` once an hour. It can only write to `/var/backups/trafic`, `/home/ddev` and `/var/lib/trafic`: if you set `dir` to another path, remove old backups yourself, and do not use `--delay` with `--backup` (see [Scheduled removals](#scheduled-removals)). `dir` must not be `projects_dir`, be inside it or contain it (so not `/home/ddev` itself, with the default `projects_dir`), because the removal of a project would remove its backup: the agent refuses such a config. Setup creates `/var/backups/trafic`, owned by `ddev` with mode `700`.
+
+To restore a backup into a project:
+
+```bash
+ddev import-db --file=/var/backups/trafic/<project>/<timestamp>/db.sql.gz
+tar -xzf /var/backups/trafic/<project>/<timestamp>/files.tar.gz -C <project directory>
+```
 
 ### `trafic-agent upgrade` / `trafic-agent update`
 
@@ -81,7 +191,9 @@ Migration state is stored in `/etc/trafic/.migrations.json` and updated after ea
 
 ## Configuration
 
-Create `/etc/trafic/config.toml`:
+Setup writes `/etc/trafic/config.toml`. Edit it, then run `sudo systemctl restart trafic-agent`. See [examples/config.toml](../../examples/config.toml) for every key.
+
+Without `--config`, the agent reads the first file it finds of `/etc/trafic/config.toml`, `./config.toml` and `./trafic.toml`. When there is none, it uses the defaults.
 
 ```toml
 # Required: TLD for DDEV projects
@@ -90,12 +202,26 @@ tld = "previews.example.com"
 # Agent HTTP server port (default: 9876)
 port = 9876
 
-# Scale-to-zero: stop idle projects after this duration
+# Must match trafic deploy --projects-dir (default: /home/ddev/www)
+projects_dir = "/home/ddev/www"
+
+# Scale-to-zero: stop idle projects after this duration (default: 30m; setup writes 4h)
 idle_timeout = "4h"
+
+# Idle, running-limit and scheduled-removal sweeps (default: 5m)
+idle_check_interval = "5m"
+
+# Most projects running at the same time (default: 0, no limit)
+max_running_projects = 8
+
+# Backups made by `trafic-agent destroy --backup`
+[backup]
+dir = "/var/backups/trafic"  # default
+retain_days = 14             # default; older backups are removed
 
 # Authentication
 [auth]
-default_policy = "basic"  # allow, deny, basic, or token
+default_policy = "basic"  # allow, deny, basic, or token; basic also accepts the tokens
 
 # Proxies in front of the agent (default: 1 = ddev-router/Traefik alone).
 # Raise by one for each extra proxy: a CDN or load balancer ahead of
@@ -109,10 +235,10 @@ allowed_ips = ["192.168.1.0/24", "10.0.0.0/8"]
 # Bearer tokens for CI/API access
 tokens = ["your-ci-token"]
 
-# Basic auth credentials
+# Basic auth credentials, as "user:password" or { username, password } tables
 basic_auth = ["user:password"]
 
-# Per-hostname rules
+# Per-hostname rules (first match wins, after the global allowed_ips)
 [[auth.rules]]
 match = "*.public.*"
 policy = "allow"
@@ -120,6 +246,7 @@ policy = "allow"
 [[auth.rules]]
 match = "admin.*"
 policy = "basic"
+allowed_ips = ["203.0.113.0/24"]  # optional: these IPs skip basic auth
 
 # Optional: one wildcard certificate instead of one per preview.
 # See the TLS section below.
@@ -142,6 +269,20 @@ auth_policy: allow  # allow, deny, basic, or token
 idle_timeout: never
 ```
 
+- `idle_timeout` replaces the global `idle_timeout` for this project, shorter or longer. The idle sweep reads it at each check.
+- `auth_policy` replaces only `default_policy`. The global `allowed_ips` and a matching `[[auth.rules]]` still apply first.
+- The agent reads `auth_policy` when it starts and when DDEV's `project_list.yaml` changes. After you change it, restart the agent: `sudo systemctl restart trafic-agent`.
+
+## Running project limit
+
+`max_running_projects` limits how many projects run at the same time, so that a burst of traffic on many previews does not use all the memory of the server. Unset or `0` means no limit.
+
+- Before the waiting page starts a stopped project, the agent counts the running projects: the projects that `ddev list` shows up, and the projects the agent is starting. The project to start is one of them. Over the limit, it stops the running projects with the oldest access first. When many previews start at the same time, each start frees its own slot.
+- `trafic deploy` runs `ddev start` without the agent. The idle sweep (every `idle_check_interval`) stops the projects with the oldest access until the server is back under the limit. A project that a deploy started counts as accessed when the sweep first sees it, so it is not the first one stopped.
+- Projects with `idle_timeout: never` are never stopped by this rule. When no other project can be stopped, the agent starts the project anyway and logs a warning.
+- A project that `trafic-agent destroy` is removing (also from a scheduled removal) is never stopped by this rule or by the idle sweep: its backup starts the project, and a stop would fail the backup. It still counts as running.
+- A start that the agent service did not finish (the service restarted during `ddev start`) does not keep its slot: when the service starts again, it sets the project back to `running`, and the idle sweep checks it against DDEV.
+
 ## How it works
 
 ```
@@ -158,6 +299,7 @@ Traefik (DDEV router)
      └─► 502 error → errors middleware → trafic-agent
                           │
                           ├─► known project → Waiting page + auto-start
+                          ├─► project being removed → Error page (503)
                           └─► unknown → Error page
 ```
 
@@ -167,6 +309,7 @@ The agent:
 3. Tracks project activity for scale-to-zero
 4. Starts stopped projects when requested
 5. Shows a waiting page while projects start
+6. Removes projects whose [scheduled removal](#scheduled-removals) is due
 
 ## Endpoints
 
@@ -248,7 +391,7 @@ router container and starts one running project. DDEV regenerates the static
 config on any project start, but reads `router-compose.*.yaml` only when it
 recreates the router, so the removal is what gets the credentials into the
 container. The router is back within seconds. With no project running, the
-next deploy applies it. `trafic-agent audit` reports whether the certificate
+next deploy applies it. `sudo trafic-agent audit` reports whether the certificate
 was issued.
 
 The first order takes about a minute after the router starts: lego waits for

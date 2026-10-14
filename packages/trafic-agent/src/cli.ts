@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
-import { loadConfig, validateConfig } from "./utils/config.js";
+import { loadConfig, parseTimeout, validateConfig } from "./utils/config.js";
 import { startServer } from "./server.js";
 import { startIdleScheduler } from "./tasks/stop-idle.js";
-import { closeDb } from "./utils/db.js";
+import { cancelScheduledDestroy, closeDb, getScheduledDestroys } from "./utils/db.js";
+import { destroyProject, loadDestroyConfig, openDestroyDb } from "./tasks/destroy-project.js";
+import {
+  scheduleProjectDestroy,
+  startScheduledDestroyScheduler,
+} from "./tasks/destroy-scheduled.js";
+import { startBackupSweepScheduler } from "./tasks/backup.js";
+import { startAccessLogSweepScheduler } from "./tasks/access-logs.js";
 import { setup, audit } from "./setup/index.js";
+import { isRoot } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
 import { runUpgrade } from "./setup/upgrade.js";
+import type { AgentConfig } from "./types.js";
+import SKILL from "../../../skills/trafic-agent/SKILL.md?raw";
 
 declare const __VERSION__: string;
 
@@ -20,14 +30,18 @@ Usage:
 Commands:
   start                   Start the agent server
   setup                   Setup a new server (Docker, DDEV, hardening)
-  upgrade                 Check for a new version, install it, run migrations, restart the service
+  upgrade                 Install the latest agent, run migrations, upgrade DDEV, restart the service
   update                  Alias for upgrade
   audit                   Run security audit checks
-  version                 Show version
-  help                    Show this help
+  destroy <name>          Remove a project: DDEV project, directory, database records,
+                          now or after a delay
+  skill                   Print the agent skill (SKILL.md) of this version
+  version                 Show version (also -v, --version)
+  help                    Show this help (also -h, --help)
 
 Start options:
-  -c, --config <path>     Path to config file (default: /etc/trafic/config.toml)
+  -c, --config <path>     Path to config file (default: first of /etc/trafic/config.toml,
+                          ./config.toml, ./trafic.toml)
   -p, --port <port>       Override port from config
 
 Setup options:
@@ -44,6 +58,20 @@ Setup options:
   --trusted-proxy-hops <n> Proxies in front of the agent (default: 1; 2 behind a CDN).
                           Written to the generated config; ignored if one exists
   --dry-run               Show what would be done without making changes
+
+Destroy options:
+  -c, --config <path>     Path to config file (default: first of /etc/trafic/config.toml,
+                          ./config.toml, ./trafic.toml)
+  --backup                Back up the database and upload directories first, to
+                          [backup] dir. If the backup fails, nothing is removed
+  --timeout <duration>    Time limit of the backup, the database dump and the files
+                          archive together: 10m, 90s, 1h; a bare number is minutes
+                          (default: 40m)
+  --delay <duration>      Remove nothing now: schedule the removal after this delay
+                          (hours, minutes, seconds only: 48h, 1h30m). The agent
+                          removes the project when it is due
+  --cancel                Cancel the scheduled removal of the project
+  --list                  List the scheduled removals
 
 Upgrade/update options:
   --dry-run               Show what would be done without making changes
@@ -65,14 +93,22 @@ Examples:
 
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
 
-  # Upgrade: install latest version, run migrations, restart service
+  # Upgrade: install the latest agent, run migrations, upgrade DDEV, restart the service
   sudo trafic-agent upgrade
   sudo trafic-agent upgrade --dry-run
   trafic-agent upgrade --list
   sudo trafic-agent update          # alias for upgrade
 
   # Run security audit
-  trafic-agent audit
+  sudo trafic-agent audit
+
+  # Remove a project (as the ddev user, never as root)
+  trafic-agent destroy preview-42--my-app
+  trafic-agent destroy preview-42--my-app --backup
+  trafic-agent destroy preview-42--my-app --backup --timeout 1h
+  trafic-agent destroy preview-42--my-app --delay 48h --backup
+  trafic-agent destroy preview-42--my-app --cancel
+  trafic-agent destroy --list
 `;
 
 function printHelp(): void {
@@ -81,6 +117,19 @@ function printHelp(): void {
 
 function printVersion(): void {
   console.log(__VERSION__);
+}
+
+/** Print the configuration errors and exit with code 1, if there are any. */
+function exitOnConfigErrors(config: AgentConfig): void {
+  const errors = validateConfig(config);
+
+  if (errors.length > 0) {
+    console.error("Configuration errors:");
+    for (const error of errors) {
+      console.error(`  - ${error}`);
+    }
+    process.exit(1);
+  }
 }
 
 async function runStart(values: Record<string, unknown>): Promise<void> {
@@ -92,15 +141,7 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
     config.port = parseInt(values.port as string, 10);
   }
 
-  // Validate config
-  const errors = validateConfig(config);
-  if (errors.length > 0) {
-    console.error("Configuration errors:");
-    for (const error of errors) {
-      console.error(`  - ${error}`);
-    }
-    process.exit(1);
-  }
+  exitOnConfigErrors(config);
 
   // Graceful shutdown
   const shutdown = (): void => {
@@ -112,9 +153,105 @@ async function runStart(values: Record<string, unknown>): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  // Start server and scheduler
+  // Start server and schedulers
   startServer(config);
   startIdleScheduler(config);
+  startBackupSweepScheduler(config);
+  startAccessLogSweepScheduler();
+  startScheduledDestroyScheduler(config);
+}
+
+/**
+ * Remove a project. Runs as the ddev user, next to the running service: both
+ * open the same database, so the config is read the same way `start` reads it.
+ */
+async function runDestroy(
+  values: Record<string, unknown>,
+  name: string | undefined,
+): Promise<void> {
+  // DDEV refuses to run as root, so the directory would go and leave the
+  // containers behind, and root could leave files in the database directory
+  // that the service cannot write to
+  if (isRoot()) {
+    console.error("Error: run trafic-agent destroy as the ddev user, not root");
+    process.exit(1);
+  }
+
+  if (!name && !values.list) {
+    console.error("Error: a project name is required");
+    console.error("Example: trafic-agent destroy preview-42--my-app");
+    process.exit(1);
+  }
+
+  // Reject a bad duration rather than quietly using the default: the flag
+  // exists to raise the limit for a large backup
+  const timeout = values.timeout as string | undefined;
+  const timeoutMs = timeout === undefined ? undefined : parseTimeout(timeout);
+
+  if (timeout !== undefined && timeoutMs === undefined) {
+    console.error(`Error: invalid --timeout "${timeout}". Expected a duration such as 10m, 90s or 1h`);
+    process.exit(1);
+  }
+
+  const backup = values.backup as boolean | undefined;
+  const delay = values.delay as string | undefined;
+
+  try {
+    const config = loadDestroyConfig(values.config as string | undefined);
+    // A relative or empty backup.dir would put the backup in the working
+    // directory, which start refuses
+    exitOnConfigErrors(config);
+    openDestroyDb(config.dbPath);
+
+    if (values.list) {
+      printScheduledDestroys();
+    } else if (values.cancel) {
+      cancelDestroy(name!);
+    } else if (delay !== undefined) {
+      const destroyAt = scheduleProjectDestroy(name!, delay, config, { backup, timeoutMs });
+      console.log(
+        `Scheduled the removal of ${name} at ${destroyAt.toISOString()}${backup ? ", after a backup" : ""}`,
+      );
+    } else {
+      await destroyProject(name!, config, { backup, timeoutMs });
+    }
+  } catch (error) {
+    console.error(`Error: ${(error as Error).message}`);
+    process.exitCode = 1;
+  } finally {
+    closeDb();
+  }
+}
+
+/**
+ * Cancel the scheduled removal of a project. Fails when the sweep already
+ * removes the project, so a deploy that cancels first stops there.
+ */
+function cancelDestroy(name: string): void {
+  const result = cancelScheduledDestroy(name);
+
+  if (result === "removing") {
+    throw new Error(`the removal of ${name} is in progress, it is too late to cancel it`);
+  }
+
+  console.log(
+    result === "cancelled" ? `Cancelled the scheduled removal of ${name}` : `No removal scheduled for ${name}`,
+  );
+}
+
+/** Print the scheduled removals, soonest first. */
+function printScheduledDestroys(): void {
+  const scheduled = getScheduledDestroys();
+
+  if (scheduled.length === 0) {
+    console.log("No removal scheduled");
+    return;
+  }
+
+  for (const { name, destroyAt, backup, removing } of scheduled) {
+    const notes = [backup && "backup", removing && "in progress"].filter(Boolean);
+    console.log(`${new Date(destroyAt).toISOString()}  ${name}${notes.length ? `  (${notes.join(", ")})` : ""}`);
+  }
 }
 
 function handleUpgrade(values: Record<string, unknown>): void {
@@ -247,6 +384,7 @@ async function main(): Promise<void> {
     options: {
       // Common
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "v" },
 
       // Start options
       config: { type: "string", short: "c" },
@@ -265,8 +403,14 @@ async function main(): Promise<void> {
       "trusted-proxy-hops": { type: "string" },
       "dry-run": { type: "boolean" },
 
-      // Upgrade options
+      // Upgrade and destroy options
       list: { type: "boolean" },
+
+      // Destroy options
+      backup: { type: "boolean" },
+      timeout: { type: "string" },
+      delay: { type: "string" },
+      cancel: { type: "boolean" },
     },
   });
 
@@ -277,6 +421,11 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  if (values.version) {
+    printVersion();
+    return;
+  }
+
   switch (command) {
     case "help":
       printHelp();
@@ -284,6 +433,11 @@ async function main(): Promise<void> {
 
     case "version":
       printVersion();
+      break;
+
+    case "skill":
+      // The skill bundled at build time, so it matches this version
+      process.stdout.write(SKILL);
       break;
 
     case "start":
@@ -301,6 +455,10 @@ async function main(): Promise<void> {
 
     case "audit":
       await audit();
+      break;
+
+    case "destroy":
+      await runDestroy(values, positionals[1]);
       break;
 
     default:

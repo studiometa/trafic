@@ -1,47 +1,61 @@
-import { getIdleProjects, setProjectStatus } from "../utils/db.js";
-import { stopProject, getProjectInfo, loadProjectList } from "../utils/ddev.js";
+import { getIdleProjects, releaseStaleStatuses, setProjectStatus } from "../utils/db.js";
+import {
+  stopProject,
+  getProjectInfo,
+  loadProjectList,
+  nodeDdevRunner,
+  type DdevRunner,
+} from "../utils/ddev.js";
 import { parseDuration } from "../utils/config.js";
 import { loadProjectConfig, shouldNeverStop, getIdleTimeoutMs } from "../utils/project-config.js";
+import { ddevRunningLimitDeps, enforceRunningLimit } from "./running-limit.js";
 import type { AgentConfig } from "../types.js";
 
 /**
  * Stop idle projects that haven't been accessed recently
- * Respects per-project idle_timeout settings from .ddev/config.trafic.yaml
+ * A project's idle_timeout in .ddev/config.trafic.yaml replaces the global
+ * one, shorter or longer
+ *
+ * Only projects with the status "running" are idle: a project the agent is
+ * starting or removing is never stopped here. A start or a removal whose
+ * process was killed is set back to "running" first, so its project is not
+ * left up for good.
+ *
+ * Then brings the server back under max_running_projects: a deploy runs
+ * `ddev start` without asking the agent, so only the sweep sees it.
  */
-export async function stopIdleProjects(config: AgentConfig): Promise<void> {
+export async function stopIdleProjects(
+  config: AgentConfig,
+  run: DdevRunner = nodeDdevRunner,
+): Promise<void> {
   const globalThresholdMs = parseDuration(config.idleTimeout);
 
   // Get all projects to check their individual configs
   const projects = loadProjectList(config.projectListPath);
 
-  // Get projects idle according to global threshold
-  const idleProjects = getIdleProjects(globalThresholdMs);
+  for (const name of releaseStaleStatuses()) {
+    console.log(`Set ${name} back to running: the process that started or removed it is gone`);
+  }
 
-  for (const project of idleProjects) {
+  // Every running project: its own idle_timeout can be shorter than the
+  // global one, so the global one cannot pick the candidates
+  for (const project of getIdleProjects(0)) {
     const projectDir = projects.get(project.name);
+    const projectConfig = projectDir ? loadProjectConfig(projectDir) : {};
 
-    // Load per-project config if available
-    if (projectDir) {
-      const projectConfig = loadProjectConfig(projectDir);
+    if (shouldNeverStop(projectConfig)) {
+      continue;
+    }
 
-      // Skip if project is configured to never stop
-      if (shouldNeverStop(projectConfig)) {
-        continue;
-      }
+    // The project's idle_timeout replaces the global one, shorter or longer
+    const thresholdMs = getIdleTimeoutMs(projectConfig) ?? globalThresholdMs;
 
-      // Check project-specific idle timeout
-      const projectThresholdMs = getIdleTimeoutMs(projectConfig);
-      if (projectThresholdMs !== undefined) {
-        const idleDuration = Date.now() - project.lastAccess;
-        if (idleDuration < projectThresholdMs) {
-          // Not idle according to project-specific timeout
-          continue;
-        }
-      }
+    if (Date.now() - project.lastAccess < thresholdMs) {
+      continue;
     }
 
     // Double-check project is actually running via DDEV
-    const info = await getProjectInfo(project.name);
+    const info = await getProjectInfo(project.name, run);
     if (info?.status !== "running") {
       // Already stopped, just update our record
       setProjectStatus(project.name, "stopped");
@@ -49,7 +63,7 @@ export async function stopIdleProjects(config: AgentConfig): Promise<void> {
     }
 
     console.log(`Stopping idle project: ${project.name}`);
-    const success = await stopProject(project.name);
+    const success = await stopProject(project.name, run);
 
     if (success) {
       setProjectStatus(project.name, "stopped");
@@ -58,6 +72,17 @@ export async function stopIdleProjects(config: AgentConfig): Promise<void> {
       console.error(`Failed to stop: ${project.name}`);
     }
   }
+
+  await enforceRunningLimit(
+    {
+      max: config.maxRunningProjects,
+      neverStops: (name) => {
+        const projectDir = projects.get(name);
+        return projectDir ? shouldNeverStop(loadProjectConfig(projectDir)) : false;
+      },
+    },
+    ddevRunningLimitDeps(run),
+  );
 }
 
 /**

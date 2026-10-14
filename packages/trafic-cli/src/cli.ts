@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import { parseArgs } from "node:util";
+import { detectBranch, detectRepo } from "./ci.js";
 import { deploy } from "./commands/deploy.js";
 import { destroy } from "./commands/destroy.js";
 import { setup } from "./commands/setup.js";
+import { skill } from "./commands/skill.js";
 import { parseDuration } from "./ssh.js";
 import { error } from "./steps.js";
 import type { DeployOptions, DestroyOptions, SetupOptions } from "./types.js";
@@ -17,6 +19,7 @@ const HELP = `
     trafic setup [options]     Setup a new DDEV server over SSH
     trafic deploy [options]    Deploy a project to a DDEV server
     trafic destroy [options]   Destroy a DDEV project
+    trafic skill               Print the agent skill (SKILL.md) of this version
 
   Common options:
     --host <host>              SSH host (required)
@@ -43,7 +46,8 @@ const HELP = `
 
   Deploy options:
     --repo <url>               Git repo URL (default: $CI_REPOSITORY_URL or $GITHUB_SERVER_URL/$GITHUB_REPOSITORY)
-    --branch <branch>          Branch to deploy (default: $CI_COMMIT_REF_NAME or $GITHUB_REF_NAME)
+    --branch <branch>          Branch to deploy (default: $CI_COMMIT_REF_NAME,
+                               $GITHUB_HEAD_REF or $GITHUB_REF_NAME)
     --name <name>              DDEV project name (required)
     --preview <iid>            MR/PR number → creates preview-<iid>--<name>
     --sync <paths>             Paths to rsync, comma-separated
@@ -56,12 +60,21 @@ const HELP = `
                                only (on server). For seeding a database once
     --projects-dir <path>      Projects directory (default: ~/www)
     --no-start                 Skip starting the DDEV container
-    --timeout <duration>       Timeout (default: 10m)
+    --timeout <duration>       Timeout of each remote command and each --sync path
+                               (default: 10m)
 
   Destroy options:
     --name <name>              DDEV project name (required)
     --preview <iid>            MR/PR number (computes the name)
-    --projects-dir <path>      Projects directory (default: ~/www)
+    --backup                   Back up the database and upload directories on the
+                               server first. If the backup fails, nothing is removed
+    --delay <duration>         Remove nothing now: the agent removes the project after
+                               this delay. Hours, minutes, seconds only: 48h, 1h30m.
+                               A new deploy cancels the removal
+    --timeout <duration>       Timeout of the remote command (default: 10m). With
+                               --backup, the time limit of the backup on the server,
+                               and the remote command gets 10 more minutes. Raise
+                               it to back up a large project
 
   Other:
     --version                  Show version
@@ -77,6 +90,8 @@ const HELP = `
     trafic deploy --host server.example.com --name my-app --preview 42 --sync "dist/"
     trafic deploy --host server.example.com --name my-app --env COMPOSER_AUTH --env CI=true
     trafic destroy --host server.example.com --name my-app --preview 42
+    trafic destroy --host server.example.com --name my-app --preview 42 --backup
+    trafic destroy --host server.example.com --name my-app --preview 42 --delay 48h
 `;
 
 /**
@@ -134,40 +149,6 @@ function exitOnParseError(err: unknown): never {
   process.exit(1);
 }
 
-/**
- * Detect the git repo URL from CI environment variables.
- */
-function detectRepo(): string | undefined {
-  // GitLab CI
-  if (process.env.CI_REPOSITORY_URL) {
-    return process.env.CI_REPOSITORY_URL;
-  }
-
-  // GitHub Actions
-  if (process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY) {
-    return `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}.git`;
-  }
-
-  return undefined;
-}
-
-/**
- * Detect the git branch from CI environment variables.
- */
-function detectBranch(): string | undefined {
-  // GitLab CI
-  if (process.env.CI_COMMIT_REF_NAME) {
-    return process.env.CI_COMMIT_REF_NAME;
-  }
-
-  // GitHub Actions (refs/heads/main → main)
-  if (process.env.GITHUB_REF_NAME) {
-    return process.env.GITHUB_REF_NAME;
-  }
-
-  return undefined;
-}
-
 function main(): void {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -180,6 +161,11 @@ function main(): void {
   if (command === "--version" || command === "-v") {
     console.log(__VERSION__);
     process.exit(0);
+  }
+
+  if (command === "skill") {
+    skill();
+    return;
   }
 
   // Parse arguments (skip the command name).
@@ -220,6 +206,8 @@ function main(): void {
         "create-script": { type: "string" },
         "projects-dir": { type: "string", default: "~/www" },
         "no-start": { type: "boolean", default: false },
+        backup: { type: "boolean", default: false },
+        delay: { type: "string" },
         timeout: { type: "string", default: "10m" },
         help: { type: "boolean", short: "h" },
         version: { type: "boolean", short: "v" },
@@ -339,7 +327,7 @@ function main(): void {
 
       if (!branch) {
         error(
-          "Missing --branch and could not detect from CI environment ($CI_COMMIT_REF_NAME or $GITHUB_REF_NAME)",
+          "Missing --branch and could not detect from CI environment ($CI_COMMIT_REF_NAME, $GITHUB_HEAD_REF or $GITHUB_REF_NAME)",
         );
         process.exit(1);
       }
@@ -373,7 +361,9 @@ function main(): void {
         ...sshBase,
         name: values.name!,
         preview: values.preview,
-        projectsDir: values["projects-dir"]!,
+        backup: values.backup!,
+        delay: values.delay,
+        timeout: values.timeout!,
       };
 
       destroy(destroyOptions).catch((err: Error) => {

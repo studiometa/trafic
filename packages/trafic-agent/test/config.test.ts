@@ -2,8 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, parseDuration, validateConfig } from "../src/utils/config.js";
+import { loadConfig, parseDuration, parseTimeout, validateConfig } from "../src/utils/config.js";
 import type { AgentConfig } from "../src/types.js";
+
+describe("parseTimeout", () => {
+  it.each([
+    ["90s", 90 * 1000],
+    ["10m", 10 * 60 * 1000],
+    ["1h", 60 * 60 * 1000],
+    // The trafic CLI reads a bare number as minutes, and passes it on as is
+    ["30", 30 * 60 * 1000],
+  ])("parses %j", (value, expected) => {
+    expect(parseTimeout(value)).toBe(expected);
+  });
+
+  it.each(["", "0", "0m", "-5m", "1h30m", "10 minutes", "abc", "1.5h"])(
+    "rejects %j",
+    (value) => {
+      expect(parseTimeout(value)).toBeUndefined();
+    },
+  );
+});
 
 describe("parseDuration", () => {
   it("parses minutes", () => {
@@ -40,6 +59,7 @@ describe("validateConfig", () => {
     projectsDir: "/home/ddev/www",
     idleTimeout: "30m",
     idleCheckInterval: "5m",
+    maxRunningProjects: 0,
     auth: {
       defaultPolicy: "basic",
       allowedIps: [],
@@ -50,6 +70,10 @@ describe("validateConfig", () => {
     },
     tls: {
       dnsEnv: {},
+    },
+    backup: {
+      dir: "/var/backups/trafic",
+      retainDays: 14,
     },
   };
 
@@ -84,12 +108,98 @@ describe("validateConfig", () => {
     );
   });
 
+  it.each([
+    ["negative", -1],
+    ["fractional", 1.5],
+    ["a string", "8" as unknown as number],
+  ])("rejects a %s max_running_projects", (_label, value) => {
+    expect(validateConfig({ ...validConfig, maxRunningProjects: value })).toContain(
+      "max_running_projects must be a whole number, 0 or more",
+    );
+  });
+
+  it("accepts a max_running_projects limit", () => {
+    expect(validateConfig({ ...validConfig, maxRunningProjects: 8 })).toEqual([]);
+  });
+
   it("accepts token as default policy", () => {
     const config = {
       ...validConfig,
       auth: { ...validConfig.auth, defaultPolicy: "token" as const },
     };
     expect(validateConfig(config)).toEqual([]);
+  });
+
+  it.each(["backups", ""])("requires an absolute backup directory, not %j", (dir) => {
+    const config = { ...validConfig, backup: { ...validConfig.backup, dir } };
+    expect(validateConfig(config)).toContain("backup.dir must be an absolute path");
+  });
+
+  it.each([
+    ["projects_dir itself", "/home/ddev/www"],
+    ["projects_dir with a trailing slash", "/home/ddev/www/"],
+    ["inside projects_dir", "/home/ddev/www/backups"],
+    ["inside a project directory", "/home/ddev/www/app/backups"],
+    ["a parent of projects_dir", "/home/ddev"],
+    ["a parent of projects_dir, not normalized", "/home/ddev/www/.."],
+  ])("rejects a backup directory that is %s", (_, dir) => {
+    // trafic-agent destroy would remove the backup with the project
+    const config = { ...validConfig, projectsDir: "/home/ddev/www", backup: { ...validConfig.backup, dir } };
+    expect(validateConfig(config)).toContain(
+      "backup.dir must not be projects_dir, be inside it or contain it",
+    );
+  });
+
+  it.each(["/home/ddev/backups", "/home/ddev/www-backups"])(
+    "accepts a backup directory next to projects_dir: %s",
+    (dir) => {
+      const config = { ...validConfig, projectsDir: "/home/ddev/www", backup: { ...validConfig.backup, dir } };
+      expect(validateConfig(config)).toEqual([]);
+    },
+  );
+
+  it.each([0, -1, 1.5])("rejects retain_days = %s", (retainDays) => {
+    // 0 would remove each backup as soon as the sweep sees it
+    const config = { ...validConfig, backup: { ...validConfig.backup, retainDays } };
+    expect(validateConfig(config)).toContain(
+      "backup.retain_days must be a whole number of 1 or more",
+    );
+  });
+});
+
+describe("loadConfig backup", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "trafic-config-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function load(content: string) {
+    const path = join(dir, "config.toml");
+    writeFileSync(path, `tld = "example.com"\n${content}\n`);
+    return loadConfig(path).backup;
+  }
+
+  it("defaults to /var/backups/trafic and 14 days", () => {
+    expect(load("")).toEqual({ dir: "/var/backups/trafic", retainDays: 14 });
+  });
+
+  it("reads the [backup] section", () => {
+    expect(load('[backup]\ndir = "/srv/backups"\nretain_days = 30')).toEqual({
+      dir: "/srv/backups",
+      retainDays: 30,
+    });
+  });
+
+  it("keeps the default for a key the section leaves out", () => {
+    expect(load("[backup]\nretain_days = 7")).toEqual({
+      dir: "/var/backups/trafic",
+      retainDays: 7,
+    });
   });
 });
 
@@ -135,5 +245,31 @@ describe("loadConfig trusted_proxy_hops", () => {
     writeFileSync(path, 'tld = "example.com"\n');
 
     expect(loadConfig(path).auth.trustedProxyHops).toBe(1);
+  });
+});
+
+describe("loadConfig max_running_projects", () => {
+  let dir = "";
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "trafic-config-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function load(content: string) {
+    const path = join(dir, "config.toml");
+    writeFileSync(path, `tld = "example.com"\n${content}\n`);
+    return loadConfig(path);
+  }
+
+  it("has no limit by default", () => {
+    expect(load("").maxRunningProjects).toBe(0);
+  });
+
+  it("reads the limit", () => {
+    expect(load("max_running_projects = 8").maxRunningProjects).toBe(8);
   });
 });

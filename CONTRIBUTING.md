@@ -32,8 +32,8 @@ npm run build
 ```
 trafic/
 ├── packages/
-│   ├── trafic-cli/      # CLI for CI (deploy, destroy)
-│   └── trafic-agent/    # Server agent (auth, scale-to-zero)
+│   ├── trafic-cli/      # CLI (setup, deploy, destroy)
+│   └── trafic-agent/    # Server agent (auth, scale-to-zero, setup, destroy, backups)
 ├── examples/            # CI configuration examples
 ├── docs/                # Documentation and plans
 └── .github/             # GitHub Actions workflows
@@ -53,20 +53,18 @@ npm run test:ci
 # Run tests in watch mode (in a specific package)
 cd packages/trafic-cli
 npm run test:watch
+
+# Run the integration tests (Docker-based SSH tests)
+npm run test:integration --workspace=@studiometa/trafic-cli
 ```
 
-### Linting and Formatting
+### Linting
 
 ```bash
-# Lint code
 npm run lint
-
-# Check formatting
-npm run format:check
-
-# Fix formatting
-npm run format
 ```
+
+There is no formatter yet. Follow the style of the code around your change.
 
 ### Type Checking
 
@@ -101,7 +99,7 @@ Co-authored-by: Claude <claude@anthropic.com>
 2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes with clear, atomic commits
 4. Ensure all tests pass: `npm test`
-5. Ensure code is formatted: `npm run format`
+5. Ensure the lint and type checks pass: `npm run lint && npm run typecheck`
 6. Add a changelog fragment in `.changelog/` (see [Changelog](#changelog))
 7. Push and open a PR against `main`
 

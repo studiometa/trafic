@@ -1,11 +1,11 @@
 import type { SshIo } from "../../src/ssh.js";
-import type { ExecResult } from "../../src/ssh.js";
+import type { ExecOptions, ExecResult } from "../../src/ssh.js";
 
 export interface FakeSshIo extends SshIo {
   /** Every remote command, in order. */
   commands: string[];
   /** The options passed alongside each command, in order. */
-  execOptions: ({ log?: string } | undefined)[];
+  execOptions: (ExecOptions | undefined)[];
   /** Every rsync, as [localPath, remotePath]. */
   syncs: [string, string][];
   /** Every condition a command tested for, in order. */
@@ -53,7 +53,7 @@ export function createFakeSshIo(
   } = options;
 
   const commands: string[] = [];
-  const execOptions: ({ log?: string } | undefined)[] = [];
+  const execOptions: (ExecOptions | undefined)[] = [];
   const syncs: [string, string][] = [];
   const tested: string[] = [];
 

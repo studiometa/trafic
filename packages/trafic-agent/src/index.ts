@@ -2,12 +2,14 @@
 export type {
   AgentConfig,
   AuthConfig,
+  BackupConfig,
   AuthRule,
   AuthRequest,
   AuthResult,
   DdevProject,
   ProjectRecord,
   AccessLog,
+  ScheduledDestroy,
 } from "./types.js";
 
 // Config utilities
@@ -51,7 +53,14 @@ export {
   updateProjectAccess,
   getProject,
   setProjectStatus,
+  deleteProject,
+  scheduleDestroy,
+  cancelScheduledDestroy,
+  startScheduledDestroy,
+  getScheduledDestroys,
   getIdleProjects,
+  releaseStaleStatuses,
+  isProcessAlive,
   logAccess,
   getAccessLogs,
   cleanOldLogs,
@@ -67,6 +76,19 @@ export type { ProjectConfig } from "./utils/project-config.js";
 
 // Tasks
 export { stopIdleProjects, startIdleScheduler } from "./tasks/stop-idle.js";
+export { destroyProject } from "./tasks/destroy-project.js";
+export {
+  scheduleProjectDestroy,
+  destroyScheduledProjects,
+  startScheduledDestroyScheduler,
+} from "./tasks/destroy-scheduled.js";
+export {
+  backupProject,
+  removeOldBackups,
+  startBackupSweepScheduler,
+} from "./tasks/backup.js";
+export { enforceRunningLimit } from "./tasks/running-limit.js";
+export { startAccessLogSweepScheduler } from "./tasks/access-logs.js";
 
 // Server
 export { startServer } from "./server.js";

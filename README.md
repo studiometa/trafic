@@ -14,6 +14,9 @@ Trafic turns a VPS into a preview server for your web projects. It handles authe
 - **Scale-to-zero** — Idle projects are stopped automatically to save RAM. They restart on the next request.
 - **Authentication** — Forward auth via Traefik with IP whitelist, tokens, basic auth, and per-hostname rules.
 - **Preview environments** — Create and destroy environments from CI, like Vercel but for PHP.
+- **Backups on removal** — `destroy --backup` dumps the database and upload directories first.
+- **Scheduled removal** — `destroy --delay 48h` keeps a preview for a while; a new deploy cancels it.
+- **Running limit** — `max_running_projects` caps how many projects run at once.
 - **Simple CLI** — `setup` (server), `deploy` (CI), `destroy` (cleanup).
 - **TOML config** — Simple, readable configuration.
 - **Zero vendor lock-in** — Runs on any Linux VPS with SSH access.
@@ -29,6 +32,7 @@ flowchart TD
   traefik --> |502 error| errors[errors middleware → trafic agent]
   errors --> |known project| waiting[Waiting page + auto-start]
   errors --> |unknown project| error-page[Error page]
+  errors --> |project being removed| removing[Error page 503]
 ```
 
 ## Quick start
@@ -82,14 +86,13 @@ deploy_preview:
   stage: deploy
   image: node:24
   before_script:
-    - eval $(ssh-agent -s)
     - chmod 600 "$SSH_PRIVATE_KEY"
-    - ssh-add "$SSH_PRIVATE_KEY"
   script:
     - npx @studiometa/trafic-cli deploy
         --host $SSH_HOST
         --name $CI_PROJECT_PATH_SLUG
         --preview $CI_MERGE_REQUEST_IID
+        --ssh-options="-i $SSH_PRIVATE_KEY -o IdentitiesOnly=yes"
         --sync "dist/"
         --script "composer install --no-dev"
   rules:
@@ -100,17 +103,18 @@ destroy_preview:
   image: node:24
   when: manual
   before_script:
-    - eval $(ssh-agent -s)
     - chmod 600 "$SSH_PRIVATE_KEY"
-    - ssh-add "$SSH_PRIVATE_KEY"
   script:
     - npx @studiometa/trafic-cli destroy
         --host $SSH_HOST
         --name $CI_PROJECT_PATH_SLUG
         --preview $CI_MERGE_REQUEST_IID
+        --ssh-options="-i $SSH_PRIVATE_KEY -o IdentitiesOnly=yes"
   rules:
     - if: $CI_MERGE_REQUEST_ID
 ```
+
+`SSH_PRIVATE_KEY` is a file-type CI variable. Do not use `ssh-agent` in GitLab CI: see [the CLI README](packages/trafic-cli/README.md#gitlab-ci).
 
 </details>
 
@@ -147,6 +151,23 @@ destroy_preview:
 ```
 
 </details>
+
+## Agent skills
+
+Two [Agent Skills](https://agentskills.io) teach a coding agent to use Trafic:
+
+- [`trafic-cli`](skills/trafic-cli/SKILL.md): write and fix the CI jobs that run `trafic setup`, `trafic deploy` and `trafic destroy`.
+- [`trafic-agent`](skills/trafic-agent/SKILL.md): operate the server (setup, upgrade, audit, `destroy`, `config.toml`).
+
+Install them in a project or for your user:
+
+```bash
+npx skills add studiometa/trafic
+# or, with the GitHub CLI
+gh skill install studiometa/trafic
+```
+
+Each package also prints the skill that matches its version: `trafic skill` and `trafic-agent skill`.
 
 ## Documentation
 

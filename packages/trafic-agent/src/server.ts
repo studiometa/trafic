@@ -10,6 +10,8 @@ import {
   watchProjectList,
   startProject,
   getProjectInfo,
+  nodeDdevRunner,
+  type DdevRunner,
 } from "./utils/ddev.js";
 import {
   initDb,
@@ -17,10 +19,22 @@ import {
   logAccess,
   setProjectStatus,
   getProject,
+  isProcessAlive,
+  releaseStaleStatuses,
 } from "./utils/db.js";
-import { loadProjectConfig } from "./utils/project-config.js";
+import {
+  loadProjectConfig,
+  shouldNeverStop,
+  type ProjectConfig,
+} from "./utils/project-config.js";
+import {
+  ddevRunningLimitDeps,
+  enforceRunningLimit,
+} from "./tasks/running-limit.js";
 import { syncForwardAuthAddress } from "./utils/traefik.js";
 import { warnIfWildcardNotApplied } from "./utils/tls.js";
+
+declare const __VERSION__: string;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -49,7 +63,14 @@ export interface ServerDeps {
   logAccess: (log: Parameters<typeof logAccess>[0]) => void;
   getProject: (name: string) => ReturnType<typeof getProject>;
   setProjectStatus: (name: string, status: "running" | "stopped" | "starting") => void;
+  /** Set back the "starting" and "destroying" statuses whose process is gone */
+  releaseStaleStatuses: () => unknown;
   startProject: (name: string) => Promise<boolean>;
+  /**
+   * Stop projects until the running ones fit under max_running_projects. The
+   * project marked "starting" counts as running, so it has its slot.
+   */
+  makeRoom: () => Promise<unknown>;
   getProjectInfo: (name: string) => ReturnType<typeof getProjectInfo>;
 }
 
@@ -167,8 +188,20 @@ export async function handleErrors(
     return;
   }
 
-  // Check if project is already starting
+  // A start or a removal that was killed leaves its status behind
+  deps.releaseStaleStatuses();
   const record = deps.getProject(projectName);
+
+  if (record?.status === "destroying") {
+    // trafic-agent destroy is removing it: a start now would bring back the
+    // containers that ddev delete removes, or stop the backup's own start
+    const template = deps.loadTemplate("error");
+    res.writeHead(503, { "Content-Type": "text/html" });
+    res.end(template.replace("{{message}}", "This project is being removed"));
+    return;
+  }
+
+  // Check if project is already starting
   if (record?.status === "starting") {
     // Show waiting page
     const template = deps.loadTemplate("wait");
@@ -204,15 +237,48 @@ export async function handleErrors(
   // serving forward auth for every other project while this runs. The status
   // is recorded when it settles, which is what stops a second request from
   // starting the same project again.
-  void deps.startProject(projectName)
-    .then((success) => {
-      deps.setProjectStatus(projectName, success ? "running" : "stopped");
-    })
-    .catch((error: unknown) => {
-      // Leaving it "starting" forever would wedge the waiting page
-      deps.setProjectStatus(projectName, "stopped");
-      console.error(`Could not start ${projectName}:`, error);
-    });
+  void startWithinLimit(projectName, deps);
+}
+
+/**
+ * Stop projects until the running ones fit under `max`, before the waiting
+ * page starts a project. A project's own config says whether it never stops.
+ */
+export function makeRoomUnderLimit(
+  max: number,
+  projectConfigs: Map<string, ProjectConfig>,
+  run: DdevRunner = nodeDdevRunner,
+): Promise<string[]> {
+  return enforceRunningLimit(
+    {
+      max,
+      neverStops: (name) => shouldNeverStop(projectConfigs.get(name) ?? {}),
+    },
+    ddevRunningLimitDeps(run),
+  );
+}
+
+/**
+ * Make room under max_running_projects, then start the project.
+ *
+ * A failure to make room does not block the start: a page that never comes
+ * up is worse than a server one project over its limit.
+ */
+async function startWithinLimit(projectName: string, deps: ServerDeps): Promise<void> {
+  try {
+    await deps.makeRoom();
+  } catch (error: unknown) {
+    console.error(`Could not make room for ${projectName}:`, error);
+  }
+
+  try {
+    const success = await deps.startProject(projectName);
+    deps.setProjectStatus(projectName, success ? "running" : "stopped");
+  } catch (error: unknown) {
+    // Leaving it "starting" forever would wedge the waiting page
+    deps.setProjectStatus(projectName, "stopped");
+    console.error(`Could not start ${projectName}:`, error);
+  }
 }
 
 /**
@@ -289,7 +355,7 @@ export async function handleRequest(
       await handleStatus(req, res, deps);
     } else if (path === "/__health__") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", version: "__VERSION__" }));
+      res.end(JSON.stringify({ status: "ok", version: __VERSION__ }));
     } else {
       // Default: errors middleware
       await handleErrors(req, res, deps);
@@ -322,6 +388,18 @@ function reloadProjects(): void {
 }
 
 /**
+ * Set back the busy statuses that a stopped service or a killed removal left
+ * behind, when the service starts. No start or removal of this new process
+ * is in flight yet, so its own id counts as gone too: after a reboot, the
+ * new service can have the id of the old one.
+ */
+export function releaseStatusesAtStart(
+  isAlive: (pid: number) => boolean = isProcessAlive,
+): string[] {
+  return releaseStaleStatuses((pid) => pid !== process.pid && isAlive(pid));
+}
+
+/**
  * Start the agent server
  */
 export function startServer(agentConfig: AgentConfig): void {
@@ -329,6 +407,10 @@ export function startServer(agentConfig: AgentConfig): void {
 
   // Initialize database
   initDb(config.dbPath);
+
+  for (const name of releaseStatusesAtStart()) {
+    console.log(`Set ${name} back to running: the process that started or removed it is gone`);
+  }
 
   // setup wrote the forward auth address before any DDEV network existed, so
   // correct it now that one may have appeared
@@ -358,7 +440,9 @@ export function startServer(agentConfig: AgentConfig): void {
     logAccess,
     getProject,
     setProjectStatus,
+    releaseStaleStatuses,
     startProject,
+    makeRoom: () => makeRoomUnderLimit(config.maxRunningProjects, projectConfigs),
     getProjectInfo,
   });
 

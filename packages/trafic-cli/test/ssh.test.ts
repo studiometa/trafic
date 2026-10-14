@@ -317,6 +317,22 @@ describe("rsync", () => {
     );
   });
 
+  it("uses the timeout from the options", async () => {
+    const { calls, runner } = recorder();
+
+    await rsync("dist", "/x", { ...defaultOptions, timeout: "45m" }, asDirectory, runner);
+
+    expect(calls[0]!.timeoutMs).toBe(2_700_000);
+  });
+
+  it("falls back to ten minutes when no timeout is set", async () => {
+    const { calls, runner } = recorder();
+
+    await rsync("dist", "/x", defaultOptions, asDirectory, runner);
+
+    expect(calls[0]!.timeoutMs).toBe(600_000);
+  });
+
   it("refuses a path that does not exist instead of reporting success", async () => {
     const { calls, runner } = recorder();
 

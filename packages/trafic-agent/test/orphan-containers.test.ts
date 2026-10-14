@@ -19,8 +19,11 @@ beforeEach(() => {
 });
 
 describe("0019__recover_orphan_containers migration", () => {
-  it("is registered last, after the restart in 0018", () => {
-    expect(ALL_MIGRATIONS.at(-1)).toBe(migration0019RecoverOrphanContainers);
+  it("is registered after the restart in 0018", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0019RecoverOrphanContainers.id)).toBeGreaterThan(
+      ids.indexOf("0018__docker_address_pools"),
+    );
   });
 
   it("does nothing when Docker knows every task", () => {

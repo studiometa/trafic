@@ -16,10 +16,27 @@ export interface AgentConfig {
   idleTimeout: string;
   /** Interval for checking idle projects (e.g., "5m") */
   idleCheckInterval: string;
+  /** Most projects running at the same time (0 = no limit) */
+  maxRunningProjects: number;
   /** Auth configuration */
   auth: AuthConfig;
   /** TLS configuration */
   tls: TlsConfig;
+  /** Backup configuration */
+  backup: BackupConfig;
+}
+
+/**
+ * Backup configuration.
+ *
+ * A backup is a directory `<dir>/<project>/<timestamp>` that holds the
+ * database dump and an archive of the upload directories.
+ */
+export interface BackupConfig {
+  /** Directory that holds the backups */
+  dir: string;
+  /** Days to keep a backup before the agent removes it */
+  retainDays: number;
 }
 
 /**
@@ -89,12 +106,13 @@ export interface AuthRule {
  */
 export interface DdevProject {
   name: string;
-  status: "running" | "stopped" | "paused" | "unhealthy";
+  status: "running" | "starting" | "stopped" | "paused" | "unhealthy";
   appRoot: string;
   httpURLs: string[];
   httpsURLs: string[];
   type: string;
   phpVersion?: string;
+  /** Database type, or undefined when the project omits the db container */
   dbType?: string;
 }
 
@@ -104,7 +122,30 @@ export interface DdevProject {
 export interface ProjectRecord {
   name: string;
   lastAccess: number; // Unix timestamp
-  status: "running" | "stopped" | "starting";
+  /**
+   * "starting": the waiting page is starting it. "destroying": trafic-agent
+   * destroy is removing it, see destroyProject. Both are set back when their
+   * process is gone, see releaseStaleStatuses.
+   */
+  status: "running" | "stopped" | "starting" | "destroying";
+}
+
+/**
+ * A removal scheduled with `trafic-agent destroy --delay`
+ */
+export interface ScheduledDestroy {
+  name: string;
+  /** When the removal is due, as a Unix timestamp in milliseconds */
+  destroyAt: number;
+  /** Whether to back the project up before it is removed */
+  backup: boolean;
+  /** Time limit of the backup (`--timeout`), when one was given */
+  timeoutMs?: number;
+  /**
+   * Whether the sweep has started to remove the project, after its backup:
+   * a cancel is then too late, and a retry does not back it up again
+   */
+  removing: boolean;
 }
 
 /**

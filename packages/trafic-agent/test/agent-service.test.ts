@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   installAgent,
   createAgentConfig,
@@ -10,16 +11,20 @@ beforeEach(() => {
   vi.spyOn(console, "log").mockImplementation(() => {});
 });
 
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8")) as { version: string };
+
 const CONFIG_PATH = "/etc/trafic/config.toml";
 const UNIT_PATH = "/etc/systemd/system/trafic-agent.service";
 
 describe("installAgent", () => {
-  it("installs the published package globally", () => {
+  it("installs the published package globally, at its own version", () => {
+    // trafic setup --agent-version installed this version: an install of the
+    // latest one would replace it
     const io = createFakeIo();
 
     installAgent(io);
 
-    expect(io.ran("npm install -g @studiometa/trafic-agent")).toBe(true);
+    expect(io.ran(`npm install -g @studiometa/trafic-agent@${pkg.version}`)).toBe(true);
   });
 });
 
@@ -87,6 +92,18 @@ describe("createAgentConfig", () => {
     expect(io.ran("mkdir -p /var/lib/trafic")).toBe(true);
     expect(io.ran("chown ddev:ddev /var/lib/trafic")).toBe(true);
   });
+
+  it("creates the backup directory for the agent user only", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    // Hardening creates it too, but a --no-hardening server needs it: the
+    // unit lists it in ReadWritePaths, and systemd refuses a missing path
+    expect(io.ran("mkdir -p /var/backups/trafic")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/backups/trafic")).toBe(true);
+    expect(io.ran("chmod 700 /var/backups/trafic")).toBe(true);
+  });
 });
 
 describe("createSystemdService", () => {
@@ -131,6 +148,16 @@ describe("createSystemdService", () => {
     expect(io.written(UNIT_PATH)).toContain(
       "ReadWritePaths=/var/lib/trafic /home/ddev",
     );
+  });
+
+  it("grants the agent write access to the backup directory", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    // The backup sweep removes old backups from it. With "-", a missing
+    // directory does not stop the unit from starting (226/NAMESPACE)
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/trafic$/m);
   });
 
   it("still protects the rest of the filesystem", () => {

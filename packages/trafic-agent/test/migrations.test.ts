@@ -13,6 +13,10 @@ import {
   runDdevAptCloudsmithMigration,
 } from "../src/setup/migrations/0017__ddev_apt_cloudsmith.js";
 import { DDEV_KEYRING, DDEV_SOURCES } from "../src/setup/ddev.js";
+import {
+  migration0020BackupDir,
+  runBackupDirMigration,
+} from "../src/setup/migrations/0020__backup_dir.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 // ---------------------------------------------------------------------------
@@ -363,5 +367,62 @@ describe("0017__ddev_apt_cloudsmith migration", () => {
 
     expect(io.ran("rm -f")).toBe(false);
     expect(io.ran(DDEV_SOURCES)).toBe(true);
+  });
+});
+
+describe("0020__backup_dir migration", () => {
+  const UNIT_PATH = "/etc/systemd/system/trafic-agent.service";
+
+  it("is registered after 0019", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0020BackupDir.id)).toBe(
+      ids.indexOf("0019__recover_orphan_containers") + 1,
+    );
+  });
+
+  it("creates the backup directory for the ddev user", () => {
+    const io = createFakeIo();
+
+    runBackupDirMigration(io);
+
+    expect(io.ran("mkdir -p /var/backups/trafic")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/backups/trafic")).toBe(true);
+  });
+
+  it("rewrites a unit that does not let the agent write backups", () => {
+    const io = createFakeIo({
+      files: { [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/trafic /home/ddev\n" },
+    });
+
+    runBackupDirMigration(io);
+
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/trafic$/m);
+    expect(io.ran("systemctl daemon-reload")).toBe(true);
+  });
+
+  it("rewrites a unit that lists the backup directory without the - prefix", () => {
+    const io = createFakeIo({
+      files: {
+        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/trafic /home/ddev /var/backups/trafic\n",
+      },
+    });
+
+    runBackupDirMigration(io);
+
+    // Without "-", a missing directory stops the unit from starting
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/trafic$/m);
+  });
+
+  it("leaves a unit that already lists the backup directory alone", () => {
+    const io = createFakeIo({
+      files: {
+        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/trafic /home/ddev -/var/backups/trafic\n",
+      },
+    });
+
+    runBackupDirMigration(io);
+
+    expect(io.writes.has(UNIT_PATH)).toBe(false);
+    expect(io.ran("systemctl")).toBe(false);
   });
 });
