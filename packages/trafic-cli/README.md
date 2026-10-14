@@ -96,7 +96,7 @@ trafic deploy \
 | `--before-script` | Script to run before deploy (on server, outside the container) | - |
 | `--after-script` | Script to run after deploy (on server, outside the container) | - |
 | `--create-script` | Script to run only on the deploy that creates the project (on server) | - |
-| `--timeout` | Per-command timeout, e.g. `10m`, `90s`, `1h` | `10m` |
+| `--timeout` | Timeout of each remote command and of the rsync of each `--sync` path, e.g. `10m`, `90s`, `1h` | `10m` |
 | `--projects-dir` | Projects directory on the server. Must match `projects_dir` in the agent config | `~/www` |
 | `--no-start` | Skip `ddev start` | `false` |
 | `--branch` | Git branch name | `$CI_COMMIT_REF_NAME`, `$GITHUB_HEAD_REF` or `$GITHUB_REF_NAME` |

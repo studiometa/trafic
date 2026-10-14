@@ -59,7 +59,7 @@ Steps on the server, in this order:
 | `--env KEY=VALUE` / `--env KEY` | Environment for `--script`, repeatable. A bare `KEY` takes the value from the runner, so a secret is not in the command line |
 | `--before-script`, `--after-script` | Commands on the server, outside the container, in the project directory |
 | `--create-script <cmd>` | Command on the server, on the first deploy only. Use it for `ddev pull <provider> -y` or another one-time seed |
-| `--timeout` | Time limit of each remote command: `10m` (default), `90s`, `1h`. A bare number is minutes |
+| `--timeout` | Time limit of each remote command and of each `--sync` path: `10m` (default), `90s`, `1h`. A bare number is minutes |
 | `--projects-dir` | Default `~/www`. Must be the same as `projects_dir` in the agent config |
 | `--no-start` | Do not run `ddev start` |
 | `--user` | Default `ddev`. Keep it: the agent refuses to run `destroy` as root |
@@ -70,7 +70,7 @@ Rules:
 
 - Build in CI, then send the result with `--sync`. The server clones the repository, so only send files that git does not track (build output, `vendor`, `node_modules` that the site needs).
 - Put commands that need PHP, Composer or the database in `--script`. Put commands that need `ddev` itself (`ddev pull`, `ddev import-db`) in `--create-script`, `--before-script` or `--after-script`.
-- Raise `--timeout` for a slow step, such as a large `ddev pull`. It applies to each remote command, not to the whole deploy.
+- Raise `--timeout` for a slow step, such as a large `ddev pull` or a large `--sync`. It applies to each remote command and to the rsync of each `--sync` path, not to the whole deploy.
 - A `--create-script` that fails runs again on the next deploy. One that succeeded never runs again for this project.
 
 ## `trafic destroy`
@@ -231,7 +231,7 @@ jobs:
 | `the removal of <project> is in progress, it is too late to cancel it` | A delayed removal started. Wait until it ends, then deploy again: the deploy creates the project again |
 | `Invalid delay: "<value>"` | Use `48h`, `1h30m` or `90m`. Days and spaces are not accepted |
 | `Invalid --timeout` | Use `10m`, `90s`, `1h` or a bare number of minutes |
-| `Command failed: ssh (exit code null)` after a step ran for 10 minutes | The step reached `--timeout`. Raise it, for example `--timeout 30m` |
+| `Command failed: ssh (exit code null)` or `Command failed: rsync (exit code null)` after a step ran for 10 minutes | The step reached `--timeout`. Raise it, for example `--timeout 30m` |
 | Preview shows a certificate warning | Setup ran without `--email` (mkcert certificate), or Let's Encrypt refused the certificate, for example over its limit of 50 per week. Set up one wildcard certificate with `--dns-provider` |
 
 ## Server side

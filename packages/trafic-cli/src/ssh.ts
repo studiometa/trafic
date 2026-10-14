@@ -325,7 +325,8 @@ export async function rsync(
 
   info(`rsync ${localPath} → ${options.host}:${remotePath}`);
 
-  return runner("rsync", args, DEFAULT_TIMEOUT_MS);
+  // A large sync takes as long as a slow remote command: --timeout covers both
+  return runner("rsync", args, parseDuration(options.timeout) ?? DEFAULT_TIMEOUT_MS);
 }
 
 /**

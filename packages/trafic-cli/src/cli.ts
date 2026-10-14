@@ -60,7 +60,8 @@ const HELP = `
                                only (on server). For seeding a database once
     --projects-dir <path>      Projects directory (default: ~/www)
     --no-start                 Skip starting the DDEV container
-    --timeout <duration>       Timeout of each remote command (default: 10m)
+    --timeout <duration>       Timeout of each remote command and each --sync path
+                               (default: 10m)
 
   Destroy options:
     --name <name>              DDEV project name (required)
