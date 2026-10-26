@@ -88,7 +88,7 @@ Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + 
 Commands:
 - `trafic-agent start` — Start the agent server (`-c/--config`, `-p/--port`)
 - `trafic-agent setup` — Server provisioning (Docker, DDEV, hardening)
-- `trafic-agent upgrade` (alias `update`) — Install the latest agent, run pending migrations, upgrade DDEV, restart the service
+- `trafic-agent upgrade` (alias `update`) — Install the latest agent, run pending migrations, upgrade DDEV, restart the running DDEV projects one at a time when the DDEV version changed, restart the service
 - `trafic-agent audit` — Security audit checks
 - `trafic-agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `trafic destroy` calls it over SSH. Options: `--backup`, `--timeout`, `--delay`, `--cancel`, `--list`
 - `trafic-agent version` / `help` — Print the version (also `-v`, `--version`) or the help (also `-h`, `--help`)

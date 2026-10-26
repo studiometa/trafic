@@ -80,11 +80,13 @@ sudo trafic-agent upgrade --dry-run
 sudo trafic-agent upgrade
 ```
 
-Steps: install the latest `@studiometa/trafic-agent` from npm when it is newer, run the pending migrations, upgrade the `ddev` apt package (a failure is only a warning), restart `trafic-agent`.
+Steps: install the latest `@studiometa/trafic-agent` from npm when it is newer, run the pending migrations, upgrade the `ddev` apt package (a failure is only a warning), restart the running DDEV projects when the DDEV version changed, restart `trafic-agent`.
 
 - Upgrade the agent **before** you raise the CLI version in CI. `trafic deploy` and `trafic destroy` call `trafic-agent destroy` on the server, and an older agent does not know the new options.
 - Migrations fix the state of existing servers. They run once per server, in order, and the state file records each one after it succeeds. A fresh `setup` marks all of them as applied.
 - DDEV is upgraded only here, never by unattended-upgrades, so that a new major version does not break previews without an operator.
+- A running project keeps its old containers (for example the old PHP of `ddev-webserver`) until it restarts. When the DDEV version changed, the upgrade downloads the new images with `ddev utility download-images`, then runs `ddev restart` on each running project, one at a time. Stopped and paused projects get the new images at their next start. During its restart, a project has the status `starting`, so the idle sweep does not stop it. A failed restart is only a warning, and the upgrade lists the failures at the end. `--dry-run` shows the projects it would restart.
+- The first restart after a DDEV version change can recreate `ddev-router`, so all previews can stop for a few seconds, one time.
 
 ## `trafic-agent audit`
 

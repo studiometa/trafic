@@ -165,9 +165,22 @@ Steps:
 2. **Install** — runs `npm install -g @studiometa/trafic-agent@latest` if a newer version is available
 3. **Migrations** — runs any pending server migrations (forward-only, idempotent)
 4. **DDEV** — upgrades the `ddev` package from its apt repository, printing the version before and after. Skipped when DDEV is not installed; a failure is reported as a warning and does not stop the upgrade
-5. **Restart** — restarts the `trafic-agent` systemd service
+5. **Running projects** — restarts the running DDEV projects when the DDEV version changed (see below)
+6. **Restart** — restarts the `trafic-agent` systemd service
 
 DDEV is updated here rather than by `unattended-upgrades` on purpose: a DDEV major landing unattended can break running previews, so it happens when an operator runs the command and can watch the result.
+
+A running project keeps its old containers after a DDEV upgrade. For example, it keeps the old `ddev-webserver` image and its PHP version. To apply the new DDEV at once, step 5 does these operations:
+
+- It finds the running projects with `ddev list`. It does not start stopped or paused projects. They get the new images at their next start.
+- It downloads the new images with `ddev utility download-images` while the projects still run. If the download fails, it shows a warning and continues.
+- It restarts the projects with `ddev restart`, one at a time. Only one project is down at a time.
+- During its restart, a project has the status `starting` in the agent database. The idle sweep and `max_running_projects` do not stop it, and the waiting page does not start it again. If a project is already `starting` or `destroying`, the step skips it.
+- If a restart fails, the step shows a warning and continues with the next project. At the end, it lists the projects that failed. The upgrade does not fail.
+
+The step does nothing when the DDEV version did not change or when the apt upgrade failed. With `--dry-run`, it shows the projects that it would restart and changes nothing.
+
+The first restart after a DDEV version change can also recreate the `ddev-router` container. All previews can then stop for a few seconds, one time.
 
 Fresh servers set up with `trafic-agent setup` have all migrations automatically marked as applied, so migrations only run when needed on existing deployments.
 
