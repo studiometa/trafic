@@ -30,7 +30,8 @@ Usage:
 Commands:
   start                   Start the agent server
   setup                   Setup a new server (Docker, DDEV, hardening)
-  upgrade                 Install the latest agent, run migrations, upgrade DDEV, restart the service
+  upgrade                 Install the latest agent, run migrations, upgrade DDEV, restart
+                          the running projects when DDEV changed, restart the service
   update                  Alias for upgrade
   audit                   Run security audit checks
   destroy <name>          Remove a project: DDEV project, directory, database records,
@@ -93,7 +94,8 @@ Examples:
 
   sudo trafic-agent setup --tld=previews.example.com --no-hardening --dry-run
 
-  # Upgrade: install the latest agent, run migrations, upgrade DDEV, restart the service
+  # Upgrade: install the latest agent, run migrations, upgrade DDEV, restart the running
+  # projects one at a time when the DDEV version changed, restart the service
   sudo trafic-agent upgrade
   sudo trafic-agent upgrade --dry-run
   trafic-agent upgrade --list

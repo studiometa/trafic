@@ -123,9 +123,10 @@ export interface ProjectRecord {
   name: string;
   lastAccess: number; // Unix timestamp
   /**
-   * "starting": the waiting page is starting it. "destroying": trafic-agent
-   * destroy is removing it, see destroyProject. Both are set back when their
-   * process is gone, see releaseStaleStatuses.
+   * "starting": the waiting page is starting it, or trafic-agent upgrade is
+   * restarting it. "destroying": trafic-agent destroy is removing it, see
+   * destroyProject. Both are set back when their process is gone, see
+   * releaseStaleStatuses.
    */
   status: "running" | "stopped" | "starting" | "destroying";
 }

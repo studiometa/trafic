@@ -1,7 +1,17 @@
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { step, success, info, warn, exec, execSilent, isRoot } from "./steps.js";
 import { runPendingMigrations } from "./migrations/index.js";
+import { findRunningProjects } from "./ddev.js";
+import { loadConfig } from "../utils/config.js";
+import {
+  closeDb,
+  getProject,
+  initDb,
+  releaseStaleStatuses,
+  setProjectStatus,
+} from "../utils/db.js";
+import type { ProjectRecord } from "../types.js";
 
 declare const __VERSION__: string;
 
@@ -121,6 +131,83 @@ export function upgradeDdev(dryRun: boolean): void {
 }
 
 /**
+ * A project name that is safe in a shell command. DDEV accepts hostname
+ * labels only, so a name that fails this check does not come from DDEV.
+ */
+const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9.-]*$/;
+
+/** Return the name, or throw when it is not safe in a shell command. */
+function checkProjectName(name: string): string {
+  if (!PROJECT_NAME.test(name)) {
+    throw new Error(`Invalid project name: "${name}"`);
+  }
+
+  return name;
+}
+
+/**
+ * Download the images that the installed DDEV uses for these projects.
+ * Throws when DDEV fails.
+ *
+ * DDEV refuses to run as root, so the command runs as the ddev user.
+ */
+export function downloadDdevImages(projects: string[]): void {
+  const names = projects.map(checkProjectName).join(" ");
+  exec(`su - ddev -c 'DDEV_NONINTERACTIVE=true ddev utility download-images ${names}'`, {
+    silent: true,
+  });
+}
+
+/**
+ * Stop and start one DDEV project, so that it runs on the images of the
+ * installed DDEV. Throws when DDEV fails.
+ */
+export function restartProject(name: string): void {
+  exec(`su - ddev -c 'DDEV_NONINTERACTIVE=true ddev restart ${checkProjectName(name)}'`, {
+    silent: true,
+  });
+}
+
+/**
+ * The project statuses in the agent database, which the running service
+ * reads too.
+ */
+export interface ProjectStatuses {
+  get: (name: string) => ProjectRecord["status"] | undefined;
+  set: (name: string, status: "starting" | "running") => void;
+  close: () => void;
+}
+
+/**
+ * Open the agent database. Throws when the config or the database cannot
+ * be opened.
+ *
+ * The upgrade runs as root, and the database belongs to the ddev user. When
+ * root creates the journal files, SQLite gives them the owner of the
+ * database. But `initDb` would create a missing database owned by root, which
+ * the service could then not write: a missing database is an error here.
+ *
+ * The statuses that a killed process left behind are released first, so
+ * that a project is not skipped for a start or a removal that no longer runs.
+ */
+export function openProjectStatuses(): ProjectStatuses {
+  const { dbPath } = loadConfig();
+
+  if (!existsSync(dbPath)) {
+    throw new Error(`${dbPath} does not exist`);
+  }
+
+  initDb(dbPath);
+  releaseStaleStatuses();
+
+  return {
+    get: (name) => getProject(name)?.status,
+    set: (name, status) => setProjectStatus(name, status),
+    close: closeDb,
+  };
+}
+
+/**
  * What the upgrade sequence needs from the outside world.
  *
  * Injected so the orchestration can be tested without reaching npm, writing
@@ -142,6 +229,11 @@ export interface UpgradeIo {
   /** The installed DDEV version, or null when DDEV is absent. */
   ddevVersion: () => string | null;
   upgradeDdev: (dryRun: boolean) => void;
+  /** Names of the running DDEV projects. */
+  listRunningProjects: () => string[];
+  downloadDdevImages: (projects: string[]) => void;
+  restartProject: (name: string) => void;
+  openProjectStatuses: () => ProjectStatuses;
 }
 
 /** The real collaborators, used unless a caller passes their own. */
@@ -158,6 +250,10 @@ export function nodeUpgradeIo(): UpgradeIo {
     runPendingMigrations,
     ddevVersion,
     upgradeDdev,
+    listRunningProjects: () => findRunningProjects(),
+    downloadDdevImages,
+    restartProject,
+    openProjectStatuses,
   };
 }
 
@@ -168,7 +264,8 @@ export function nodeUpgradeIo(): UpgradeIo {
  *     so that steps 3 and 4 run with the new migration registry
  *  3. Run pending migrations
  *  4. Update DDEV from its apt repository
- *  5. Restart the systemd service
+ *  5. Restart the running DDEV projects, when the DDEV version changed
+ *  6. Restart the systemd service
  */
 export function runUpgrade(
   dryRun = false,
@@ -226,9 +323,13 @@ export function runUpgrade(
 
   // ── Step 4: Update DDEV ──────────────────────────────────────────────────
   step("Update DDEV");
-  upgradeDdevStep(dryRun, io);
+  const ddevUpdated = upgradeDdevStep(dryRun, io);
 
-  // ── Step 5: Restart service ───────────────────────────────────────────────
+  // ── Step 5: Restart running projects ─────────────────────────────────────
+  step("Restart running projects");
+  restartProjectsStep(dryRun, ddevUpdated, io);
+
+  // ── Step 6: Restart service ───────────────────────────────────────────────
   step("Restart trafic-agent service");
   io.restartAgentService(dryRun);
   if (!dryRun) {
@@ -238,16 +339,17 @@ export function runUpgrade(
 
 /**
  * Update DDEV, reporting the version on either side of the apt call.
+ * Returns whether the DDEV version changed, which dry-run mode cannot know.
  *
  * A failed apt run must not cost the server its service restart, so the
  * error is warned about and the upgrade carries on.
  */
-function upgradeDdevStep(dryRun: boolean, io: UpgradeIo): void {
+function upgradeDdevStep(dryRun: boolean, io: UpgradeIo): boolean {
   const before = io.ddevVersion();
 
   if (!dryRun && before === null) {
     info("DDEV is not installed — skipping");
-    return;
+    return false;
   }
 
   if (before) {
@@ -257,18 +359,146 @@ function upgradeDdevStep(dryRun: boolean, io: UpgradeIo): void {
   try {
     io.upgradeDdev(dryRun);
   } catch (err) {
-    warn(`DDEV update failed: ${err instanceof Error ? err.message : String(err)}`);
-    return;
+    warn(`DDEV update failed: ${errorMessage(err)}`);
+    return false;
   }
 
   if (dryRun) {
-    return;
+    return false;
   }
 
   const after = io.ddevVersion();
   if (after && after !== before) {
     success(`DDEV updated: ${after}`);
-  } else {
-    success("DDEV up to date");
+    return true;
   }
+
+  success("DDEV up to date");
+  return false;
+}
+
+/**
+ * Restart the running DDEV projects after a DDEV update.
+ *
+ * A running project keeps the containers of the DDEV that started it, and so
+ * the old webserver image and its PHP, until it stops. Stopped and paused
+ * projects get the new images at their next start, so only the running ones
+ * restart, and never with `ddev start --all`.
+ *
+ * The images are downloaded first, while the projects still run. Then the
+ * projects restart one at a time, so only one of them is down at a time.
+ *
+ * The running service keeps serving requests meanwhile. Each project is
+ * marked "starting" during its restart: the idle sweep and
+ * max_running_projects never stop a project with that status, and the
+ * waiting page does not start it a second time. When this process is killed,
+ * the service sets the status back (releaseStaleStatuses).
+ *
+ * A failed restart does not stop the upgrade: the service restart that
+ * follows matters more. The failures are listed at the end.
+ */
+function restartProjectsStep(dryRun: boolean, ddevUpdated: boolean, io: UpgradeIo): void {
+  if (!dryRun && !ddevUpdated) {
+    info("DDEV did not change — skipping");
+    return;
+  }
+
+  // `ddev list` runs as the ddev user through `su`, which asks for a
+  // password when the caller is not root
+  if (dryRun && !io.isRoot()) {
+    info("Would restart the running projects if the DDEV version changes");
+    return;
+  }
+
+  const projects = io.listRunningProjects();
+
+  if (projects.length === 0) {
+    info("No project is running");
+    return;
+  }
+
+  if (dryRun) {
+    info(`Would restart these projects if the DDEV version changes: ${projects.join(", ")}`);
+    return;
+  }
+
+  info(`Download the new DDEV images for ${projects.length} project(s)`);
+
+  try {
+    io.downloadDdevImages(projects);
+  } catch (err) {
+    // `ddev restart` downloads what is missing itself, only with the
+    // project down meanwhile
+    warn(`Image download failed: ${errorMessage(err)}`);
+  }
+
+  let statuses: ProjectStatuses | null = null;
+
+  try {
+    statuses = io.openProjectStatuses();
+  } catch (err) {
+    warn(
+      `Could not open the agent database, the service can stop or start a project during its restart: ${errorMessage(err)}`,
+    );
+  }
+
+  const failed: string[] = [];
+  let restarted = 0;
+
+  try {
+    for (const name of projects) {
+      const status = statuses?.get(name);
+
+      // The waiting page is starting it, or trafic-agent destroy is
+      // removing it: a restart now would fight that process
+      if (status === "starting" || status === "destroying") {
+        info(`Skip ${name}: its status is "${status}"`);
+        continue;
+      }
+
+      info(`Restart ${name}`);
+
+      try {
+        restartOneProject(name, statuses, io);
+        restarted++;
+      } catch (err) {
+        warn(`Could not restart ${name}: ${errorMessage(err)}`);
+        failed.push(name);
+      }
+    }
+  } finally {
+    statuses?.close();
+  }
+
+  if (restarted > 0) {
+    success(`Restarted ${restarted} project(s)`);
+  }
+
+  if (failed.length > 0) {
+    warn(`Failed to restart: ${failed.join(", ")}`);
+  }
+}
+
+/**
+ * Restart one project, marked "starting" while DDEV works on it.
+ *
+ * The status goes back to "running" after a failure too. The project ran
+ * before, and "running" is also what releaseStaleStatuses sets: the idle
+ * sweep checks the project against DDEV and records it as stopped when it is
+ * down, and a request to a project that is down reaches the waiting page,
+ * which starts it. "stopped" would be wrong for a project that a failed
+ * restart left up.
+ */
+function restartOneProject(name: string, statuses: ProjectStatuses | null, io: UpgradeIo): void {
+  statuses?.set(name, "starting");
+
+  try {
+    io.restartProject(name);
+  } finally {
+    statuses?.set(name, "running");
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

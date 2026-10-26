@@ -127,7 +127,8 @@ export function getProject(name: string): ProjectRecord | undefined {
 
 /**
  * The statuses a process sets while it works on a project: "starting" (the
- * waiting page, in the service) and "destroying" (`trafic-agent destroy`).
+ * waiting page, in the service, and `trafic-agent upgrade`) and "destroying"
+ * (`trafic-agent destroy`).
  */
 const BUSY_STATUSES: readonly ProjectRecord["status"][] = ["starting", "destroying"];
 
