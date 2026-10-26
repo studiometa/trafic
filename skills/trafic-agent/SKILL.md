@@ -94,6 +94,10 @@ sudo trafic-agent audit
 
 Run it as root. `ufw status` and the files under `/var/lib/docker` need root, so as another user the firewall and wildcard certificate checks fail. It checks SSH, the firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. It exits with code 1 when a check fails, and each failed check prints a fix.
 
+The `Update run` check runs `unattended-upgrade --dry-run --verbose`, which downloads the pending updates but installs nothing. It fails when the run cannot parse `/etc/apt/apt.conf.d/50unattended-upgrades` or stops with a Python traceback. As another user than root, it only warns.
+
+Setup writes that file: Ubuntu's release, security, updates and ESM pockets in `Allowed-Origins` (`origin:archive` pairs only), Docker Engine and Node.js from NodeSource in `Origins-Pattern`. DDEV is not in it.
+
 ## `trafic-agent destroy`
 
 Run it as `ddev`. `trafic destroy` from the CLI runs the same command over SSH.
@@ -224,6 +228,7 @@ idle_timeout: never  # or a duration such as 2h
 | `The backup timed out ...` | Run again with a larger `--timeout`, for example `1h` |
 | `Cannot write to the backup directory` | Put `[backup] dir` in `/var/backups/trafic`, `/home/ddev` (not `projects_dir`) or `/var/lib/trafic`, owned by `ddev` |
 | Certificate warning on previews | `sudo trafic-agent audit`. Without `--email` at setup, projects use mkcert. Per-host certificates are limited to 50 new ones per domain per week; use `[tls]` for one wildcard |
+| `Unable to parse Unattended-Upgrade::Allowed-Origins` in `/var/log/unattended-upgrades/unattended-upgrades.log` | No update is installed. Servers set up or upgraded with 0.1.43 to 0.1.52 have this error: run `sudo trafic-agent upgrade` (migration `0021__fix_unattended_upgrades_origins`), then `sudo trafic-agent audit` |
 | Ports 8025, 8026, 8142, 8143 reachable | The `DOCKER-USER` rules are missing: `sudo iptables -S DOCKER-USER`, `sudo systemctl status trafic-docker-firewall` |
 
 ## CI side

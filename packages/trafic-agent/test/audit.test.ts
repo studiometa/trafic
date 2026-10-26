@@ -3,6 +3,7 @@ import {
   auditSsh,
   auditFirewall,
   auditServices,
+  auditUnattendedUpgrades,
   auditDocker,
   auditPermissions,
   auditWildcardTls,
@@ -112,6 +113,81 @@ describe("auditServices", () => {
     expect(status(checks, "Fail2ban")).toBe("warn");
     expect(status(checks, "Automatic updates")).toBe("warn");
     expect(status(checks, "Trafic agent")).toBe("fail");
+  });
+});
+
+describe("auditUnattendedUpgrades", () => {
+  const RUN = "unattended-upgrade --dry-run";
+
+  it("checks nothing when unattended-upgrade is not installed", () => {
+    // The "Automatic updates" check already warns about it
+    const io = createFakeIo();
+
+    expect(auditUnattendedUpgrades(io)).toEqual([]);
+    expect(io.ran(RUN)).toBe(false);
+  });
+
+  it("simulates a run that installs nothing and keeps its output on failure", () => {
+    const io = createFakeIo({ present: ["unattended-upgrade"] });
+
+    auditUnattendedUpgrades(io);
+
+    const command = io.commands.find((c) => c.includes(RUN))!;
+    expect(command).toContain("2>&1");
+    expect(command).toContain("|| true");
+  });
+
+  it("passes a run without errors", () => {
+    const io = createFakeIo({
+      present: ["unattended-upgrade"],
+      output: {
+        [RUN]: "Starting unattended upgrades script\nNo packages found that can be upgraded unattended",
+      },
+    });
+
+    expect(status(auditUnattendedUpgrades(io), "Update run")).toBe("pass");
+  });
+
+  it("fails when the config cannot be parsed", () => {
+    // What every run printed from 0.1.43 to 0.1.52
+    const io = createFakeIo({
+      present: ["unattended-upgrade"],
+      output: {
+        [RUN]: [
+          "Unable to parse Unattended-Upgrade::Allowed-Origins.",
+          "Traceback (most recent call last):",
+          '  File "/usr/bin/unattended-upgrade", line 1111, in get_allowed_origins_legacy',
+          "ValueError: not enough values to unpack (expected 2, got 1)",
+        ].join("\n"),
+      },
+    });
+    const check = find(auditUnattendedUpgrades(io), "Update run");
+
+    expect(check?.status).toBe("fail");
+    expect(check?.message).toContain("Unable to parse Unattended-Upgrade::Allowed-Origins");
+    expect(check?.fix).toBe("Run: sudo trafic-agent upgrade");
+  });
+
+  it("fails on any traceback and names its last line", () => {
+    const io = createFakeIo({
+      present: ["unattended-upgrade"],
+      output: {
+        [RUN]: "Traceback (most recent call last):\n  File \"x\", line 1\nKeyError: 'nodejs'",
+      },
+    });
+    const check = find(auditUnattendedUpgrades(io), "Update run");
+
+    expect(check?.status).toBe("fail");
+    expect(check?.message).toContain("KeyError: 'nodejs'");
+  });
+
+  it("warns instead of passing when it does not run as root", () => {
+    const io = createFakeIo({
+      present: ["unattended-upgrade"],
+      output: { [RUN]: "You need to be root to run this application" },
+    });
+
+    expect(status(auditUnattendedUpgrades(io), "Update run")).toBe("warn");
   });
 });
 

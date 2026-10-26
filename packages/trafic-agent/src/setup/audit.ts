@@ -134,6 +134,58 @@ export function auditServices(io: SetupIo = nodeIo): AuditCheck[] {
 }
 
 /**
+ * Audit the unattended-upgrades config with a simulated run.
+ *
+ * An active service does not mean updates are installed: a config entry that
+ * unattended-upgrades cannot read makes each run stop before it installs
+ * anything, and nothing outside its log says so. `--dry-run` reads the config
+ * and downloads the updates as a real run does, but installs nothing.
+ * `--verbose` prints the "Unable to parse" error, which otherwise goes to
+ * the log only; the traceback always goes to stderr.
+ *
+ * Checks nothing when the tool is not installed: the "Automatic updates"
+ * check already warns about that.
+ */
+export function auditUnattendedUpgrades(io: SetupIo = nodeIo): AuditCheck[] {
+  if (!io.commandExists("unattended-upgrade")) {
+    return [];
+  }
+
+  // The run exits non-zero when it stops: keep its output all the same
+  const output = io.execSilent("unattended-upgrade --dry-run --verbose 2>&1 || true");
+
+  if (output.includes("You need to be root")) {
+    return [
+      {
+        name: "Update run",
+        status: "warn",
+        message: "unattended-upgrade needs root to simulate a run",
+        fix: "Run: sudo trafic-agent audit",
+      },
+    ];
+  }
+
+  const lines = output.split("\n").map((line) => line.trim()).filter(Boolean);
+  const broken =
+    output.includes("Unable to parse") || output.includes("Traceback (most recent call last)");
+
+  if (!broken) {
+    return [{ name: "Update run", status: "pass", message: "unattended-upgrade runs without errors" }];
+  }
+
+  const reason = lines.find((line) => line.includes("Unable to parse")) ?? lines.at(-1);
+
+  return [
+    {
+      name: "Update run",
+      status: "fail",
+      message: `unattended-upgrade stops before it installs updates: ${reason}`,
+      fix: "Run: sudo trafic-agent upgrade",
+    },
+  ];
+}
+
+/**
  * Audit Docker
  */
 export function auditDocker(io: SetupIo = nodeIo): AuditCheck[] {
@@ -334,6 +386,7 @@ export function runAudit(io: SetupIo = nodeIo, config: AgentConfig = loadConfig(
     ...auditSsh(io),
     ...auditFirewall(io),
     ...auditServices(io),
+    ...auditUnattendedUpgrades(io),
     ...auditDocker(io),
     ...auditPermissions(io),
     ...auditWildcardTls(config, io),

@@ -48,8 +48,10 @@ export function addNodeSourceAptRepo(io: SetupIo = nodeIo): void {
  * Install Node.js from the NodeSource apt repository.
  *
  * apt keeps node and npm in /usr/bin — on root's PATH, so `which
- * trafic-agent` resolves for the systemd unit — and unattended-upgrades
- * patches them, which a version manager install never gets.
+ * trafic-agent` resolves for the systemd unit. With hardening on,
+ * unattended-upgrades applies the minor and patch releases of the pinned
+ * major (its config lists the NodeSource site), which a version manager
+ * install never gets.
  */
 export function installNode(io: SetupIo = nodeIo): void {
   step("Install Node.js");

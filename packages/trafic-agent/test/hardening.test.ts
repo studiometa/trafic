@@ -7,8 +7,12 @@ import {
   configureFail2ban,
   configureUnattendedUpgrades,
   addDockerOriginToUnattendedUpgrades,
+  rewriteUnattendedUpgradesConfig,
+  buildUnattendedUpgradesConfig,
   DOCKER_ORIGIN_LINE,
+  NODESOURCE_ORIGIN_LINE,
   UNATTENDED_UPGRADES_CONFIG,
+  UNATTENDED_UPGRADES_HEADER,
   configureSystemLimits,
   configureFilePermissions,
   hardenServer,
@@ -259,36 +263,95 @@ describe("configureFail2ban", () => {
   });
 });
 
-describe("configureUnattendedUpgrades", () => {
-  it("limits automatic upgrades to security origins", () => {
-    const io = createFakeIo();
+/** The entries of an apt.conf list block, without their quotes. */
+function listEntries(config: string, key: string): string[] {
+  const block = new RegExp(`^${key} \\{\\n([\\s\\S]*?)^\\};`, "m").exec(config);
 
-    configureUnattendedUpgrades(io);
+  if (!block) {
+    return [];
+  }
 
-    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
-    expect(config).toContain("${distro_id}:${distro_codename}-security");
-    expect(config).toContain('Unattended-Upgrade::Automatic-Reboot "false"');
+  return [...block[1].matchAll(/^\s*"([^"]*)";/gm)].map((match) => match[1]);
+}
+
+/**
+ * Whether unattended-upgrades can read an Allowed-Origins entry.
+ *
+ * The same rule as its get_allowed_origins_legacy(): split on an unescaped
+ * ":" when there is one, else on white space, into exactly two parts. Any
+ * other entry raises a ValueError, and the whole run stops.
+ */
+function isLegacyOrigin(entry: string): boolean {
+  const parts = /(?<!\\):/.test(entry)
+    ? entry.split(/(?<!\\):/)
+    : entry.trim().split(/\s+/);
+
+  return parts.length === 2;
+}
+
+describe("buildUnattendedUpgradesConfig", () => {
+  const config = buildUnattendedUpgradesConfig();
+  const allowed = listEntries(config, "Unattended-Upgrade::Allowed-Origins");
+  const patterns = listEntries(config, "Unattended-Upgrade::Origins-Pattern");
+
+  it("starts with the Trafic header", () => {
+    expect(config.startsWith(UNATTENDED_UPGRADES_HEADER)).toBe(true);
   });
 
-  it("includes Docker Engine, which ships outside Ubuntu's pockets", () => {
-    const io = createFakeIo();
+  it("puts only origin:archive pairs in Allowed-Origins", () => {
+    // A key=value entry here stops every run with "Unable to parse"
+    expect(allowed.length).toBeGreaterThan(0);
 
-    configureUnattendedUpgrades(io);
+    for (const entry of allowed) {
+      expect(isLegacyOrigin(entry), entry).toBe(true);
+    }
+  });
 
-    // Without this entry docker-ce is never upgraded: download.docker.com is
-    // none of the ${distro_id} pockets above
-    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
-    expect(config).toContain('"origin=Docker,codename=${distro_codename}"');
-    expect(config).toContain("${distro_id}:${distro_codename}-security");
+  it("allows Ubuntu's release, security and updates pockets", () => {
+    expect(allowed).toContain("${distro_id}:${distro_codename}");
+    expect(allowed).toContain("${distro_id}:${distro_codename}-security");
+    expect(allowed).toContain("${distro_id}:${distro_codename}-updates");
+  });
+
+  it("matches Docker Engine and NodeSource with Origins-Pattern", () => {
+    expect(patterns).toEqual([
+      DOCKER_ORIGIN_LINE.slice(1, -1),
+      NODESOURCE_ORIGIN_LINE.slice(1, -1),
+    ]);
+    expect(patterns).toContain("origin=Docker,codename=${distro_codename}");
+    expect(patterns).toContain("site=deb.nodesource.com");
   });
 
   it("leaves DDEV out, so a major cannot land on running previews", () => {
+    // DDEV is updated by `trafic-agent upgrade` instead
+    expect(config).not.toMatch(/ddev\.com|origin=ddev|cloudsmith/i);
+  });
+});
+
+describe("isLegacyOrigin", () => {
+  it("rejects the Docker pattern that stopped every run", () => {
+    expect(isLegacyOrigin("origin=Docker,codename=${distro_codename}")).toBe(false);
+  });
+
+  it("accepts an origin:archive pair and a space-separated pair", () => {
+    expect(isLegacyOrigin("${distro_id}:${distro_codename}-security")).toBe(true);
+    expect(isLegacyOrigin("Ubuntu noble")).toBe(true);
+  });
+
+  it("rejects an entry with two colons", () => {
+    expect(isLegacyOrigin("a:b:c")).toBe(false);
+  });
+});
+
+describe("configureUnattendedUpgrades", () => {
+  it("writes the built config", () => {
     const io = createFakeIo();
 
     configureUnattendedUpgrades(io);
 
-    // DDEV is updated by `trafic-agent upgrade` instead
-    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).not.toContain("origin=ddev");
+    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
+    expect(config).toBe(buildUnattendedUpgradesConfig());
+    expect(config).toContain('Unattended-Upgrade::Automatic-Reboot "false"');
   });
 
   it("turns on the periodic upgrade timer", () => {
@@ -464,5 +527,54 @@ describe("hardenSsh --no-root-ssh", () => {
     hardenServer({ sshUsers: ["ddev"], noRootSsh: true }, io);
 
     expect(io.written(SSHD_CONFIG)).toContain("PermitRootLogin no");
+  });
+});
+
+describe("rewriteUnattendedUpgradesConfig", () => {
+  // What setup and migration 0014 wrote from 0.1.43 to 0.1.52
+  const broken = `${UNATTENDED_UPGRADES_HEADER}
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}";
+    "\${distro_id}:\${distro_codename}-security";
+    ${DOCKER_ORIGIN_LINE};
+};
+`;
+
+  it("rewrites the config that puts Docker in Allowed-Origins", () => {
+    const io = createFakeIo({ files: { [UNATTENDED_UPGRADES_CONFIG]: broken } });
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(true);
+
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).toBe(buildUnattendedUpgradesConfig());
+  });
+
+  it("does nothing when the config is up to date", () => {
+    const io = createFakeIo({
+      files: { [UNATTENDED_UPGRADES_CONFIG]: buildUnattendedUpgradesConfig() },
+    });
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(false);
+
+    expect(io.writes.has(UNATTENDED_UPGRADES_CONFIG)).toBe(false);
+  });
+
+  it("leaves a config that Trafic did not write alone", () => {
+    // The file the unattended-upgrades package ships, or one edited by hand
+    const io = createFakeIo({
+      files: { [UNATTENDED_UPGRADES_CONFIG]: "// Automatically upgrade packages from these origins\n" },
+    });
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(false);
+
+    expect(io.writes.has(UNATTENDED_UPGRADES_CONFIG)).toBe(false);
+  });
+
+  it("does nothing when the config is missing", () => {
+    // A server set up without hardening owns no such file
+    const io = createFakeIo();
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(false);
+
+    expect(io.writes.has(UNATTENDED_UPGRADES_CONFIG)).toBe(false);
   });
 });

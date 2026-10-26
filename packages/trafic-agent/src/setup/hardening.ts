@@ -189,34 +189,63 @@ export function configureFirewall(io: SetupIo = nodeIo): void {
 /** The unattended-upgrades config written by `setup`, and owned by Trafic. */
 export const UNATTENDED_UPGRADES_CONFIG = "/etc/apt/apt.conf.d/50unattended-upgrades";
 
+/** The first line of the unattended-upgrades config that Trafic writes. */
+export const UNATTENDED_UPGRADES_HEADER = "// Trafic: Automatic security updates";
+
 /**
- * The Allowed-Origins entry covering Docker Engine.
+ * The Origins-Pattern entry covering Docker Engine.
  *
  * `origin=Docker` is the `Origin:` field of the Release file served by
  * download.docker.com (its `Label:` is `Docker CE`), and that repository's
  * dist is the Ubuntu codename, so `codename=${distro_codename}` pins the
  * entry to the release the server runs.
+ *
+ * It belongs in `Origins-Pattern`, never in `Allowed-Origins`: that key only
+ * reads `origin:archive` pairs, and a `key=value` entry there makes
+ * unattended-upgrades stop with "Unable to parse" on each run.
  */
 export const DOCKER_ORIGIN_LINE = '"origin=Docker,codename=${distro_codename}"';
 
 /**
+ * The Origins-Pattern entry covering Node.js from NodeSource.
+ *
+ * The NodeSource Release file has `Origin: . nodistro` and the same value as
+ * its label and codename, which tells nothing about the repository, so the
+ * entry matches the host name of the archive instead. The source list pins
+ * one Node.js major (`node_<major>.x`), so only the minor and patch releases
+ * of that major are applied.
+ */
+export const NODESOURCE_ORIGIN_LINE = '"site=deb.nodesource.com"';
+
+/**
  * Build the contents of /etc/apt/apt.conf.d/50unattended-upgrades.
  *
- * Pure, so `setup` and migration 0014 write the exact same file.
+ * Pure, so `setup` and the migrations write the exact same file.
+ *
+ * `Allowed-Origins` only takes `origin:archive` pairs: unattended-upgrades
+ * splits each entry on `:`, or on white space when there is no `:`, into
+ * exactly two parts, and stops with an error for any other entry.
+ * `key=value` patterns go in `Origins-Pattern`, which it reads too.
  */
 export function buildUnattendedUpgradesConfig(): string {
-  return `// Trafic: Automatic security updates
+  return `${UNATTENDED_UPGRADES_HEADER}
 Unattended-Upgrade::Allowed-Origins {
     "\${distro_id}:\${distro_codename}";
     "\${distro_id}:\${distro_codename}-security";
+    "\${distro_id}:\${distro_codename}-updates";
     "\${distro_id}ESMApps:\${distro_codename}-apps-security";
     "\${distro_id}ESM:\${distro_codename}-infra-security";
-    // Docker Engine ships from download.docker.com, outside Ubuntu's own
-    // pockets, so without this entry its security releases were never applied.
-    // DDEV is deliberately left out: a DDEV major landing unattended can break
-    // running previews, so DDEV is updated by \`trafic-agent upgrade\` instead,
-    // when an operator is there to see it.
+};
+
+// Docker Engine and Node.js ship from their own repositories, outside
+// Ubuntu's pockets, so without these entries their security releases are
+// never applied.
+// DDEV is deliberately left out: a DDEV major landing unattended can break
+// running previews, so DDEV is updated by \`trafic-agent upgrade\` instead,
+// when an operator is there to see it.
+Unattended-Upgrade::Origins-Pattern {
     ${DOCKER_ORIGIN_LINE};
+    ${NODESOURCE_ORIGIN_LINE};
 };
 
 // Do not automatically reboot
@@ -233,11 +262,11 @@ Unattended-Upgrade::Remove-Unused-Dependencies "true";
 /**
  * Add the Docker origin to an existing unattended-upgrades config.
  *
- * Returns whether the file was changed. Idempotent: a server with no such
- * file was set up without hardening and is left alone, and a config that
- * already names the Docker origin is not rewritten. The whole file is
- * regenerated rather than patched because Trafic generates and owns it — the
- * header comment says so.
+ * Used by migration 0014. Returns whether the file was changed. Idempotent: a
+ * server with no such file was set up without hardening and is left alone,
+ * and a config that already names the Docker origin is not rewritten. The
+ * whole file is regenerated rather than patched because Trafic generates and
+ * owns it — the header comment says so.
  *
  * No service restart is needed: unattended-upgrades reads the config on each
  * daily run.
@@ -256,6 +285,34 @@ export function addDockerOriginToUnattendedUpgrades(io: SetupIo = nodeIo): boole
 }
 
 /**
+ * Rewrite the unattended-upgrades config that Trafic owns when it is out of
+ * date.
+ *
+ * Used by migration 0021. Returns whether the file was changed. Idempotent:
+ * a missing file (a server set up without hardening), a file without the
+ * Trafic header (written by someone else) and a file that is already up to
+ * date are left alone.
+ *
+ * No service restart is needed: unattended-upgrades reads the config on each
+ * daily run.
+ */
+export function rewriteUnattendedUpgradesConfig(io: SetupIo = nodeIo): boolean {
+  if (!io.fileExists(UNATTENDED_UPGRADES_CONFIG)) {
+    return false;
+  }
+
+  const current = io.readFile(UNATTENDED_UPGRADES_CONFIG);
+  const expected = buildUnattendedUpgradesConfig();
+
+  if (!current.startsWith(UNATTENDED_UPGRADES_HEADER) || current === expected) {
+    return false;
+  }
+
+  io.writeFile(UNATTENDED_UPGRADES_CONFIG, expected);
+  return true;
+}
+
+/**
  * Configure automatic security updates
  */
 export function configureUnattendedUpgrades(io: SetupIo = nodeIo): void {
@@ -267,7 +324,8 @@ export function configureUnattendedUpgrades(io: SetupIo = nodeIo): void {
     { silent: true },
   );
 
-  // Ubuntu's release and security pockets, plus Docker Engine
+  // Ubuntu's release, security and updates pockets, plus Docker Engine and
+  // Node.js
   io.writeFile(UNATTENDED_UPGRADES_CONFIG, buildUnattendedUpgradesConfig());
 
   // Enable automatic updates
