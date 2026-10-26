@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.53 - 2026-10-26
+
+### Added
+
+- **Agent**: `trafic-agent audit` runs `unattended-upgrade --dry-run --verbose`, which installs nothing. The `Update run` check fails when the run cannot parse its config or stops with a Python traceback ([#101])
+
+### Changed
+
+- **Agent**: Automatic updates also install the updates of Ubuntu's `-updates` pocket, and the minor and patch releases of Node.js from the NodeSource repository. DDEV is still updated only by `trafic-agent upgrade` ([#101])
+
+### Security
+
+- **Agent**: Fix automatic updates. From 0.1.43, setup and a migration put the Docker entry in `Unattended-Upgrade::Allowed-Origins`, which only accepts `origin:archive` pairs. Each run of `unattended-upgrades` stopped with `Unable to parse Unattended-Upgrade::Allowed-Origins` and installed no update, Ubuntu security updates included. The Docker entry is now in `Unattended-Upgrade::Origins-Pattern`. A migration writes the correct file on existing servers: run `sudo trafic-agent upgrade` ([#101])
+
+### Dependencies
+
+- Update dependency vite to v8.2.4 [SECURITY] ([#99])
+
+[#99]: https://github.com/studiometa/trafic/pull/99
+[#101]: https://github.com/studiometa/trafic/pull/101
+
 ## 0.1.52 - 2026-10-19
 
 ### Dependencies
