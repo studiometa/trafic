@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.54 - 2026-10-26
+
+### Changed
+
+- **Agent**: When the DDEV version changes, `trafic-agent upgrade` restarts the running DDEV projects, so that they use the new DDEV images at once. It downloads the images first, then restarts the projects one at a time, before it restarts the service. Stopped and paused projects stay stopped. A failed restart is only a warning. Before, a running project kept its old containers, for example an old PHP version, until it stopped ([#100])
+
+### Dependencies
+
+- Update trufflesecurity/trufflehog action to v3.99.4 ([#93])
+- Update weareikko/code-review action to v0.11.0 ([#75])
+
+[#75]: https://github.com/studiometa/trafic/pull/75
+[#93]: https://github.com/studiometa/trafic/pull/93
+[#100]: https://github.com/studiometa/trafic/pull/100
+
 ## 0.1.53 - 2026-10-26
 
 ### Added
