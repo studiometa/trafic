@@ -17,6 +17,7 @@ import {
   migration0020BackupDir,
   runBackupDirMigration,
 } from "../src/setup/migrations/0020__backup_dir.js";
+import { migration0021FixUnattendedUpgradesOrigins } from "../src/setup/migrations/0021__fix_unattended_upgrades_origins.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 // ---------------------------------------------------------------------------
@@ -424,5 +425,15 @@ describe("0020__backup_dir migration", () => {
 
     expect(io.writes.has(UNIT_PATH)).toBe(false);
     expect(io.ran("systemctl")).toBe(false);
+  });
+});
+
+describe("0021__fix_unattended_upgrades_origins migration", () => {
+  it("is registered last, after 0020", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0021FixUnattendedUpgradesOrigins.id)).toBe(
+      ids.indexOf("0020__backup_dir") + 1,
+    );
+    expect(ids.at(-1)).toBe("0021__fix_unattended_upgrades_origins");
   });
 });

@@ -68,11 +68,15 @@ sudo trafic-agent setup --tld=previews.example.com
 - Root access (for initial setup)
 - Wildcard DNS pointing to the server
 
-**Automatic security updates.** Setup installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/50unattended-upgrades`, allowing Ubuntu's release, security and ESM pockets plus Docker Engine (`origin=Docker`, from `download.docker.com`). Docker security releases are therefore applied daily with the rest. Note that a Docker Engine update restarts the daemon and stops running preview containers; the waiting page starts a project again on its next request. DDEV is deliberately excluded — it is updated by `trafic-agent upgrade` instead. The server never reboots on its own (`Unattended-Upgrade::Automatic-Reboot "false"`).
+**Automatic security updates.** Setup installs `unattended-upgrades` and writes `/etc/apt/apt.conf.d/50unattended-upgrades`. Its `Allowed-Origins` list allows Ubuntu's release, security, updates and ESM pockets. Its `Origins-Pattern` list allows Docker Engine (`origin=Docker`, from `download.docker.com`) and Node.js (`site=deb.nodesource.com`). Each day, the server installs these updates. Node.js stays on the major version that setup installed; the agent uses a new Node.js release after its service restarts. A Docker Engine update restarts the daemon and stops the running preview containers; the waiting page starts a project again on its next request. DDEV is not in the lists on purpose: `trafic-agent upgrade` updates it. The server never reboots on its own (`Unattended-Upgrade::Automatic-Reboot "false"`).
+
+From 0.1.43 to 0.1.52, setup and migration `0014__unattended_upgrades_docker_origin` put the Docker entry in `Allowed-Origins`, which only accepts `origin:archive` pairs. Because of this, each run of `unattended-upgrades` stopped with `Unable to parse Unattended-Upgrade::Allowed-Origins` and installed no update. Migration `0021__fix_unattended_upgrades_origins` writes the correct file: run `sudo trafic-agent upgrade`.
 
 ### `trafic-agent audit`
 
-Check the security state of the server: SSH, firewall, Fail2ban, automatic updates, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. The command exits with code 1 when a check fails. Run it as root: `ufw status` and the files under `/var/lib/docker` need root.
+Check the security state of the server: SSH, firewall, Fail2ban, automatic updates, a simulated `unattended-upgrade` run, the agent service, Docker, disk usage, the permissions of the config, the owner of the projects directory and, with a `[tls]` section, the wildcard certificate and the permissions of its credentials. The command exits with code 1 when a check fails. Run it as root: `ufw status`, `unattended-upgrade` and the files under `/var/lib/docker` need root.
+
+The simulated run is `unattended-upgrade --dry-run --verbose`. It downloads the pending updates but installs nothing. The check fails when the run cannot parse its config or stops with a Python traceback.
 
 ```bash
 sudo trafic-agent audit
