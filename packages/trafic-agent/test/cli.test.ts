@@ -39,6 +39,17 @@ describe("trafic-agent", () => {
     expect((await run([arg])).out).toEqual([pkg.version]);
   });
 
+  it("enables dry-run mode before upgrading", async () => {
+    vi.doMock("../src/setup/upgrade.js", () => ({ runUpgrade: vi.fn() }));
+    const steps = await import("../src/setup/steps.js");
+    const setDryRunSpy = vi.spyOn(steps, "setDryRun");
+
+    await run(["upgrade", "--dry-run"]);
+
+    expect(setDryRunSpy).toHaveBeenCalledWith(true);
+    steps.setDryRun(false);
+  });
+
   it("prints the skill of the agent", async () => {
     const write = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     process.argv = ["node", "trafic-agent", "skill"];

@@ -13,7 +13,7 @@ import {
 import { startBackupSweepScheduler } from "./tasks/backup.js";
 import { startAccessLogSweepScheduler } from "./tasks/access-logs.js";
 import { setup, audit } from "./setup/index.js";
-import { isRoot } from "./setup/steps.js";
+import { isRoot, setDryRun } from "./setup/steps.js";
 import { listMigrations } from "./setup/migrations/index.js";
 import { runUpgrade } from "./setup/upgrade.js";
 import type { AgentConfig } from "./types.js";
@@ -259,6 +259,7 @@ function printScheduledDestroys(): void {
 function handleUpgrade(values: Record<string, unknown>): void {
   const dryRun = values["dry-run"] as boolean | undefined;
   const list = values.list as boolean | undefined;
+  setDryRun(dryRun ?? false);
 
   if (list) {
     const entries = listMigrations();
