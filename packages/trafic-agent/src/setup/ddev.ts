@@ -392,6 +392,45 @@ ${tls.caServer ? `      caServer: "${escapeYamlDouble(tls.caServer)}"\n` : ""}  
 }
 
 /**
+ * Read the ports whose entry point carries forward auth in the static config
+ * on disk.
+ *
+ * The Docker firewall opens a DDEV tool port only when this returns it, so a
+ * port is never open without `trafic-auth@file`. The file is the source, not
+ * `readToolPorts()`: DDEV's global config can change after the static config
+ * was written, and then the two lists would differ. Returns an empty list
+ * when the file does not exist.
+ */
+export function readAuthenticatedPorts(io: SetupIo = nodeIo): string[] {
+  if (!io.fileExists(STATIC_CONFIG)) {
+    return [];
+  }
+
+  const ports = new Set<string>();
+  let inEntryPoints = false;
+  let entryPoint: string | null = null;
+
+  for (const line of io.readFile(STATIC_CONFIG).split("\n")) {
+    const match = /^ {2}http-(\d+):$/.exec(line);
+
+    if (/^\S/.test(line)) {
+      // A top-level key starts or ends the entryPoints section
+      inEntryPoints = line === "entryPoints:";
+      entryPoint = null;
+    } else if (!inEntryPoints) {
+      continue;
+    } else if (/^ {2}\S/.test(line)) {
+      // Each entry point starts at two spaces; only http-<port> ones count
+      entryPoint = match?.[1] ?? null;
+    } else if (entryPoint && line.trim() === "- trafic-auth@file") {
+      ports.add(entryPoint);
+    }
+  }
+
+  return [...ports];
+}
+
+/**
  * Build the default TLS store holding the wildcard certificate.
  *
  * Traefik's file provider keeps the first `tls.stores.default` it reads in

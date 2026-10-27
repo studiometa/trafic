@@ -81,7 +81,8 @@ export async function setup(options: SetupOptions): Promise<void> {
           dnsEnv: options.dnsEnv ?? {},
         },
       });
-      // After DDEV, so the router ports are known. UFW cannot close
+      // After configureTraefik: the firewall opens only the tool ports that
+      // its static config protects with forward auth. UFW cannot close
       // published ports: Docker's rules run before its chains.
       configureDockerFirewall(readRouterPorts());
     } else {

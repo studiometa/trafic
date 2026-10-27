@@ -7,9 +7,15 @@ import {
   DOCKER_FIREWALL_SCRIPT,
   DOCKER_FIREWALL_UNIT,
 } from "../src/setup/docker-firewall.js";
+import {
+  buildStaticConfig,
+  readAuthenticatedPorts,
+  STATIC_CONFIG,
+} from "../src/setup/ddev.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 const ROUTER_PORTS = { http: "80", https: "443" };
+const TOOL_PORTS = ["8025", "8026", "8143", "8142"];
 
 /** The script without its comments, so prose cannot satisfy an assertion. */
 function codeOf(script: string): string {
@@ -19,30 +25,37 @@ function codeOf(script: string): string {
     .join("\n");
 }
 
+/** The ports a generated script allows. */
+function allowedPorts(script: string): string[] {
+  return /^ALLOWED_PORTS="([^"]*)"$/m.exec(script)![1]!.split(" ").filter(Boolean);
+}
+
 describe("buildDockerFirewallScript", () => {
-  const script = buildDockerFirewallScript(ROUTER_PORTS);
+  const script = buildDockerFirewallScript(ROUTER_PORTS, TOOL_PORTS);
   const code = codeOf(script);
 
-  it("allows only the router web ports", () => {
-    expect(code).toContain('ALLOWED_PORTS="80 443"');
+  it("allows the router web ports and the tool ports", () => {
+    expect(code).toContain('ALLOWED_PORTS="80 443 8025 8026 8143 8142"');
   });
 
   it("allows the router ports a server was moved to", () => {
-    const moved = buildDockerFirewallScript({ http: "8080", https: "8443" });
+    const moved = buildDockerFirewallScript({ http: "8080", https: "8443" }, []);
 
     expect(moved).toContain('ALLOWED_PORTS="8080 8443"');
   });
 
-  it("lists a port once when http and https share it", () => {
-    const same = buildDockerFirewallScript({ http: "8080", https: "8080" });
+  it("lists a port once when two lists share it", () => {
+    const same = buildDockerFirewallScript({ http: "8080", https: "8080" }, ["8080", "2052"]);
 
-    expect(same).toContain('ALLOWED_PORTS="8080"');
+    expect(same).toContain('ALLOWED_PORTS="8080 2052"');
   });
 
-  it("names no tool or add-on port, so an unknown port is closed", () => {
+  it("names no port outside the allow list, so an unknown port is closed", () => {
     // The previous script dropped a list of ports; any port missing from
     // that list, like an add-on's 9200, stayed open
-    expect(code).not.toMatch(/\b(8025|8026|8142|8143|9200)\b/);
+    const rest = code.replace(/^ALLOWED_PORTS=.*$/m, "");
+
+    expect(rest).not.toMatch(/\b(80|443|8025|8026|8142|8143|9200)\b/);
     expect(code).not.toMatch(/^PORTS=/m);
   });
 
@@ -203,5 +216,95 @@ describe("configureDockerFirewall", () => {
     configureDockerFirewall({ http: "8080", https: "8443" }, io);
 
     expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="8080 8443"');
+  });
+
+  it("allows the tool ports of the static config", () => {
+    const io = createFakeIo({
+      files: { [STATIC_CONFIG]: buildStaticConfig(TOOL_PORTS, ROUTER_PORTS) },
+    });
+
+    configureDockerFirewall(ROUTER_PORTS, io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain(
+      'ALLOWED_PORTS="80 443 8025 8026 8143 8142"',
+    );
+  });
+
+  it("allows no tool port without a static config", () => {
+    // No file means no forward auth on any tool entry point
+    const io = createFakeIo();
+
+    configureDockerFirewall(ROUTER_PORTS, io);
+
+    expect(allowedPorts(io.written(DOCKER_FIREWALL_SCRIPT))).toEqual(["80", "443"]);
+  });
+
+  it.each([
+    ["default tool ports", TOOL_PORTS, ROUTER_PORTS],
+    ["custom tool ports", ["2052", "2053", "8143", "8142"], ROUTER_PORTS],
+    ["a tool port equal to a router port", ["8080", "8026"], { http: "8080", https: "8443" }],
+  ])("opens only ports that carry forward auth: %s", (_, toolPorts, routerPorts) => {
+    // Ties the firewall to buildStaticConfig: a port the firewall opens to
+    // the internet must have trafic-auth@file on its entry point
+    const staticConfig = buildStaticConfig(toolPorts, routerPorts);
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: staticConfig } });
+
+    configureDockerFirewall(routerPorts, io);
+
+    const allowed = allowedPorts(io.written(DOCKER_FIREWALL_SCRIPT));
+    const authenticated = [...staticConfig.matchAll(/^ {2}http-(\d+):\n.*\n.*\n\s+- trafic-auth@file$/gm)]
+      .map((match) => match[1]);
+
+    expect([...allowed].sort()).toEqual([...authenticated].sort());
+    expect(allowed).toEqual(expect.arrayContaining([...toolPorts, routerPorts.http, routerPorts.https]));
+  });
+});
+
+describe("readAuthenticatedPorts", () => {
+  it("reads every entry point that carries trafic-auth", () => {
+    const io = createFakeIo({
+      files: { [STATIC_CONFIG]: buildStaticConfig(TOOL_PORTS, ROUTER_PORTS) },
+    });
+
+    expect(readAuthenticatedPorts(io)).toEqual(["80", "443", ...TOOL_PORTS]);
+  });
+
+  it("returns nothing when the static config does not exist", () => {
+    expect(readAuthenticatedPorts(createFakeIo())).toEqual([]);
+  });
+
+  it("skips an entry point without trafic-auth", () => {
+    const io = createFakeIo({
+      files: {
+        [STATIC_CONFIG]: `entryPoints:
+  http-9200:
+    http:
+      middlewares:
+        - trafic-errors@file
+  web:
+    http:
+      middlewares:
+        - trafic-auth@file
+  http-8025:
+    http:
+      middlewares:
+        - trafic-auth@file
+`,
+      },
+    });
+
+    expect(readAuthenticatedPorts(io)).toEqual(["8025"]);
+  });
+
+  it("stops at the end of the entryPoints section", () => {
+    const staticConfig = buildStaticConfig(["8025"], ROUTER_PORTS, {
+      provider: "cloudflare",
+      email: "admin@example.com",
+    });
+    const io = createFakeIo({
+      files: { [STATIC_CONFIG]: `${staticConfig}other:\n  http-9200:\n    - trafic-auth@file\n` },
+    });
+
+    expect(readAuthenticatedPorts(io)).toEqual(["80", "443", "8025"]);
   });
 });

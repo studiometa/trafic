@@ -12,7 +12,12 @@ import {
   migration0017DdevAptCloudsmith,
   runDdevAptCloudsmithMigration,
 } from "../src/setup/migrations/0017__ddev_apt_cloudsmith.js";
-import { DDEV_KEYRING, DDEV_SOURCES } from "../src/setup/ddev.js";
+import {
+  buildStaticConfig,
+  DDEV_KEYRING,
+  DDEV_SOURCES,
+  STATIC_CONFIG,
+} from "../src/setup/ddev.js";
 import {
   migration0020BackupDir,
   runBackupDirMigration,
@@ -484,6 +489,21 @@ describe("0022__docker_user_default_deny migration", () => {
     runDockerUserDefaultDenyMigration(io);
 
     expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="8080 8443"');
+  });
+
+  it("keeps the tool ports open that carry forward auth", () => {
+    // Mailpit and xhgui were dropped by the old script; they now answer
+    // from outside, behind forward auth
+    const io = createFakeIo({
+      files: {
+        [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT,
+        [STATIC_CONFIG]: buildStaticConfig(["2052", "2053"], { http: "80", https: "443" }),
+      },
+    });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="80 443 2052 2053"');
   });
 
   it("applies the new rules now, not at the next reboot", () => {

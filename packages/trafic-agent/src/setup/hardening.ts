@@ -182,7 +182,7 @@ export function configureFirewall(io: SetupIo = nodeIo): void {
   // Say it plainly rather than let `ufw status` imply a guarantee it cannot
   // make: Docker's rules run before UFW's, so published ports stay reachable
   info("UFW does not cover ports Docker publishes. The DOCKER-USER rules close them,");
-  info("except the router web ports; see the agent readme, 'Network exposure'");
+  info("except the ports with forward auth; see the agent readme, 'Network exposure'");
 }
 
 /** The unattended-upgrades config written by `setup`, and owned by Trafic. */

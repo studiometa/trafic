@@ -483,34 +483,35 @@ publishes are reachable from the internet whatever UFW says about them, and
 
 `setup` opens 22, 80 and 443, and 9876 for the agent from the Docker bridge only. Those rules are accurate. What they do **not** do is close the other ports that ddev-router publishes:
 
-| Port | Service |
-|------|---------|
-| 8025, 8026 | Mailpit |
-| 8142, 8143 | xhgui |
-| any | A DDEV add-on with `HTTP_EXPOSE` or `HTTPS_EXPOSE`: Elasticsearch (9200, 9201), Tika (9998, 9999), Solr, OpenSearch, Adminer… |
+| Port | Service | From outside |
+|------|---------|--------------|
+| 8025, 8026 | Mailpit | Open, behind forward auth |
+| 8142, 8143 | xhgui | Open, behind forward auth |
+| any | A DDEV add-on with `HTTP_EXPOSE` or `HTTPS_EXPOSE`: Elasticsearch (9200, 9201), Tika (9998, 9999), Solr, OpenSearch, Adminer… | Closed |
 
-An add-on port gets its own Traefik entry point, which DDEV creates when the add-on starts. That entry point has no forward auth, so the port answers anyone who can reach it.
+The tool ports are DDEV's defaults; `setup` reads the actual ones from `ddev config global`. An add-on port gets its own Traefik entry point, which DDEV creates when the add-on starts. That entry point has no forward auth, so without the rules below the port answers anyone who can reach it.
 
-Both layers now apply:
+Two layers apply:
 
-1. **`DOCKER-USER` rules**, installed by `setup`. That is the chain Docker jumps to first in `FORWARD` and never flushes, so it is the only host-level hook that can filter a published port. The rules close every port Docker publishes, except the router's HTTP and HTTPS ports (`router-http-port` and `router-https-port`, 80 and 443 by default), to traffic from outside Docker's networks. A new add-on port is closed without any change to Trafic.
+1. **`DOCKER-USER` rules**, installed by `setup`. That is the chain Docker jumps to first in `FORWARD` and never flushes, so it is the only host-level hook that can filter a published port. The rules close every port Docker publishes to traffic from outside Docker's networks, except the ports that have forward auth: the router's HTTP and HTTPS ports (`router-http-port` and `router-https-port`, 80 and 443 by default) and DDEV's tool ports (Mailpit, xhgui). A new add-on port is closed without any change to Trafic.
 
+   - A tool port is allowed only when its entry point carries `trafic-auth@file` in the Traefik static config that Trafic writes (`/home/ddev/.ddev/traefik/static_config.trafic.yaml`). The firewall reads the ports from that file, so it cannot open a port that has no forward auth.
    - They drop only packets that Docker has DNAT'd (`--ctstate DNAT`), in the original direction. Traffic between containers, outbound traffic from containers and the replies of an allowed connection pass.
    - They match on the *original* destination port (`-m conntrack --ctorigdstport`), because by `FORWARD` the destination has already been rewritten to the container.
    - They apply to every published port, not only to the router: the router's container address changes each time DDEV recreates it. On a Trafic server only ddev-router publishes on 0.0.0.0. A project with `bind_all_interfaces: true` also publishes its web and db ports on 0.0.0.0. The rules close these ports too, which is correct: they skip forward auth.
-   - The router ports are written into the script. After a change of `router-http-port` or `router-https-port`, run `setup` again. When DDEV moves the router to a substitute port (30000-32000) because 80 or 443 is busy, that port is closed.
+   - The ports are written into the script. After a change of a router or tool port in `ddev config global`, run `setup` again. When DDEV moves the router to a substitute port (30000-32000) because 80 or 443 is busy, that port is closed.
 
    The rules live in the `TRAFIC-DOCKER-USER` chain, with one jump at the top of `DOCKER-USER`. `/usr/local/sbin/trafic-docker-firewall` rebuilds the chain each time it runs. `trafic-docker-firewall.service` runs it at boot and after any Docker restart — Docker recreates `DOCKER-USER` empty and nothing else would restore the jump. **They will not appear in `ufw status`.** Inspect them with `iptables -S TRAFIC-DOCKER-USER` and `ip6tables -S TRAFIC-DOCKER-USER`.
 
-   Earlier versions dropped a fixed list of ports (the tool ports) instead, so add-on ports stayed open. Migration `0022__docker_user_default_deny` replaces that script and removes its per-port rules, including the ports an operator added to `PORTS` by hand.
+   Earlier versions dropped a fixed list of ports (the tool ports) instead: Mailpit and xhgui were closed from outside, and add-on ports stayed open. Migration `0022__docker_user_default_deny` replaces that script and removes its per-port rules, including the ports an operator added to `PORTS` by hand. After it, Mailpit and xhgui answer from outside, behind forward auth.
 
-2. **Forward auth**, attached to the router's web entry points and to DDEV's tool entry points, so a request that does reach them still needs credentials. An earlier version attached it only to 80 and 443, which left xhgui answering from the internet with no authentication at all. Forward auth does not cover add-on entry points: the `DOCKER-USER` rules are what closes them.
+2. **Forward auth**, attached to the router's web entry points and to DDEV's tool entry points. A request to them needs what the project's policy asks for: an allowed IP, basic auth or a token. An earlier version attached it only to 80 and 443, which left xhgui answering from the internet with no authentication at all. Forward auth does not cover add-on entry points: the `DOCKER-USER` rules are what closes them.
 
-Access from the host itself is unaffected: a port bound to 127.0.0.1, or a connection from the host to a published port, does not go through `FORWARD`. So an SSH tunnel to a tool or add-on port still works:
+Access from the host itself is unaffected: a port bound to 127.0.0.1, or a connection from the host to a published port, does not go through `FORWARD`. So an SSH tunnel to an add-on port still works:
 
 ```bash
-ssh -L 8026:127.0.0.1:8026 ddev@server.example.com
-# then open https://localhost:8026
+ssh -L 9200:127.0.0.1:9200 ddev@server.example.com
+# then open http://localhost:9200
 ```
 
 Containers keep their access too: the web container reaches `elasticsearch:9200` over the Docker network.
