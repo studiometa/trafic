@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { exec, writeFile } from "../src/setup/steps.js";
 import { DOCKER_FIREWALL_SCRIPT } from "../src/setup/docker-firewall.js";
+import { nodeIo } from "../src/setup/io.js";
+import { STATIC_CONFIG } from "../src/setup/ddev.js";
 import { migration0012DockerUserToolPorts } from "../src/setup/migrations/0012__docker_user_tool_ports.js";
 import { migration0022DockerUserDefaultDeny } from "../src/setup/migrations/0022__docker_user_default_deny.js";
 
@@ -16,15 +17,18 @@ vi.mock("../src/setup/steps.js", async (importOriginal) => ({
 
 console.log = () => {};
 
-/** Whether this machine is a Trafic server, where run() takes the other path. */
-const hasScript = existsSync(DOCKER_FIREWALL_SCRIPT);
-
 beforeEach(() => {
   vi.mocked(exec).mockClear();
   vi.mocked(writeFile).mockClear();
+  vi.spyOn(nodeIo, "fileExists").mockImplementation((path) => path === STATIC_CONFIG);
+  vi.spyOn(nodeIo, "readFile").mockReturnValue("entryPoints:\n");
 });
 
-describe.skipIf(hasScript)("Docker firewall migrations on a server without the script", () => {
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("Docker firewall migrations on a server without the script", () => {
   it("0012 installs the script with the router ports", () => {
     migration0012DockerUserToolPorts.run();
 
