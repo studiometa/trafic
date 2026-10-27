@@ -1,3 +1,3 @@
 ### Fixed
 
-- **Agent**: `trafic-agent upgrade --dry-run` no longer executes npm, apt, migration or systemd commands.
+- **Agent**: `trafic-agent upgrade --dry-run` no longer makes changes through npm, apt, migrations or systemd.
