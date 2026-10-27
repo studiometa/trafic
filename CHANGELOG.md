@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.58 - 2026-10-27
+
+### Fixed
+
+- **Agent**: `trafic-agent upgrade --dry-run` no longer makes changes through npm, apt, migrations or systemd. ([#106])
+
+[#106]: https://github.com/studiometa/trafic/pull/106
+
 ## 0.1.57 - 2026-10-27
 
 ### Dependencies
