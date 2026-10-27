@@ -8,6 +8,7 @@ import {
   MIGRATIONS_STATE_FILE,
 } from "../src/setup/migrations/index.js";
 import { migration0001DdevAptRepo } from "../src/setup/migrations/0001__ddev_apt_repo.js";
+import { runDockerUserToolPortsMigration } from "../src/setup/migrations/0012__docker_user_tool_ports.js";
 import {
   migration0017DdevAptCloudsmith,
   runDdevAptCloudsmithMigration,
@@ -445,6 +446,28 @@ describe("0021__fix_unattended_upgrades_origins migration", () => {
       ids.indexOf("0020__backup_dir") + 1,
     );
   });
+});
+
+describe("0012__docker_user_tool_ports migration", () => {
+  it("does nothing on an old --no-ddev server", () => {
+    const io = createFakeIo();
+
+    runDockerUserToolPortsMigration(io);
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("installs the firewall for a DDEV server", () => {
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: "entryPoints:\n" } });
+
+    runDockerUserToolPortsMigration(io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="80 443"');
+    expect(io.ran("systemctl restart trafic-docker-firewall.service")).toBe(true);
+  });
+
 });
 
 describe("0022__docker_user_default_deny migration", () => {
