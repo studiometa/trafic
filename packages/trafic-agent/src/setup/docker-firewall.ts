@@ -1,3 +1,4 @@
+import type { RouterPorts } from "./ddev.js";
 import { nodeIo, type SetupIo } from "./io.js";
 import { step, success, info } from "./steps.js";
 
@@ -7,6 +8,9 @@ export const DOCKER_FIREWALL_SCRIPT = "/usr/local/sbin/trafic-docker-firewall";
 /** The unit that reapplies the rules after Docker starts. */
 export const DOCKER_FIREWALL_UNIT =
   "/etc/systemd/system/trafic-docker-firewall.service";
+
+/** The chain that holds the rules. DOCKER-USER only jumps to it. */
+export const DOCKER_FIREWALL_CHAIN = "TRAFIC-DOCKER-USER";
 
 /**
  * Docker's own bridge ranges, exempted so containers and the host gateway can
@@ -18,50 +22,110 @@ const DOCKER_IPV4_NETS = "172.16.0.0/12";
 const DOCKER_IPV6_NETS = "fd00::/8";
 
 /**
- * Build the script that restricts the ports ddev-router publishes for DDEV's
- * tools (Mailpit, xhgui) to Docker's own networks.
+ * The rules of the script before this version: one DROP per port, and one
+ * RETURN per port for Docker's networks, put directly in DOCKER-USER. Matched
+ * by shape, not by port, so the ports an operator added to `PORTS` by hand
+ * are removed too.
+ */
+const LEGACY_RULE =
+  "^-A DOCKER-USER (-s [0-9a-f.:/]+ )?-p tcp -m conntrack --ctorigdstport [0-9]+ --ctdir ORIGINAL -j (DROP|RETURN)$";
+
+/**
+ * Build the script that closes every port Docker publishes, except the ports
+ * ddev-router serves projects on, to traffic from outside Docker's networks.
  *
- * UFW cannot express this. Docker puts its DNAT in `nat/PREROUTING` and its
+ * Why close by default. A DDEV add-on that sets `HTTP_EXPOSE` or
+ * `HTTPS_EXPOSE` (Elasticsearch, Tika, Solr, OpenSearch, Adminer…) makes
+ * ddev-router publish one more port on 0.0.0.0, with a Traefik entry point
+ * that has no forward auth. A list of ports to drop cannot know these ports
+ * in advance, so the list is reversed: only the router's web ports are
+ * allowed, and every other forwarded port is dropped. DDEV's tool ports
+ * (Mailpit, xhgui) stay closed, as before.
+ *
+ * Why the network layer and not Traefik. Each add-on adds its own entry point
+ * when it starts, and Traefik's static config is read only when the router
+ * starts. Forward auth on those entry points would need the agent to follow
+ * every add-on. A drop rule needs to know nothing about them.
+ *
+ * Why UFW cannot do it. Docker puts its DNAT in `nat/PREROUTING` and its
  * filtering in the `DOCKER` chain of `FORWARD`, both evaluated before UFW's
  * chains, so `ufw default deny incoming` never sees these packets.
- * `DOCKER-USER` is the hook Docker provides for exactly this case: it is
- * jumped to first in `FORWARD` and Docker never flushes it.
+ * `DOCKER-USER` is the hook Docker provides for this case: it is jumped to
+ * first in `FORWARD` and Docker never flushes it.
+ *
+ * What the rules match, and why it is safe:
+ *
+ * - Only packets Docker has DNAT'd (`--ctstate DNAT`), that is, packets sent
+ *   to a published port. Traffic between containers, outbound traffic from
+ *   containers and its replies are not DNAT'd, so they pass.
+ * - Only the original direction (`--ctdir ORIGINAL`), so the replies of an
+ *   allowed connection are never dropped.
+ * - Not from Docker's own networks, so a container can still reach a
+ *   published port through the host.
+ * - The allowed ports are matched on the *original* destination port
+ *   (`--ctorigdstport`). In `FORWARD`, the destination is already the
+ *   container, so `--dport` would match the container's side of the mapping.
+ *
+ * The rules do not target the router by address: its container address
+ * changes each time DDEV recreates it, and the script runs when Docker
+ * starts, before the router exists. So they apply to every published port.
+ * On a Trafic server that is the intent. Only ddev-router publishes on
+ * 0.0.0.0 (`router_bind_all_interfaces`). DDEV binds the web, db and xhgui
+ * host ports of a project to 127.0.0.1, unless the project sets
+ * `bind_all_interfaces`; then these ports are closed too, which is correct,
+ * because they skip forward auth. A port bound to 127.0.0.1 never goes
+ * through `FORWARD`: a connection from the host is local traffic (`OUTPUT`,
+ * or Docker's userland proxy), and a packet from outside to 127.0.0.1 is
+ * dropped as a martian. So Traefik's monitor port (10999, on 127.0.0.1) and
+ * SSH tunnels to a published port work as before.
+ *
+ * The router ports are written into the script. When DDEV substitutes a
+ * router port because 80 or 443 is busy (30000-32000 since DDEV 1.25.5), the
+ * substitute port is dropped: the rules fail closed. Run `setup` again after
+ * a change of `router-http-port` or `router-https-port`.
+ *
+ * The rules live in their own chain, flushed and rebuilt on each run, with
+ * one jump at the top of DOCKER-USER. So a second run gives the same rules,
+ * and a removed port does not stay allowed. The script also removes the
+ * per-port rules of its previous version, ports added by hand included.
  *
  * A network-edge firewall is not a substitute. Measured on an OVH server with
  * its Edge Firewall enabled and a correct deny-all rule: a published tool port
  * still accepted a connection from another host inside OVH in 114ms, while a
- * port with nothing listening was dropped and timed out at 12s. Anyone who can
- * rent a VM from the same provider is inside that blind spot. These rules
+ * port with nothing listening was dropped and timed out at 12s. These rules
  * apply to every packet regardless of where it came from.
- *
- * The match is on the *original* destination port. By the time a packet
- * reaches `FORWARD`, DNAT has rewritten the destination to the container, so
- * `--dport` would be matching the container's port — the same number today,
- * but not if a published port and a container port ever differ.
  */
-export function buildDockerFirewallScript(toolPorts: string[]): string {
+export function buildDockerFirewallScript(routerPorts: RouterPorts): string {
+  const allowed = [...new Set([routerPorts.http, routerPorts.https])];
+
   return `#!/bin/sh
-# Trafic: restrict the ports ddev-router publishes for DDEV's tools.
+# Trafic: close every port Docker publishes, except the ports ddev-router
+# serves projects on, to traffic from outside Docker's networks.
 #
 # Generated by trafic-agent setup. Reapplied at boot by
 # trafic-docker-firewall.service, because Docker recreates DOCKER-USER empty
 # and nothing else restores what we put there.
+#
+# Why close by default: a DDEV add-on with HTTP_EXPOSE or HTTPS_EXPOSE
+# (Elasticsearch, Solr, Tika...) makes ddev-router publish one more port, with
+# no forward auth. Its number is not known in advance, so only the router's
+# web ports are allowed and every other forwarded port is dropped.
 #
 # Why not UFW: Docker's DNAT sits in nat/PREROUTING and its filtering in the
 # DOCKER chain of FORWARD, both evaluated before UFW's chains, so
 # "ufw default deny incoming" never sees these packets. DOCKER-USER is the
 # hook Docker provides — jumped to first in FORWARD, never flushed by Docker.
 #
-# Why not only a provider firewall: measured on OVH with its Edge Firewall
-# enabled and denying these ports, a connection from another host inside OVH
-# still succeeded. A network-edge filter can have blind spots for traffic that
-# never crosses the edge. These rules do not.
+# Only DNAT'd packets (sent to a published port) in the original direction
+# are dropped: traffic between containers, outbound traffic and replies pass.
+# Ports bound to 127.0.0.1 never go through FORWARD, so SSH tunnels work.
 #
 # The match is on the ORIGINAL destination port: after DNAT the destination is
 # the container, so --dport would match the wrong side of the mapping.
 set -eu
 
-PORTS="${toolPorts.join(" ")}"
+CHAIN="${DOCKER_FIREWALL_CHAIN}"
+ALLOWED_PORTS="${allowed.join(" ")}"
 
 apply() {
   cmd="$1"
@@ -69,26 +133,40 @@ apply() {
 
   command -v "$cmd" >/dev/null 2>&1 || return 0
 
-  for port in $PORTS; do
-    # Drop any previous copy first, so running this twice does not stack rules
-    while "$cmd" -C DOCKER-USER -p tcp -m conntrack --ctorigdstport "$port" \\
-      --ctdir ORIGINAL -j DROP 2>/dev/null; do
-      "$cmd" -D DOCKER-USER -p tcp -m conntrack --ctorigdstport "$port" \\
-        --ctdir ORIGINAL -j DROP
-    done
-    while "$cmd" -C DOCKER-USER -p tcp -s "$nets" -m conntrack \\
-      --ctorigdstport "$port" --ctdir ORIGINAL -j RETURN 2>/dev/null; do
-      "$cmd" -D DOCKER-USER -p tcp -s "$nets" -m conntrack \\
-        --ctorigdstport "$port" --ctdir ORIGINAL -j RETURN
-    done
+  # Docker creates DOCKER-USER for each family it filters. Without it, there
+  # is no forwarded path to close for that family.
+  "$cmd" -n -L DOCKER-USER >/dev/null 2>&1 || return 0
 
-    # Insert the DROP first, then the RETURN above it, so Docker's own
-    # networks keep working and everything else is dropped
-    "$cmd" -I DOCKER-USER -p tcp -m conntrack --ctorigdstport "$port" \\
-      --ctdir ORIGINAL -j DROP
-    "$cmd" -I DOCKER-USER -p tcp -s "$nets" -m conntrack \\
-      --ctorigdstport "$port" --ctdir ORIGINAL -j RETURN
+  # Remove the per-port rules of the previous version of this script,
+  # including the ports added to its PORTS by hand
+  "$cmd" -S DOCKER-USER \\
+    | grep -E -- '${LEGACY_RULE}' \\
+    | while read -r rule; do
+        # Word splitting is intended: the pattern above allows no quotes
+        # shellcheck disable=SC2086
+        "$cmd" -D DOCKER-USER \${rule#-A DOCKER-USER }
+      done
+
+  # Rebuild our chain from scratch, so a second run gives the same rules
+  "$cmd" -N "$CHAIN" 2>/dev/null || true
+  "$cmd" -F "$CHAIN"
+
+  # Docker's own networks keep their access
+  "$cmd" -A "$CHAIN" -s "$nets" -j RETURN
+
+  # The router's web ports, where forward auth applies
+  for port in $ALLOWED_PORTS; do
+    "$cmd" -A "$CHAIN" -p tcp -m conntrack --ctorigdstport "$port" -j RETURN
   done
+
+  # Every other published port, add-on ports included
+  "$cmd" -A "$CHAIN" -m conntrack --ctstate DNAT --ctdir ORIGINAL -j DROP
+
+  # Exactly one jump, at the top of DOCKER-USER
+  while "$cmd" -C DOCKER-USER -j "$CHAIN" 2>/dev/null; do
+    "$cmd" -D DOCKER-USER -j "$CHAIN"
+  done
+  "$cmd" -I DOCKER-USER -j "$CHAIN"
 }
 
 apply iptables ${DOCKER_IPV4_NETS}
@@ -99,7 +177,7 @@ apply ip6tables ${DOCKER_IPV6_NETS}
 /** The systemd unit that reapplies the rules after Docker starts. */
 export function buildDockerFirewallUnit(): string {
   return `[Unit]
-Description=Trafic - restrict Docker-published DDEV tool ports
+Description=Trafic - close Docker-published ports except the router web ports
 # Docker recreates DOCKER-USER empty on start, so the rules have to go back
 # afterwards. PartOf means a docker restart reapplies them too.
 After=docker.service
@@ -117,23 +195,28 @@ WantedBy=multi-user.target
 }
 
 /**
- * Install and enable the DOCKER-USER rules.
+ * Install the DOCKER-USER rules and apply them now.
+ *
+ * The unit is restarted rather than started: it is a oneshot that stays
+ * active, so `enable --now` on a server that already has it would not run
+ * the new script.
  */
 export function configureDockerFirewall(
-  toolPorts: string[],
+  routerPorts: RouterPorts,
   io: SetupIo = nodeIo,
 ): void {
-  step("Restrict Docker-published tool ports");
+  step("Close Docker-published ports");
 
-  io.writeFile(DOCKER_FIREWALL_SCRIPT, buildDockerFirewallScript(toolPorts));
+  io.writeFile(DOCKER_FIREWALL_SCRIPT, buildDockerFirewallScript(routerPorts));
   io.exec(`chmod 0755 ${DOCKER_FIREWALL_SCRIPT}`, { silent: true });
 
   io.writeFile(DOCKER_FIREWALL_UNIT, buildDockerFirewallUnit());
   io.exec("systemctl daemon-reload", { silent: true });
-  io.exec("systemctl enable --now trafic-docker-firewall.service", {
-    silent: true,
-  });
+  io.exec("systemctl enable trafic-docker-firewall.service", { silent: true });
+  io.exec("systemctl restart trafic-docker-firewall.service", { silent: true });
 
-  success(`Tool ports restricted to Docker networks: ${toolPorts.join(", ")}`);
+  success(
+    `Docker-published ports closed from outside, except ${routerPorts.http} and ${routerPorts.https}`,
+  );
   info("These live in DOCKER-USER, not UFW — `ufw status` will not show them");
 }

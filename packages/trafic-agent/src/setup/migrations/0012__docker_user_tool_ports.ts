@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { configureDockerFirewall, DOCKER_FIREWALL_SCRIPT } from "../docker-firewall.js";
-import { readToolPorts } from "../ddev.js";
+import { readRouterPorts } from "../ddev.js";
 import type { Migration } from "../types.js";
 
 /**
@@ -35,6 +35,6 @@ export const migration0012DockerUserToolPorts: Migration = {
       return;
     }
 
-    configureDockerFirewall(readToolPorts());
+    configureDockerFirewall(readRouterPorts());
   },
 };

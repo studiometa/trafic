@@ -18,6 +18,11 @@ import {
   runBackupDirMigration,
 } from "../src/setup/migrations/0020__backup_dir.js";
 import { migration0021FixUnattendedUpgradesOrigins } from "../src/setup/migrations/0021__fix_unattended_upgrades_origins.js";
+import {
+  migration0022DockerUserDefaultDeny,
+  runDockerUserDefaultDenyMigration,
+} from "../src/setup/migrations/0022__docker_user_default_deny.js";
+import { DOCKER_FIREWALL_SCRIPT, DOCKER_FIREWALL_UNIT } from "../src/setup/docker-firewall.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
 // ---------------------------------------------------------------------------
@@ -429,11 +434,77 @@ describe("0020__backup_dir migration", () => {
 });
 
 describe("0021__fix_unattended_upgrades_origins migration", () => {
-  it("is registered last, after 0020", () => {
+  it("is registered after 0020", () => {
     const ids = ALL_MIGRATIONS.map((m) => m.id);
     expect(ids.indexOf(migration0021FixUnattendedUpgradesOrigins.id)).toBe(
       ids.indexOf("0020__backup_dir") + 1,
     );
-    expect(ids.at(-1)).toBe("0021__fix_unattended_upgrades_origins");
+  });
+});
+
+describe("0022__docker_user_default_deny migration", () => {
+  /** The script 0012 installed, with a port added to PORTS by hand. */
+  const OLD_SCRIPT = '#!/bin/sh\nPORTS="8025 8026 8142 8143 9200 9201"\n';
+
+  it("is registered last, after 0021", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0022DockerUserDefaultDeny.id)).toBe(
+      ids.indexOf("0021__fix_unattended_upgrades_origins") + 1,
+    );
+    expect(ids.at(-1)).toBe("0022__docker_user_default_deny");
+  });
+
+  it("does nothing on a server without the firewall script", () => {
+    // Set up with --no-ddev: no router, nothing to close
+    const io = createFakeIo();
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("replaces the old script with one that allows only the router ports", () => {
+    const io = createFakeIo({ files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT } });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    const script = io.written(DOCKER_FIREWALL_SCRIPT);
+    expect(script).toContain('ALLOWED_PORTS="80 443"');
+    expect(script).not.toContain("9200");
+    expect(io.written(DOCKER_FIREWALL_UNIT)).toContain(`ExecStart=${DOCKER_FIREWALL_SCRIPT}`);
+  });
+
+  it("reads the router ports from DDEV's global config", () => {
+    const io = createFakeIo({
+      files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT },
+      output: { "ddev config global": "router-http-port=8080\nrouter-https-port=8443\n" },
+    });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="8080 8443"');
+  });
+
+  it("applies the new rules now, not at the next reboot", () => {
+    const io = createFakeIo({ files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT } });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.ran("systemctl daemon-reload")).toBe(true);
+    expect(io.ran("systemctl restart trafic-docker-firewall.service")).toBe(true);
+  });
+
+  it("writes the same files on a second run", () => {
+    const first = createFakeIo({ files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT } });
+    runDockerUserDefaultDenyMigration(first);
+
+    const second = createFakeIo({
+      files: { [DOCKER_FIREWALL_SCRIPT]: first.written(DOCKER_FIREWALL_SCRIPT) },
+    });
+    runDockerUserDefaultDenyMigration(second);
+
+    expect(second.written(DOCKER_FIREWALL_SCRIPT)).toBe(first.written(DOCKER_FIREWALL_SCRIPT));
+    expect(second.written(DOCKER_FIREWALL_UNIT)).toBe(first.written(DOCKER_FIREWALL_UNIT));
   });
 });

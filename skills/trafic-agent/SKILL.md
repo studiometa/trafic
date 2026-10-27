@@ -47,7 +47,7 @@ The unit has a systemd sandbox (`ProtectSystem=strict`). The service can write o
 
 ## `trafic-agent setup`
 
-Run as root on a fresh Ubuntu 24.04 server, or remotely with `trafic setup` from the CLI. It installs Docker, DDEV and Node.js, configures DDEV and Traefik for forward auth, writes `/etc/trafic/config.toml` (only when it does not exist), creates the systemd service and hardens the server (SSH, UFW, Fail2ban, unattended-upgrades, `DOCKER-USER` firewall rules). It asks no questions. A second run is safe: each step is skipped when the server is already in the target state.
+Run as root on a fresh Ubuntu 24.04 server, or remotely with `trafic setup` from the CLI. It installs Docker, DDEV and Node.js, configures DDEV and Traefik for forward auth, writes `/etc/trafic/config.toml` (only when it does not exist), creates the systemd service and hardens the server (SSH, UFW, Fail2ban, unattended-upgrades). It also adds `DOCKER-USER` firewall rules: from outside Docker's networks, only the router ports (80 and 443) of the ports Docker publishes stay open; tool and add-on ports are closed. It asks no questions. A second run is safe: each step is skipped when the server is already in the target state.
 
 ```bash
 sudo trafic-agent setup --tld=previews.example.com --email=admin@example.com
@@ -231,7 +231,7 @@ idle_timeout: never  # or a duration such as 2h
 | `Cannot write to the backup directory` | Put `[backup] dir` in `/var/backups/trafic`, `/home/ddev` (not `projects_dir`) or `/var/lib/trafic`, owned by `ddev` |
 | Certificate warning on previews | `sudo trafic-agent audit`. Without `--email` at setup, projects use mkcert. Per-host certificates are limited to 50 new ones per domain per week; use `[tls]` for one wildcard |
 | `Unable to parse Unattended-Upgrade::Allowed-Origins` in `/var/log/unattended-upgrades/unattended-upgrades.log` | No update is installed. Servers set up or upgraded with 0.1.43 to 0.1.52 have this error: run `sudo trafic-agent upgrade` (migration `0021__fix_unattended_upgrades_origins`), then `sudo trafic-agent audit` |
-| Ports 8025, 8026, 8142, 8143 reachable | The `DOCKER-USER` rules are missing: `sudo iptables -S DOCKER-USER`, `sudo systemctl status trafic-docker-firewall` |
+| A port other than 80 or 443 answers from outside (Mailpit, xhgui, or an add-on port such as Elasticsearch on 9200) | An older server closes only the tool ports. Run `sudo trafic-agent upgrade` (migration `0022__docker_user_default_deny`). Then `sudo iptables -S TRAFIC-DOCKER-USER` shows a `DROP` rule after the router ports, and `sudo systemctl status trafic-docker-firewall` is active. Reach an add-on port with an SSH tunnel to `127.0.0.1:<port>` |
 
 ## CI side
 

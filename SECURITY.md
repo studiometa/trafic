@@ -47,6 +47,6 @@ When deploying Trafic:
 3. **Enable Let's Encrypt** — Always use HTTPS in production
 4. **Configure authentication** — Don't use `allow` policy for public-facing previews
 5. **Keep updated** — Run `sudo trafic-agent upgrade` on the server, and pin or update `@studiometa/trafic-cli` in CI
-6. **Firewall** — Only expose ports 22, 80, and 443. `setup` also drops DDEV tool ports with `DOCKER-USER` rules, which UFW cannot do — see [Network exposure](packages/trafic-agent/README.md#network-exposure)
+6. **Firewall** — Only expose ports 22, 80, and 443. `setup` also closes every other port that Docker publishes (DDEV tool ports, add-on ports such as Elasticsearch) with `DOCKER-USER` rules, which UFW cannot do — see [Network exposure](packages/trafic-agent/README.md#network-exposure)
 
 See the [setup command](packages/trafic-agent/README.md#trafic-agent-setup) for automated server hardening.

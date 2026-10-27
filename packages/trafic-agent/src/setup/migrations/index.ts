@@ -21,6 +21,7 @@ import { migration0018DockerAddressPools } from "./0018__docker_address_pools.js
 import { migration0019RecoverOrphanContainers } from "./0019__recover_orphan_containers.js";
 import { migration0020BackupDir } from "./0020__backup_dir.js";
 import { migration0021FixUnattendedUpgradesOrigins } from "./0021__fix_unattended_upgrades_origins.js";
+import { migration0022DockerUserDefaultDeny } from "./0022__docker_user_default_deny.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/trafic/.migrations.json";
@@ -48,6 +49,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0019RecoverOrphanContainers,
   migration0020BackupDir,
   migration0021FixUnattendedUpgradesOrigins,
+  migration0022DockerUserDefaultDeny,
 ];
 
 // ---------------------------------------------------------------------------

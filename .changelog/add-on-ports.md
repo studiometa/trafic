@@ -1,0 +1,3 @@
+### Security
+
+- **Agent**: The `DOCKER-USER` rules now close every port that Docker publishes, except the router's HTTP and HTTPS ports, to traffic from outside Docker's networks. Before, they closed only DDEV's tool ports, so a port that a DDEV add-on publishes with `HTTP_EXPOSE` or `HTTPS_EXPOSE` (for example Elasticsearch on 9200 and 9201) answered the internet without forward auth. Migration `0022__docker_user_default_deny` installs the new script and applies it at once. It also removes the rules of the old script, so a server where an operator added ports to `PORTS` in `/usr/local/sbin/trafic-docker-firewall` by hand gets the new script, without stale rules

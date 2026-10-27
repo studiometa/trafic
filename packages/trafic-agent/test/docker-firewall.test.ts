@@ -3,74 +3,150 @@ import {
   buildDockerFirewallScript,
   buildDockerFirewallUnit,
   configureDockerFirewall,
+  DOCKER_FIREWALL_CHAIN,
   DOCKER_FIREWALL_SCRIPT,
   DOCKER_FIREWALL_UNIT,
 } from "../src/setup/docker-firewall.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
-describe("buildDockerFirewallScript", () => {
-  const script = buildDockerFirewallScript(["8025", "8026", "8142", "8143"]);
+const ROUTER_PORTS = { http: "80", https: "443" };
 
-  /** The script without its comments, so prose cannot satisfy an assertion. */
-  const code = script
+/** The script without its comments, so prose cannot satisfy an assertion. */
+function codeOf(script: string): string {
+  return script
     .split("\n")
     .filter((line) => !line.trim().startsWith("#"))
     .join("\n");
+}
 
-  it("matches the original destination port, not the post-DNAT one", () => {
-    // By FORWARD the destination is the container, so --dport would match the
-    // container's port — the same number today, but not if a published port
-    // and a container port ever differ
-    expect(code).toContain("--ctorigdstport");
+describe("buildDockerFirewallScript", () => {
+  const script = buildDockerFirewallScript(ROUTER_PORTS);
+  const code = codeOf(script);
+
+  it("allows only the router web ports", () => {
+    expect(code).toContain('ALLOWED_PORTS="80 443"');
+  });
+
+  it("allows the router ports a server was moved to", () => {
+    const moved = buildDockerFirewallScript({ http: "8080", https: "8443" });
+
+    expect(moved).toContain('ALLOWED_PORTS="8080 8443"');
+  });
+
+  it("lists a port once when http and https share it", () => {
+    const same = buildDockerFirewallScript({ http: "8080", https: "8080" });
+
+    expect(same).toContain('ALLOWED_PORTS="8080"');
+  });
+
+  it("names no tool or add-on port, so an unknown port is closed", () => {
+    // The previous script dropped a list of ports; any port missing from
+    // that list, like an add-on's 9200, stayed open
+    expect(code).not.toMatch(/\b(8025|8026|8142|8143|9200)\b/);
+    expect(code).not.toMatch(/^PORTS=/m);
+  });
+
+  it("drops every other DNAT'd packet in the original direction", () => {
+    // Not DNAT'd: traffic between containers and outbound traffic.
+    // Not the original direction: replies of an allowed connection.
+    expect(code).toContain(
+      '"$cmd" -A "$CHAIN" -m conntrack --ctstate DNAT --ctdir ORIGINAL -j DROP',
+    );
+  });
+
+  it("matches the allowed ports on the original destination port", () => {
+    // By FORWARD the destination is the container, so --dport would match
+    // the container's side of the mapping
+    expect(code).toContain(
+      '"$cmd" -A "$CHAIN" -p tcp -m conntrack --ctorigdstport "$port" -j RETURN',
+    );
     expect(code).not.toMatch(/--dport/);
   });
 
-  it("puts the rules in DOCKER-USER", () => {
-    // The only chain Docker jumps to first in FORWARD and never flushes
-    expect(script).toContain("DOCKER-USER");
-    expect(script).not.toContain("-A FORWARD");
+  it("exempts Docker's networks, then the allowed ports, then drops", () => {
+    const exempt = code.indexOf('"$cmd" -A "$CHAIN" -s "$nets" -j RETURN');
+    const allow = code.indexOf("--ctorigdstport \"$port\" -j RETURN");
+    const drop = code.indexOf("-j DROP");
+
+    expect(exempt).toBeGreaterThan(-1);
+    expect(allow).toBeGreaterThan(exempt);
+    expect(drop).toBeGreaterThan(allow);
   });
 
-  it("carries every tool port it was given", () => {
-    expect(script).toContain('PORTS="8025 8026 8142 8143"');
+  it("keeps its rules in its own chain, jumped to from DOCKER-USER", () => {
+    // DOCKER-USER is the only chain Docker jumps to first in FORWARD and
+    // never flushes
+    expect(code).toContain(`CHAIN="${DOCKER_FIREWALL_CHAIN}"`);
+    expect(code).toContain('"$cmd" -I DOCKER-USER -j "$CHAIN"');
+    expect(code).not.toContain("-A FORWARD");
   });
 
-  it("exempts Docker's own networks before dropping", () => {
-    expect(script).toContain("172.16.0.0/12");
-    expect(script).toContain("-j RETURN");
-    expect(script).toContain("-j DROP");
+  it("rebuilds the chain on each run, so repeats give the same rules", () => {
+    const create = code.indexOf('"$cmd" -N "$CHAIN" 2>/dev/null || true');
+    const flush = code.indexOf('"$cmd" -F "$CHAIN"');
+    const firstRule = code.indexOf('"$cmd" -A "$CHAIN"');
+
+    expect(create).toBeGreaterThan(-1);
+    expect(flush).toBeGreaterThan(create);
+    expect(firstRule).toBeGreaterThan(flush);
   });
 
-  it("inserts the exemption after the drop, so it ends up above it", () => {
-    // Both use -I, so the last insert wins the top slot
-    const drop = script.indexOf('-I DOCKER-USER -p tcp -m conntrack');
-    const ret = script.indexOf('-I DOCKER-USER -p tcp -s "$nets"');
+  it("keeps exactly one jump in DOCKER-USER", () => {
+    const remove = code.indexOf('while "$cmd" -C DOCKER-USER -j "$CHAIN"');
+    const insert = code.indexOf('"$cmd" -I DOCKER-USER -j "$CHAIN"');
 
-    expect(drop).toBeGreaterThan(-1);
-    expect(ret).toBeGreaterThan(drop);
+    expect(remove).toBeGreaterThan(-1);
+    expect(code).toContain('"$cmd" -D DOCKER-USER -j "$CHAIN"');
+    expect(insert).toBeGreaterThan(remove);
   });
 
-  it("removes an existing copy before inserting, so repeats do not stack", () => {
-    expect(script).toContain("-C DOCKER-USER");
-    expect(script).toContain("-D DOCKER-USER");
+  it("removes the per-port rules of the previous script before anything else", () => {
+    const cleanup = code.indexOf('"$cmd" -S DOCKER-USER');
+    const create = code.indexOf('"$cmd" -N "$CHAIN"');
+
+    expect(cleanup).toBeGreaterThan(-1);
+    expect(create).toBeGreaterThan(cleanup);
+    expect(code).toContain('"$cmd" -D DOCKER-USER ${rule#-A DOCKER-USER }');
+  });
+
+  describe("the pattern that finds the previous rules", () => {
+    const pattern = new RegExp(/grep -E -- '([^']+)'/.exec(code)![1]!);
+
+    it.each([
+      "-A DOCKER-USER -p tcp -m conntrack --ctorigdstport 8025 --ctdir ORIGINAL -j DROP",
+      "-A DOCKER-USER -s 172.16.0.0/12 -p tcp -m conntrack --ctorigdstport 8025 --ctdir ORIGINAL -j RETURN",
+      "-A DOCKER-USER -s fd00::/8 -p tcp -m conntrack --ctorigdstport 9201 --ctdir ORIGINAL -j RETURN",
+      // A port an operator added to PORTS by hand
+      "-A DOCKER-USER -p tcp -m conntrack --ctorigdstport 9200 --ctdir ORIGINAL -j DROP",
+    ])("matches %s", (rule) => {
+      expect(pattern.test(rule)).toBe(true);
+    });
+
+    it.each([
+      "-N DOCKER-USER",
+      `-A DOCKER-USER -j ${DOCKER_FIREWALL_CHAIN}`,
+      "-A DOCKER-USER -j RETURN",
+      "-A DOCKER-USER -s 10.0.0.0/8 -p tcp -m tcp --dport 22 -j DROP",
+      // Shell metacharacters can never reach the unquoted -D arguments
+      "-A DOCKER-USER -s $(id) -p tcp -m conntrack --ctorigdstport 1 --ctdir ORIGINAL -j DROP",
+    ])("leaves %s alone", (rule) => {
+      expect(pattern.test(rule)).toBe(false);
+    });
   });
 
   it("covers IPv6 with an IPv6 exemption range", () => {
     // A v4 range in an ip6tables rule would be rejected outright
-    expect(script).toContain("apply ip6tables fd00::/8");
-    expect(script).toContain("apply iptables 172.16.0.0/12");
+    expect(code).toContain("apply iptables 172.16.0.0/12");
+    expect(code).toContain("apply ip6tables fd00::/8");
   });
 
-  it("skips a command that is not installed rather than failing", () => {
-    expect(script).toContain('command -v "$cmd" >/dev/null 2>&1 || return 0');
+  it("skips a family Docker does not filter rather than failing", () => {
+    expect(code).toContain('command -v "$cmd" >/dev/null 2>&1 || return 0');
+    expect(code).toContain('"$cmd" -n -L DOCKER-USER >/dev/null 2>&1 || return 0');
   });
 
   it("stops on error", () => {
-    expect(script).toContain("set -eu");
-  });
-
-  it("emits nothing for no tool ports", () => {
-    expect(buildDockerFirewallScript([])).toContain('PORTS=""');
+    expect(code).toContain("set -eu");
   });
 });
 
@@ -98,20 +174,34 @@ describe("configureDockerFirewall", () => {
   it("installs the script executable and enables the unit", () => {
     const io = createFakeIo();
 
-    configureDockerFirewall(["8025", "8143"], io);
+    configureDockerFirewall(ROUTER_PORTS, io);
 
     expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain("DOCKER-USER");
     expect(io.written(DOCKER_FIREWALL_UNIT)).toContain("ExecStart=");
     expect(io.ran(`chmod 0755 ${DOCKER_FIREWALL_SCRIPT}`)).toBe(true);
     expect(io.ran("systemctl daemon-reload")).toBe(true);
-    expect(io.ran("enable --now trafic-docker-firewall.service")).toBe(true);
+    expect(io.ran("systemctl enable trafic-docker-firewall.service")).toBe(true);
   });
 
-  it("passes the ports through to the script", () => {
+  it("restarts the unit, so a server that has it runs the new script", () => {
+    // A oneshot unit with RemainAfterExit stays active: "enable --now" would
+    // leave the old rules in place until the next reboot
     const io = createFakeIo();
 
-    configureDockerFirewall(["8025", "8143"], io);
+    configureDockerFirewall(ROUTER_PORTS, io);
 
-    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('PORTS="8025 8143"');
+    const reload = io.commands.indexOf("systemctl daemon-reload");
+    const restart = io.commands.indexOf("systemctl restart trafic-docker-firewall.service");
+
+    expect(restart).toBeGreaterThan(reload);
+    expect(io.ran("--now")).toBe(false);
+  });
+
+  it("passes the router ports through to the script", () => {
+    const io = createFakeIo();
+
+    configureDockerFirewall({ http: "8080", https: "8443" }, io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="8080 8443"');
   });
 });
