@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
 import { configureDockerFirewall, DOCKER_FIREWALL_SCRIPT } from "../docker-firewall.js";
-import { readToolPorts } from "../ddev.js";
+import { readRouterPorts, STATIC_CONFIG } from "../ddev.js";
+import { nodeIo, type SetupIo } from "../io.js";
 import type { Migration } from "../types.js";
 
 /**
@@ -31,10 +31,15 @@ export const migration0012DockerUserToolPorts: Migration = {
   description: "Restrict Docker-published DDEV tool ports via DOCKER-USER",
 
   run(): void {
-    if (existsSync(DOCKER_FIREWALL_SCRIPT)) {
-      return;
-    }
-
-    configureDockerFirewall(readToolPorts());
+    runDockerUserToolPortsMigration();
   },
 };
+
+/** The migration body, with its effects injected so tests can drive it. */
+export function runDockerUserToolPortsMigration(io: SetupIo = nodeIo): void {
+  if (io.fileExists(DOCKER_FIREWALL_SCRIPT) || !io.fileExists(STATIC_CONFIG)) {
+    return;
+  }
+
+  configureDockerFirewall(readRouterPorts(io), io);
+}

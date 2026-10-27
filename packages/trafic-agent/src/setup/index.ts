@@ -7,7 +7,7 @@ import {
   installDdev,
   configureDdev,
   configureTraefik,
-  readToolPorts,
+  readRouterPorts,
 } from "./ddev.js";
 import { configureDockerFirewall } from "./docker-firewall.js";
 import { installNode, installAgent, createAgentConfig, createSystemdService } from "./agent.js";
@@ -81,9 +81,10 @@ export async function setup(options: SetupOptions): Promise<void> {
           dnsEnv: options.dnsEnv ?? {},
         },
       });
-      // After DDEV, so the tool ports are known. UFW cannot reach these:
-      // Docker's rules run before its chains.
-      configureDockerFirewall(readToolPorts());
+      // After configureTraefik: the firewall opens only the tool ports that
+      // its static config protects with forward auth. UFW cannot close
+      // published ports: Docker's rules run before its chains.
+      configureDockerFirewall(readRouterPorts());
     } else {
       step("Install DDEV");
       info("Skipped (--no-ddev)");
