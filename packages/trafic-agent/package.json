@@ -1,6 +1,6 @@
 {
   "name": "@studiometa/trafic-agent",
-  "version": "0.1.60",
+  "version": "0.1.61",
   "description": "Server agent for DDEV preview environments — auth, scale-to-zero, auto-start",
   "keywords": [
     "agent",
