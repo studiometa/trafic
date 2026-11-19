@@ -632,6 +632,14 @@ describe("reconcileStatusesAtStart", () => {
     expect(getProject("app")?.status).toBe("starting");
   });
 
+  it("logs an error instead of rejecting", async () => {
+    // startServer does not await it, so a rejection would go unhandled.
+    // Without a database, getProject throws.
+    closeDb();
+
+    await expect(reconcileStatusesAtStart(listing({ app: "stopped" }))).resolves.toEqual([]);
+  });
+
   it("changes nothing when ddev list fails", async () => {
     setProjectStatus("app", "running");
 

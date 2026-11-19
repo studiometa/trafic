@@ -433,19 +433,29 @@ const UP_STATUSES: readonly DdevProject["status"][] = ["running", "starting", "u
  * changes nothing, because `listProjects` also returns one when `ddev list`
  * fails, and deleteUnlistedAtStart already removed the projects DDEV no
  * longer knows.
+ *
+ * It never rejects: startServer does not await it, so it logs its own
+ * result and errors.
  */
 export async function reconcileStatusesAtStart(
   run: DdevRunner = nodeDdevRunner,
 ): Promise<string[]> {
-  const projects = await listProjects(run);
   const stopped: string[] = [];
 
-  for (const project of projects) {
-    if (UP_STATUSES.includes(project.status)) continue;
-    if (getProject(project.name)?.status !== "running") continue;
+  try {
+    const projects = await listProjects(run);
 
-    setProjectStatus(project.name, "stopped");
-    stopped.push(project.name);
+    for (const project of projects) {
+      if (UP_STATUSES.includes(project.status)) continue;
+      if (getProject(project.name)?.status !== "running") continue;
+
+      setProjectStatus(project.name, "stopped");
+      stopped.push(project.name);
+      console.log(`Set ${project.name} to stopped: DDEV does not report it running`);
+    }
+  } catch (error: unknown) {
+    // Runs in the background of startServer: a rejection would go unhandled
+    console.error("Could not reconcile the project statuses with DDEV:", error);
   }
 
   return stopped;
@@ -470,15 +480,7 @@ export function startServer(agentConfig: AgentConfig): void {
 
   // Not awaited: `ddev list` can take seconds, and forward auth must answer
   // as soon as the router is up
-  reconcileStatusesAtStart()
-    .then((names) => {
-      for (const name of names) {
-        console.log(`Set ${name} to stopped: DDEV does not report it running`);
-      }
-    })
-    .catch((error: unknown) => {
-      console.error("Could not reconcile the project statuses with DDEV:", error);
-    });
+  void reconcileStatusesAtStart();
 
   // setup wrote the forward auth address before any DDEV network existed, so
   // correct it now that one may have appeared
