@@ -130,6 +130,20 @@ describe("buildRouterComposeOverride", () => {
 
     expect(config).toContain('- "TOKEN=a\\"b\\\\c"');
   });
+
+  it("makes Docker start the router again after a reboot", () => {
+    // DDEV's template sets restart: "no", and the override replaces it
+    expect(buildRouterComposeOverride({ TOKEN: "x" })).toContain(
+      "  ddev-router:\n    restart: unless-stopped\n",
+    );
+  });
+
+  it("has no environment without credentials", () => {
+    const config = buildRouterComposeOverride();
+
+    expect(config).toContain("    restart: unless-stopped");
+    expect(config).not.toContain("environment:");
+  });
 });
 
 describe("readLetsEncryptSettings", () => {
@@ -200,6 +214,7 @@ describe("configureTraefik with a DNS provider", () => {
     const io = configure();
 
     expect(io.written(ROUTER_COMPOSE_OVERRIDE)).toContain("CF_DNS_API_TOKEN=secret");
+    expect(io.written(ROUTER_COMPOSE_OVERRIDE)).toContain("restart: unless-stopped");
     // Created empty and restricted first: a chmod after the write would
     // leave the token readable by everyone for as long as it takes
     expect(
@@ -253,22 +268,36 @@ describe("configureTraefik without a DNS provider", () => {
     configureTraefik({ tls: { dnsEnv: {} } }, io);
 
     expect(io.writes.has(TLS_STORE_CONFIG)).toBe(false);
-    expect(io.writes.has(ROUTER_COMPOSE_OVERRIDE)).toBe(false);
     expect(io.written(STATIC_CONFIG)).not.toContain("acme-dns");
   });
 
-  it("removes the wildcard files left by an earlier run", () => {
+  it("writes the router restart policy without credentials", () => {
+    // Every server needs the router back after a reboot, not only the ones
+    // with a wildcard certificate
+    const io = createFakeIo({ output: { [GLOBAL_CONFIG]: LETS_ENCRYPT_ON } });
+
+    configureTraefik({ tls: { dnsEnv: {} } }, io);
+
+    const override = io.written(ROUTER_COMPOSE_OVERRIDE);
+    expect(override).toContain("    restart: unless-stopped");
+    expect(override).not.toContain("environment:");
+  });
+
+  it("removes the TLS store left by an earlier run, and the credentials", () => {
     // No compatibility path: the resolver is gone from the static config, so
     // a store pointing at it would leave every host on the default certificate
     const io = createFakeIo({
       output: { [GLOBAL_CONFIG]: LETS_ENCRYPT_ON },
-      files: { [TLS_STORE_CONFIG]: "tls:\n", [ROUTER_COMPOSE_OVERRIDE]: "services:\n" },
+      files: {
+        [TLS_STORE_CONFIG]: "tls:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: 'services:\n  ddev-router:\n    environment:\n      - "CF_DNS_API_TOKEN=secret"\n',
+      },
     });
 
     configureTraefik({ tls: { dnsEnv: {} } }, io);
 
     expect(io.ran(`rm -f ${TLS_STORE_CONFIG}`)).toBe(true);
-    expect(io.ran(`rm -f ${ROUTER_COMPOSE_OVERRIDE}`)).toBe(true);
+    expect(io.written(ROUTER_COMPOSE_OVERRIDE)).not.toContain("CF_DNS_API_TOKEN");
   });
 });
 

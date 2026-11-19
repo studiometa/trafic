@@ -306,7 +306,10 @@ export const STATIC_CONFIG = `${TRAEFIK_DIR}/static_config.trafic.yaml`;
 /** Wildcard TLS store, read before DDEV's own default_config.yaml. */
 export const TLS_STORE_CONFIG = `${TRAEFIK_DIR}/custom-global-config/0-trafic-tls.yaml`;
 
-/** Router compose override carrying the DNS provider credentials. */
+/**
+ * Router compose override: the restart policy, and the DNS provider
+ * credentials where a DNS provider is configured.
+ */
 export const ROUTER_COMPOSE_OVERRIDE = "/home/ddev/.ddev/router-compose.trafic.yaml";
 
 /** Name of the DNS-01 resolver the agent adds to Traefik. */
@@ -456,23 +459,37 @@ tls:
 }
 
 /**
- * Build the router compose override carrying the provider credentials.
+ * Build the router compose override: the restart policy, plus the provider
+ * credentials when there are any.
  *
- * lego reads them from the router container's environment, so they cannot be
- * passed through a config file. DDEV merges `~/.ddev/router-compose.*.yaml`
- * into the router compose and recreates the container when it changes, on the
- * next `ddev start`.
+ * DDEV's router compose template sets `restart: "no"`, so Docker does not
+ * start ddev-router again after a reboot. Without the router no request
+ * reaches the agent, and the waiting page cannot start any project. With
+ * `unless-stopped`, Docker starts it again at boot; `ddev poweroff` removes
+ * the container, so a router stopped on purpose stays stopped.
+ *
+ * lego reads the credentials from the router container's environment, so
+ * they cannot be passed through a config file.
+ *
+ * DDEV merges `~/.ddev/router-compose.*.yaml` over its own template with the
+ * Compose rules (a later file replaces a single value such as `restart`) and
+ * recreates the container from the result, on the next `ddev start` that
+ * recreates the router.
  */
-export function buildRouterComposeOverride(env: Record<string, string>): string {
+export function buildRouterComposeOverride(env: Record<string, string> = {}): string {
   const entries = Object.entries(env);
+  const environment = entries.length
+    ? `    environment:
+${entries.map(([key, value]) => `      - "${key}=${escapeYamlDouble(value)}"`).join("\n")}
+`
+    : "";
 
-  return `# Trafic: DNS-01 provider credentials for the Traefik router
-# Contains secrets — this file is mode 600.
+  return `# Trafic: ddev-router restart policy and DNS-01 provider credentials
+# Can contain secrets — this file is mode 600.
 services:
   ddev-router:
-    environment:
-${entries.map(([key, value]) => `      - "${key}=${escapeYamlDouble(value)}"`).join("\n")}
-`;
+    restart: unless-stopped
+${environment}`;
 }
 
 /** Escape a value for a double-quoted YAML scalar. */
@@ -652,6 +669,10 @@ export function configureTraefik(
 
   info(`Entry points: http-${routerPorts.http}, http-${routerPorts.https} (web) plus tool ports`);
 
+  // Written on every server: it carries the router restart policy, and the
+  // provider credentials only where the wildcard certificate needs them
+  writeRouterComposeOverride(resolver ? tls.dnsEnv : {}, io);
+
   if (resolver) {
     writeWildcardFiles(tls, tld, io);
   } else {
@@ -736,30 +757,35 @@ function readWildcardTld(configured: string | undefined, io: SetupIo): string {
   return tld;
 }
 
-/** Write the wildcard TLS store and the router credentials. */
+/** Write the wildcard TLS store. */
 function writeWildcardFiles(tls: TlsConfig, tld: string, io: SetupIo): void {
   io.writeFile(TLS_STORE_CONFIG, buildTlsStoreConfig(tld));
   io.exec(`chown ddev:ddev ${TLS_STORE_CONFIG}`, { silent: true });
 
-  // Holds the provider token: created empty and mode 600 first, so the
-  // credentials never exist on disk under the umask default. `install`
-  // truncates an existing file and resets its mode, and the later write
-  // keeps it.
-  io.exec(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`, {
-    silent: true,
-  });
-  io.writeFile(ROUTER_COMPOSE_OVERRIDE, buildRouterComposeOverride(tls.dnsEnv));
-
   success(`Wildcard certificate: *.${tld} via the ${tls.dnsProvider} DNS-01 provider`);
 }
 
-/** Remove the wildcard files where no DNS provider is configured. */
+/** Remove the wildcard TLS store where no DNS provider is configured. */
 function removeWildcardFiles(io: SetupIo): void {
   if (io.fileExists(TLS_STORE_CONFIG)) {
     io.exec(`rm -f ${TLS_STORE_CONFIG}`, { silent: true });
   }
+}
 
-  if (io.fileExists(ROUTER_COMPOSE_OVERRIDE)) {
-    io.exec(`rm -f ${ROUTER_COMPOSE_OVERRIDE}`, { silent: true });
-  }
+/**
+ * Write the router compose override, with the provider credentials in `env`.
+ *
+ * Can hold the provider token: created empty and mode 600 first, so the
+ * credentials never exist on disk under the umask default. `install`
+ * truncates an existing file and resets its mode, and the later write keeps
+ * it.
+ */
+export function writeRouterComposeOverride(
+  env: Record<string, string>,
+  io: SetupIo = nodeIo,
+): void {
+  io.exec(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`, {
+    silent: true,
+  });
+  io.writeFile(ROUTER_COMPOSE_OVERRIDE, buildRouterComposeOverride(env));
 }

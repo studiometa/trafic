@@ -39,6 +39,8 @@ trafic-agent start --port 9877
 | `-c`, `--config` | Path to the config file | first of `/etc/trafic/config.toml`, `./config.toml`, `./trafic.toml` |
 | `-p`, `--port` | Port of the agent HTTP server. Replaces `port` from the config | `port` from the config |
 
+**After a reboot.** Docker starts `ddev-router` again: the router compose override (`/home/ddev/.ddev/router-compose.trafic.yaml`) gives it `restart: unless-stopped`, over the `restart: "no"` of DDEV's template. The project containers stay down. When the agent starts, it sets to `stopped` each project that its database marks `running` but that `ddev list` does not show up, so the idle sweep and `max_running_projects` count only the projects that run. The first request to a project then shows the waiting page and starts it. Servers set up before this change get the policy from migration `0023__router_restart_policy`.
+
 ### `trafic-agent setup`
 
 Server setup, run as root. It installs Docker, DDEV and Node.js, configures DDEV and Traefik for forward auth, writes `/etc/trafic/config.toml`, installs the agent as a systemd service and hardens the server. You configure the wildcard DNS yourself. Setup takes its options from flags only: it asks no questions.
@@ -422,7 +424,7 @@ the challenge record to propagate before Let's Encrypt looks for it.
 |------|---------|
 | `~/.ddev/traefik/static_config.trafic.yaml` | The `acme-dns` resolver, its storage and the DNS challenge settings |
 | `~/.ddev/traefik/custom-global-config/0-trafic-tls.yaml` | The default TLS store asking for `<tld>` and `*.<tld>` |
-| `~/.ddev/router-compose.trafic.yaml` | The provider credentials on the router container |
+| `~/.ddev/router-compose.trafic.yaml` | The provider credentials on the router container. The file exists on every server: it also gives the router `restart: unless-stopped` |
 
 The `0-` prefix is load-bearing. Traefik's file provider keeps the **first**
 `tls.stores.default` it reads in directory order and logs "TLS store default

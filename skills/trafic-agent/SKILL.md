@@ -45,6 +45,8 @@ curl -s http://127.0.0.1:9876/__health__  # agent health and version
 
 The unit has a systemd sandbox (`ProtectSystem=strict`). The service can write only to `/var/lib/trafic`, `/home/ddev` and `/var/backups/trafic`. When the config is not valid, `start` prints `Configuration errors:` with one line per error, exits with code 1, and systemd restarts it every 5 seconds. Read the journal, fix the config, restart.
 
+After a reboot, Docker starts `ddev-router` again (`restart: unless-stopped` in `/home/ddev/.ddev/router-compose.trafic.yaml`), but not the projects. The agent sets to `stopped` the projects that its database marks `running` and that `ddev list` does not show up. The first request to a project starts it behind the waiting page.
+
 ## `trafic-agent setup`
 
 Run as root on a fresh Ubuntu 24.04 server, or remotely with `trafic setup` from the CLI. It installs Docker, DDEV and Node.js, configures DDEV and Traefik for forward auth, writes `/etc/trafic/config.toml` (only when it does not exist), creates the systemd service and hardens the server (SSH, UFW, Fail2ban, unattended-upgrades). It also adds `DOCKER-USER` firewall rules: from outside Docker's networks, only the ports Docker publishes with forward auth stay open (the router ports 80 and 443, and DDEV's tool ports for Mailpit and xhgui); add-on ports are closed. It asks no questions. A second run is safe: each step is skipped when the server is already in the target state.
@@ -223,6 +225,7 @@ idle_timeout: never  # or a duration such as 2h
 | Service restarts in a loop | `journalctl -u trafic-agent -n 50`. Fix the `Configuration errors:` lines, then restart |
 | Preview asks for a password | `default_policy = "basic"`. Add the client IP to `allowed_ips`, a rule, or `auth_policy: allow` in the project |
 | `allowed_ips` does not match | `trusted_proxy_hops` is wrong. Use `2` behind a CDN |
+| Every preview is down after a reboot, even the waiting page | `docker ps -a --filter name=ddev-router`. An older server has no restart policy on the router: run `ddev start` on one project, then `sudo trafic-agent upgrade` (migration `0023__router_restart_policy`). Then `docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' ddev-router` prints `unless-stopped` |
 | Preview stays on the waiting page | `ddev list`, then `ddev start` in the project directory to see the DDEV error. Check `max_running_projects` and the journal |
 | Project stops too soon | Raise `idle_timeout`, or set `idle_timeout: never` in the project |
 | `cannot read ... (EACCES): connect as the ddev user` | Run `destroy` as `ddev`, not as another user |

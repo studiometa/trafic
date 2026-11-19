@@ -17,6 +17,7 @@ import {
   buildStaticConfig,
   DDEV_KEYRING,
   DDEV_SOURCES,
+  ROUTER_COMPOSE_OVERRIDE,
   STATIC_CONFIG,
 } from "../src/setup/ddev.js";
 import {
@@ -28,6 +29,10 @@ import {
   migration0022DockerUserDefaultDeny,
   runDockerUserDefaultDenyMigration,
 } from "../src/setup/migrations/0022__docker_user_default_deny.js";
+import {
+  migration0023RouterRestartPolicy,
+  runRouterRestartPolicyMigration,
+} from "../src/setup/migrations/0023__router_restart_policy.js";
 import { DOCKER_FIREWALL_SCRIPT, DOCKER_FIREWALL_UNIT } from "../src/setup/docker-firewall.js";
 import { createFakeIo } from "./helpers/fake-io.js";
 
@@ -474,12 +479,11 @@ describe("0022__docker_user_default_deny migration", () => {
   /** The script 0012 installed, with a port added to PORTS by hand. */
   const OLD_SCRIPT = '#!/bin/sh\nPORTS="8025 8026 8142 8143 9200 9201"\n';
 
-  it("is registered last, after 0021", () => {
+  it("is registered after 0021", () => {
     const ids = ALL_MIGRATIONS.map((m) => m.id);
     expect(ids.indexOf(migration0022DockerUserDefaultDeny.id)).toBe(
       ids.indexOf("0021__fix_unattended_upgrades_origins") + 1,
     );
-    expect(ids.at(-1)).toBe("0022__docker_user_default_deny");
   });
 
   it("does nothing on a server without the firewall script", () => {
@@ -549,5 +553,97 @@ describe("0022__docker_user_default_deny migration", () => {
 
     expect(second.written(DOCKER_FIREWALL_SCRIPT)).toBe(first.written(DOCKER_FIREWALL_SCRIPT));
     expect(second.written(DOCKER_FIREWALL_UNIT)).toBe(first.written(DOCKER_FIREWALL_UNIT));
+  });
+});
+
+describe("0023__router_restart_policy migration", () => {
+  const PS = "docker ps -aq --filter label=com.docker.compose.service=ddev-router";
+  const noTls = () => ({ dnsEnv: {} });
+
+  it("is registered last, after 0022", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0023RouterRestartPolicy.id)).toBe(
+      ids.indexOf("0022__docker_user_default_deny") + 1,
+    );
+    expect(ids.at(-1)).toBe("0023__router_restart_policy");
+  });
+
+  it("does nothing on a server without the Trafic Traefik config", () => {
+    // Set up with --no-ddev: there is no router
+    const io = createFakeIo();
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("does nothing once the override has the policy", () => {
+    const io = createFakeIo({
+      files: {
+        [STATIC_CONFIG]: "entryPoints:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: "services:\n  ddev-router:\n    restart: unless-stopped\n",
+      },
+    });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("writes the override, mode 600, on a server without a DNS provider", () => {
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: "entryPoints:\n" } });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    const override = io.written(ROUTER_COMPOSE_OVERRIDE);
+    expect(override).toContain("    restart: unless-stopped");
+    expect(override).not.toContain("environment:");
+    expect(
+      io.ran(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`),
+    ).toBe(true);
+  });
+
+  it("keeps the DNS provider credentials in the override", () => {
+    // 0016 wrote them: rewriting the file without them would take the
+    // wildcard certificate away at the next router recreation
+    const io = createFakeIo({
+      files: {
+        [STATIC_CONFIG]: "entryPoints:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: 'services:\n  ddev-router:\n    environment:\n      - "CF_DNS_API_TOKEN=secret"\n',
+      },
+    });
+
+    runRouterRestartPolicyMigration(io, () => ({
+      dnsProvider: "cloudflare",
+      dnsEnv: { CF_DNS_API_TOKEN: "secret" },
+    }));
+
+    const override = io.written(ROUTER_COMPOSE_OVERRIDE);
+    expect(override).toContain("    restart: unless-stopped");
+    expect(override).toContain('      - "CF_DNS_API_TOKEN=secret"');
+  });
+
+  it("gives the running router the policy without restarting it", () => {
+    // DDEV reads the override only when it recreates the router
+    const io = createFakeIo({
+      files: { [STATIC_CONFIG]: "entryPoints:\n" },
+      output: { [PS]: "abc123\n" },
+    });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.ran("docker update --restart unless-stopped abc123")).toBe(true);
+    expect(io.ran("docker rm")).toBe(false);
+    expect(io.ran("ddev start")).toBe(false);
+  });
+
+  it("only writes the override when no router container exists", () => {
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: "entryPoints:\n" } });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.ran("docker update")).toBe(false);
   });
 });
