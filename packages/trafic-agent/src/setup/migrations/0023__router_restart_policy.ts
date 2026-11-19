@@ -31,8 +31,9 @@ const RESTART_POLICY = "restart: unless-stopped";
  * of the container in place: nothing restarts, no preview goes down.
  *
  * Runs only on a server with DDEV and the Trafic Traefik config: a server set
- * up with `--no-ddev` has no router. Idempotent: skipped when the override
- * already has the policy.
+ * up with `--no-ddev` has no router. Idempotent: the override is written only
+ * when it lacks the policy, and `docker update` with the same policy changes
+ * nothing.
  */
 export const migration0023RouterRestartPolicy: Migration = {
   id: "0023__router_restart_policy",
@@ -57,17 +58,19 @@ export function runRouterRestartPolicyMigration(
     return;
   }
 
-  if (
+  const hasPolicy =
     io.fileExists(ROUTER_COMPOSE_OVERRIDE) &&
-    io.readFile(ROUTER_COMPOSE_OVERRIDE).includes(RESTART_POLICY)
-  ) {
-    return;
+    io.readFile(ROUTER_COMPOSE_OVERRIDE).includes(RESTART_POLICY);
+
+  if (!hasPolicy) {
+    const config = tls();
+
+    writeRouterComposeOverride(config.dnsProvider ? config.dnsEnv : {}, io);
   }
 
-  const config = tls();
-
-  writeRouterComposeOverride(config.dnsProvider ? config.dnsEnv : {}, io);
-
+  // Also when the override already has the policy: an earlier migration of
+  // the same upgrade (0009, 0010, 0015, 0016) can have written it through
+  // configureTraefik, and the running router never read it
   const router = findRouterContainer(io);
 
   if (router) {

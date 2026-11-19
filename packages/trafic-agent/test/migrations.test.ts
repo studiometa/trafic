@@ -578,18 +578,23 @@ describe("0023__router_restart_policy migration", () => {
     expect(io.writes.size).toBe(0);
   });
 
-  it("does nothing once the override has the policy", () => {
+  it("keeps an override that has the policy, and still updates the router", () => {
+    // An earlier migration of the same upgrade can write the override through
+    // configureTraefik, but the running router never read it
     const io = createFakeIo({
       files: {
         [STATIC_CONFIG]: "entryPoints:\n",
         [ROUTER_COMPOSE_OVERRIDE]: "services:\n  ddev-router:\n    restart: unless-stopped\n",
       },
+      output: { [PS]: "abc123\n" },
     });
 
-    runRouterRestartPolicyMigration(io, noTls);
+    runRouterRestartPolicyMigration(io, () => {
+      throw new Error("the config is not read when the override is in place");
+    });
 
-    expect(io.commands).toEqual([]);
     expect(io.writes.size).toBe(0);
+    expect(io.ran("docker update --restart unless-stopped abc123")).toBe(true);
   });
 
   it("writes the override, mode 600, on a server without a DNS provider", () => {
