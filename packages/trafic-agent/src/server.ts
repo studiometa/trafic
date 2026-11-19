@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentConfig, AuthConfig } from "./types.js";
+import type { AgentConfig, AuthConfig, DdevProject } from "./types.js";
 import { checkAuth, resolveClientIp } from "./utils/auth.js";
 import {
   loadProjectList,
@@ -10,6 +10,7 @@ import {
   watchProjectList,
   startProject,
   getProjectInfo,
+  listProjects,
   nodeDdevRunner,
   type DdevRunner,
 } from "./utils/ddev.js";
@@ -414,6 +415,52 @@ export function deleteUnlistedAtStart(
   );
 }
 
+/** DDEV states where the project's containers are up. */
+const UP_STATUSES: readonly DdevProject["status"][] = ["running", "starting", "unhealthy"];
+
+/**
+ * Set to "stopped" the projects that the database says run but DDEV does
+ * not, when the service starts.
+ *
+ * After a reboot the containers are gone or exited (DDEV shows them stopped
+ * or paused), but the database still says "running". The idle sweep and
+ * max_running_projects then count projects that do not run. Runs after
+ * releaseStatusesAtStart, so a start or removal the old process left behind
+ * is checked too.
+ *
+ * Only the rows still "running" when `ddev list` answers are changed: a
+ * request can mark a project "starting" while the list runs. An empty list
+ * changes nothing, because `listProjects` also returns one when `ddev list`
+ * fails, and deleteUnlistedAtStart already removed the projects DDEV no
+ * longer knows.
+ *
+ * It never rejects: startServer does not await it, so it logs its own
+ * result and errors.
+ */
+export async function reconcileStatusesAtStart(
+  run: DdevRunner = nodeDdevRunner,
+): Promise<string[]> {
+  const stopped: string[] = [];
+
+  try {
+    const projects = await listProjects(run);
+
+    for (const project of projects) {
+      if (UP_STATUSES.includes(project.status)) continue;
+      if (getProject(project.name)?.status !== "running") continue;
+
+      setProjectStatus(project.name, "stopped");
+      stopped.push(project.name);
+      console.log(`Set ${project.name} to stopped: DDEV does not report it running`);
+    }
+  } catch (error: unknown) {
+    // Runs in the background of startServer: a rejection would go unhandled
+    console.error("Could not reconcile the project statuses with DDEV:", error);
+  }
+
+  return stopped;
+}
+
 /**
  * Start the agent server
  */
@@ -430,6 +477,10 @@ export function startServer(agentConfig: AgentConfig): void {
   for (const name of releaseStatusesAtStart()) {
     console.log(`Set ${name} back to running: the process that started or removed it is gone`);
   }
+
+  // Not awaited: `ddev list` can take seconds, and forward auth must answer
+  // as soon as the router is up
+  void reconcileStatusesAtStart();
 
   // setup wrote the forward auth address before any DDEV network existed, so
   // correct it now that one may have appeared

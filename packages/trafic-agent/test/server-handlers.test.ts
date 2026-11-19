@@ -11,6 +11,7 @@ import {
   makeRoomUnderLimit,
   releaseStatusesAtStart,
   deleteUnlistedAtStart,
+  reconcileStatusesAtStart,
 } from "../src/server.js";
 import {
   initDb,
@@ -577,5 +578,72 @@ describe("deleteUnlistedAtStart", () => {
 
     expect(deleteUnlistedAtStart(join(root, "missing.yaml"))).toEqual([]);
     expect(getProject("app")).toBeDefined();
+  });
+});
+
+describe("reconcileStatusesAtStart", () => {
+  /** A ddev that lists the given projects with their status. */
+  function listing(statuses: Record<string, string>, ok = true): DdevRunner {
+    const raw = Object.entries(statuses).map(([name, status]) => ({
+      name,
+      status,
+      approot: `/home/ddev/www/${name}`,
+    }));
+
+    return () => Promise.resolve({ ok, stdout: ok ? JSON.stringify({ raw }) : "" });
+  }
+
+  beforeEach(() => {
+    initDb(":memory:");
+  });
+
+  afterEach(() => {
+    closeDb();
+  });
+
+  it("sets to stopped a project whose containers did not come back", async () => {
+    // After a reboot DDEV shows stopped, or paused when the containers exist
+    setProjectStatus("gone", "running");
+    setProjectStatus("exited", "running");
+
+    await expect(
+      reconcileStatusesAtStart(listing({ gone: "stopped", exited: "paused" })),
+    ).resolves.toEqual(["gone", "exited"]);
+    expect(getProject("gone")?.status).toBe("stopped");
+    expect(getProject("exited")?.status).toBe("stopped");
+  });
+
+  it("keeps a project whose containers are up", async () => {
+    setProjectStatus("app", "running");
+    setProjectStatus("sick", "running");
+
+    await expect(
+      reconcileStatusesAtStart(listing({ app: "running", sick: "unhealthy" })),
+    ).resolves.toEqual([]);
+    expect(getProject("app")?.status).toBe("running");
+    expect(getProject("sick")?.status).toBe("running");
+  });
+
+  it("leaves a project that a request is starting", async () => {
+    // The waiting page can mark it while ddev list runs
+    setProjectStatus("app", "starting");
+
+    await expect(reconcileStatusesAtStart(listing({ app: "stopped" }))).resolves.toEqual([]);
+    expect(getProject("app")?.status).toBe("starting");
+  });
+
+  it("logs an error instead of rejecting", async () => {
+    // startServer does not await it, so a rejection would go unhandled.
+    // Without a database, getProject throws.
+    closeDb();
+
+    await expect(reconcileStatusesAtStart(listing({ app: "stopped" }))).resolves.toEqual([]);
+  });
+
+  it("changes nothing when ddev list fails", async () => {
+    setProjectStatus("app", "running");
+
+    await expect(reconcileStatusesAtStart(listing({}, false))).resolves.toEqual([]);
+    expect(getProject("app")?.status).toBe("running");
   });
 });
