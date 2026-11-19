@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.64 - 2026-11-19
+
+### Fixed
+
+- **Agent**: Previews come back after a server reboot without a manual `ddev start`. Docker now starts `ddev-router` again at boot: the router compose override `/home/ddev/.ddev/router-compose.trafic.yaml` exists on every server and sets `restart: unless-stopped` over the `restart: "no"` of DDEV's template. Before, the router stayed down, no request reached the agent, and the waiting page could not start any project. Migration `0023__router_restart_policy` writes the override on existing servers (with the DNS provider credentials where `[tls]` has some) and gives the running router the policy with `docker update`, without a restart ([#114])
+- **Agent**: When the service starts, it sets to `stopped` the projects that its database marks `running` but that `ddev list` does not show up. After a reboot, the idle sweep and `max_running_projects` counted projects whose containers were gone ([#114])
+
+[#114]: https://github.com/studiometa/trafic/pull/114
+
 ## 0.1.63 - 2026-11-16
 
 ### Dependencies
