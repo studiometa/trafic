@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.0 - 2026-11-19
+
+### Changed
+
+- **Breaking**: Trafic is now ppreview, in one npm package, `ppreview`, which holds the CLI and the agent. It replaces `@studiometa/trafic-cli` and `@studiometa/trafic-agent`. In CI, run `npx ppreview deploy` instead of `npx @studiometa/trafic-cli deploy`, with the same options. On the server, the agent commands are `ppreview agent <command>` (`ppreview agent upgrade`, `ppreview agent destroy`…) instead of `trafic-agent <command>`, and `ppreview agent upgrade` installs `ppreview@latest`. The repository is now `weareikko/ppreview` ([#116])
+- **Breaking**: The server uses the ppreview names: `/etc/ppreview/config.toml`, `/var/lib/ppreview/db.sqlite`, `/var/backups/ppreview`, the `ppreview-agent` and `ppreview-docker-firewall` systemd units, the `PPREVIEW-DOCKER-USER` iptables chain, the Traefik files `static_config.ppreview.yaml`, `custom-global-config/ppreview.yaml`, `custom-global-config/0-ppreview-tls.yaml` and `router-compose.ppreview.yaml`, and the Traefik middlewares and routers `ppreview-*`. To move a server once, run `sudo npm install -g ppreview && sudo ppreview agent upgrade`, then `sudo npm rm -g @studiometa/trafic-agent`: the new migration `0024__rename_from_trafic` moves the files, replaces the service and recreates `ddev-router`, so all previews stop for a few seconds. See [Migrate from Trafic](docs/agent.md#migrate-from-trafic) ([#116])
+- **Breaking**: The per-project config file is `.ddev/config.ppreview.yaml` instead of `.ddev/config.trafic.yaml`, and the agent config fallback is `./ppreview.toml` instead of `./trafic.toml`. Rename these files in your projects ([#116])
+- **Breaking**: The forward-auth response header is `X-Ppreview-Project` instead of `X-Trafic-Project`, and the basic auth realm is `ppreview` ([#116])
+
+[#116]: https://github.com/weareikko/ppreview/pull/116
+
 ## 0.1.64 - 2026-11-19
 
 ### Fixed

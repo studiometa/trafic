@@ -1,6 +1,6 @@
 {
   "name": "ppreview",
-  "version": "0.1.64",
+  "version": "0.2.0",
   "description": "DDEV preview environments on your own servers: deploy from CI, auth and scale-to-zero on the server",
   "keywords": [
     "ci",
