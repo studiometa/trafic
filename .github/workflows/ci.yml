@@ -37,7 +37,7 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./packages/trafic-agent/coverage/lcov.info,./packages/trafic-cli/coverage/lcov.info
+          files: ./packages/ppreview/coverage/lcov.info
           flags: unit
           fail_ci_if_error: false
 
@@ -53,12 +53,12 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Run integration tests
-        run: npm run test:integration:ci --workspace=@studiometa/trafic-cli
+        run: npm run test:integration:ci --workspace=ppreview
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         if: ${{ !cancelled() }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./packages/trafic-cli/coverage/lcov.info
+          files: ./packages/ppreview/coverage/lcov.info
           flags: integration
           fail_ci_if_error: false

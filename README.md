@@ -1,12 +1,14 @@
-# 🚦 Trafic
+# 🚦 ppreview
 
-[![NPM Version](https://img.shields.io/npm/v/@studiometa/trafic-cli.svg?style=flat&colorB=3e63dd&colorA=414853)](https://www.npmjs.com/package/@studiometa/trafic-cli/)
-[![Downloads](https://img.shields.io/npm/dm/@studiometa/trafic-cli?style=flat&colorB=3e63dd&colorA=414853)](https://www.npmjs.com/package/@studiometa/trafic-cli/)
-![Codecov](https://img.shields.io/codecov/c/github/studiometa/trafic?style=flat&colorB=3e63dd&colorA=414853)
+[![NPM Version](https://img.shields.io/npm/v/ppreview.svg?style=flat&colorB=3e63dd&colorA=414853)](https://www.npmjs.com/package/ppreview/)
+[![Downloads](https://img.shields.io/npm/dm/ppreview?style=flat&colorB=3e63dd&colorA=414853)](https://www.npmjs.com/package/ppreview/)
+![Codecov](https://img.shields.io/codecov/c/github/weareikko/ppreview?style=flat&colorB=3e63dd&colorA=414853)
 
-**DDEV preview environments on any Linux server.**
+**DDEV preview environments on your own servers.**
 
-Trafic turns a VPS into a preview server for your web projects. It handles authentication, scale-to-zero, auto-start, and deployments from CI — all powered by [DDEV](https://ddev.com) and [Traefik](https://traefik.io).
+ppreview is pronounced "preview": the first p is silent. It was called Trafic up to version 0.1.64 (`@studiometa/trafic-cli` and `@studiometa/trafic-agent`): see [Migrate from Trafic](docs/agent.md#migrate-from-trafic).
+
+ppreview turns a VPS into a preview server for your web projects. It handles authentication, scale-to-zero, auto-start, and deployments from CI — all powered by [DDEV](https://ddev.com) and [Traefik](https://traefik.io).
 
 ## Features
 
@@ -26,10 +28,10 @@ Trafic turns a VPS into a preview server for your web projects. It handles authe
 ```mermaid
 flowchart TD
   request[HTTPS request] --> traefik[Traefik / DDEV router]
-  traefik --> forwardAuth[forwardAuth → trafic agent]
+  traefik --> forwardAuth[forwardAuth → ppreview agent]
   forwardAuth --> |200 OK| ddev-web[DDEV project]
   forwardAuth --> |401| basic-auth[Basic auth prompt]
-  traefik --> |502 error| errors[errors middleware → trafic agent]
+  traefik --> |502 error| errors[errors middleware → ppreview agent]
   errors --> |known project| waiting[Waiting page + auto-start]
   errors --> |unknown project| error-page[Error page]
   errors --> |project being removed| removing[Error page 503]
@@ -39,16 +41,16 @@ flowchart TD
 
 ```bash
 # Setup a server over SSH (run from your machine or from CI)
-npx @studiometa/trafic-cli setup \
+npx ppreview setup \
   --host=server.example.com \
   --tld=previews.example.com \
   --email=admin@example.com
 
 # …or run it on the server itself, as root
-npx @studiometa/trafic-agent setup --tld=previews.example.com --email=admin@example.com
+npx ppreview setup --tld=previews.example.com --email=admin@example.com
 
 # Deploy from CI
-npx @studiometa/trafic-cli deploy \
+npx ppreview deploy \
   --host=server.example.com \
   --name=my-app \
   --branch=main \
@@ -60,10 +62,12 @@ npx @studiometa/trafic-cli deploy \
 
 ## Packages
 
-| Package | Description | npm |
-| ------- | ----------- | --- |
-| [`@studiometa/trafic-cli`](packages/trafic-cli/) | CLI for deploying projects from CI | [![NPM Version](https://img.shields.io/npm/v/@studiometa/trafic-cli?style=flat&colorB=3e63dd&colorA=414853)](https://www.npmjs.com/package/@studiometa/trafic-cli/) |
-| [`@studiometa/trafic-agent`](packages/trafic-agent/) | Server agent (auth, scale-to-zero) | [![NPM Version](https://img.shields.io/npm/v/@studiometa/trafic-agent?style=flat&colorB=3e63dd&colorA=414853)](https://www.npmjs.com/package/@studiometa/trafic-agent/) |
+One package, [`ppreview`](packages/ppreview/), holds the CLI and the server agent. CI jobs run `npx ppreview deploy`; the agent code loads only for `ppreview agent <command>`, on the server.
+
+| Part | Description | Documentation |
+| ---- | ----------- | ------------- |
+| `ppreview setup\|deploy\|destroy` | CLI for deploying projects from CI | [packages/ppreview/README.md](packages/ppreview/README.md) |
+| `ppreview agent <command>` | Server agent (auth, scale-to-zero, upgrades) | [docs/agent.md](docs/agent.md) |
 
 ## Requirements
 
@@ -88,7 +92,7 @@ deploy_preview:
   before_script:
     - chmod 600 "$SSH_PRIVATE_KEY"
   script:
-    - npx @studiometa/trafic-cli deploy
+    - npx ppreview deploy
         --host $SSH_HOST
         --name $CI_PROJECT_PATH_SLUG
         --preview $CI_MERGE_REQUEST_IID
@@ -105,7 +109,7 @@ destroy_preview:
   before_script:
     - chmod 600 "$SSH_PRIVATE_KEY"
   script:
-    - npx @studiometa/trafic-cli destroy
+    - npx ppreview destroy
         --host $SSH_HOST
         --name $CI_PROJECT_PATH_SLUG
         --preview $CI_MERGE_REQUEST_IID
@@ -114,7 +118,7 @@ destroy_preview:
     - if: $CI_MERGE_REQUEST_ID
 ```
 
-`SSH_PRIVATE_KEY` is a file-type CI variable. Do not use `ssh-agent` in GitLab CI: see [the CLI README](packages/trafic-cli/README.md#gitlab-ci).
+`SSH_PRIVATE_KEY` is a file-type CI variable. Do not use `ssh-agent` in GitLab CI: see [the CLI README](packages/ppreview/README.md#gitlab-ci).
 
 </details>
 
@@ -130,7 +134,7 @@ deploy_preview:
     - uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-    - run: npx @studiometa/trafic-cli deploy
+    - run: npx ppreview deploy
         --host ${{ vars.SSH_HOST }}
         --name ${{ github.event.repository.name }}
         --preview ${{ github.event.pull_request.number }}
@@ -144,7 +148,7 @@ destroy_preview:
     - uses: webfactory/ssh-agent@v0.9.0
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-    - run: npx @studiometa/trafic-cli destroy
+    - run: npx ppreview destroy
         --host ${{ vars.SSH_HOST }}
         --name ${{ github.event.repository.name }}
         --preview ${{ github.event.pull_request.number }}
@@ -154,25 +158,25 @@ destroy_preview:
 
 ## Agent skills
 
-Two [Agent Skills](https://agentskills.io) teach a coding agent to use Trafic:
+Two [Agent Skills](https://agentskills.io) teach a coding agent to use ppreview:
 
-- [`trafic-cli`](skills/trafic-cli/SKILL.md): write and fix the CI jobs that run `trafic setup`, `trafic deploy` and `trafic destroy`.
-- [`trafic-agent`](skills/trafic-agent/SKILL.md): operate the server (setup, upgrade, audit, `destroy`, `config.toml`).
+- [`ppreview-cli`](skills/ppreview-cli/SKILL.md): write and fix the CI jobs that run `ppreview setup`, `ppreview deploy` and `ppreview destroy`.
+- [`ppreview-agent`](skills/ppreview-agent/SKILL.md): operate the server (setup, upgrade, audit, `destroy`, `config.toml`).
 
 Install them in a project or for your user:
 
 ```bash
-npx skills add studiometa/trafic
+npx skills add weareikko/ppreview
 # or, with the GitHub CLI
-gh skill install studiometa/trafic
+gh skill install weareikko/ppreview
 ```
 
-Each package also prints the skill that matches its version: `trafic skill` and `trafic-agent skill`.
+The package also prints the skill that matches its version: `ppreview skill` and `ppreview agent skill`.
 
 ## Documentation
 
-- [CLI README](packages/trafic-cli/README.md) — Deploy and destroy commands
-- [Agent README](packages/trafic-agent/README.md) — Server setup and configuration
+- [CLI README](packages/ppreview/README.md) — Deploy and destroy commands
+- [Agent README](docs/agent.md) — Server setup and configuration
 - [Example config](examples/config.toml) — Full configuration reference
 
 ## Contributing

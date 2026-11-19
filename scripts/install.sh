@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# Trafic Agent Installer
+# ppreview Agent Installer
 # 
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/studiometa/trafic/main/scripts/install.sh | sudo bash -s -- --tld=previews.example.com
+#   curl -fsSL https://raw.githubusercontent.com/weareikko/ppreview/main/scripts/install.sh | sudo bash -s -- --tld=previews.example.com
 #
 # Options:
 #   --tld=<domain>       TLD for DDEV projects (required)
@@ -22,7 +22,7 @@ YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-log() { echo -e "${CYAN}[trafic]${NC} $1"; }
+log() { echo -e "${CYAN}[ppreview]${NC} $1"; }
 success() { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 error() { echo -e "${RED}✗${NC} $1"; exit 1; }
@@ -76,7 +76,7 @@ if [ "$ID" != "ubuntu" ] || [ "${VERSION_ID%%.*}" -lt 24 ]; then
   error "This script requires Ubuntu 24.04 or later. Detected: $PRETTY_NAME"
 fi
 
-log "Trafic Agent Installer"
+log "ppreview Agent Installer"
 log "TLD: $TLD"
 echo ""
 
@@ -90,12 +90,12 @@ else
   success "Node.js $(node --version) already installed"
 fi
 
-# Step 3: Install trafic-agent globally
-log "Installing @studiometa/trafic-agent..."
-npm install -g @studiometa/trafic-agent
-success "trafic-agent installed"
+# Step 3: Install ppreview agent globally
+log "Installing ppreview..."
+npm install -g ppreview
+success "ppreview agent installed"
 
 # Step 4: Run setup
-log "Running trafic-agent setup..."
+log "Running ppreview agent setup..."
 echo ""
-trafic-agent setup $SETUP_ARGS
+ppreview agent setup $SETUP_ARGS

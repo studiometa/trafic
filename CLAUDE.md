@@ -2,17 +2,20 @@
 
 ## Project Overview
 
-Trafic is a CLI tool and server agent for managing DDEV preview environments on Linux servers. It provides authentication, scale-to-zero, and CI-driven deployments powered by DDEV and Traefik.
+ppreview is a CLI tool and server agent for managing DDEV preview environments on Linux servers. It provides authentication, scale-to-zero, and CI-driven deployments powered by DDEV and Traefik.
 
 ## Monorepo Structure
 
 ```
 packages/
-├── trafic-cli/      # @studiometa/trafic-cli — CLI for CI and operators (setup, deploy, destroy)
-└── trafic-agent/    # @studiometa/trafic-agent — Server agent (auth, scale-to-zero, setup)
+└── ppreview/          # ppreview — one npm package: the CLI and the server agent
+    ├── src/           # CLI (setup, deploy, destroy); src/cli.ts is the `ppreview` binary
+    ├── src/agent/     # Server agent (auth, scale-to-zero, setup), `ppreview agent <command>`
+    ├── test/          # CLI tests
+    └── test/agent/    # Agent tests
 skills/
-├── trafic-cli/      # Agent skill for CI jobs that use the CLI (SKILL.md)
-└── trafic-agent/    # Agent skill for server operations (SKILL.md)
+├── ppreview-cli/      # Agent skill for CI jobs that use the CLI (SKILL.md)
+└── ppreview-agent/    # Agent skill for server operations (SKILL.md)
 ```
 
 ## Git & Commits
@@ -27,17 +30,17 @@ skills/
 - A fragment only contains `### Added|Changed|Deprecated|Removed|Fixed|Security|Dependencies` headings, each followed by its entries — no `#`/`##` heading
 - **Do not write the PR number**: the `Release` workflow appends `([#N])` and the link definition from the merged PR that added the fragment
 - Prefix entries with package name when relevant: `**CLI**: ...`, `**Agent**: ...`, `**Dev**: ...`
-- Commit references are optional: `[hash]` in the entry plus its `[hash]: https://github.com/studiometa/trafic/commit/hash` link definition in the fragment
+- Commit references are optional: `[hash]` in the entry plus its `[hash]: https://github.com/weareikko/ppreview/commit/hash` link definition in the fragment
 - The `Changelog` check fails when a PR changes `packages/**` without a fragment; set the `no-changelog` label for changes users do not see (tests, refactors, tooling)
 - Format and tooling: [`weareikko/changelog`](https://github.com/weareikko/changelog)
 
 ## Versioning
 
-- Each merge into `main` releases: the `Release` workflow (`publish.yml`, `weareikko/changelog` action) runs the tests, computes the version from the fragments, folds `.changelog/` into `CHANGELOG.md`, bumps all packages, commits `Release <version>`, tags (no `v` prefix), creates the GitHub release, then publishes to npm. Without a fragment or a merged Renovate PR since the last release, nothing is released
+- Each merge into `main` releases: the `Release` workflow (`publish.yml`, `weareikko/changelog` action) runs the tests, computes the version from the fragments, folds `.changelog/` into `CHANGELOG.md`, bumps the version, commits `Release <version>`, tags (no `v` prefix), creates the GitHub release, then publishes to npm. Without a fragment or a merged Renovate PR since the last release, nothing is released
 - Version from the fragments: on 0.x, a breaking entry gives a minor bump, any other entry a patch bump. Force a bump with `gh workflow run publish.yml -f version=major` (or `patch` / `minor`)
 - Prereleases: add `.changelog/prerelease` with one identifier (`alpha`, `beta`, `rc`); each merge with fragments then releases a prerelease on the `next` npm dist-tag. Delete the file to release the stable version. See [Prereleases](https://github.com/weareikko/changelog#prereleases)
 - npm trusted publishing (OIDC, no npm token) is bound to `publish.yml`: keep the publish job in that file, never call it from another workflow
-- Each package has its own `JS-DevTools/npm-publish` step, which skips a version npm already has: after a failed publish, use "Re-run failed jobs"
+- One `JS-DevTools/npm-publish` step publishes `packages/ppreview`; it skips a version npm already has: after a failed publish, use "Re-run failed jobs"
 
 ## Tech Stack
 
@@ -61,48 +64,50 @@ skills/
 
 ## Architecture
 
-### CLI (`packages/trafic-cli/`)
+One package, `ppreview`, with one version. Its only runtime dependency is `smol-toml`, used by the agent.
 
-Runs on CI runners. Orchestrates deployments via SSH/rsync. **Zero runtime dependencies** (uses native `node:child_process` for SSH).
+### CLI (`packages/ppreview/src/`)
+
+Runs on CI runners. Orchestrates deployments via SSH/rsync with native `node:child_process`. `src/cli.ts` imports the agent module only for `ppreview agent`: keep it that way, so a CI job never loads the agent code.
 
 Commands:
-- `trafic setup` — 5-step server setup over SSH (Node.js, agent, `trafic-agent setup`)
-- `trafic deploy` — 9-step DDEV deployment
-- `trafic destroy` — Remove project from server
-- `trafic skill` — Print `skills/trafic-cli/SKILL.md`, bundled at build time
+- `ppreview setup` — 5-step server setup over SSH (Node.js, agent, `ppreview agent setup`)
+- `ppreview deploy` — 9-step DDEV deployment
+- `ppreview destroy` — Remove project from server
+- `ppreview skill` — Print `skills/ppreview-cli/SKILL.md`, bundled at build time
 
-### Agent (`packages/trafic-agent/`)
+### Agent (`packages/ppreview/src/agent/`)
 
-Runs on the DDEV server as a systemd service. Uses native Node.js HTTP server + `node:sqlite`. Handles:
+Runs on the DDEV server as the `ppreview-agent` systemd service, which runs `ppreview agent start`. Uses native Node.js HTTP server + `node:sqlite`. Handles:
 - Forward auth for Traefik (IP whitelist, basic auth, tokens)
 - Scale-to-zero (stop idle projects)
 - Waiting pages (auto-start on request)
 - Project discovery (watches DDEV project_list.yaml)
-- TOML configuration (`/etc/trafic/config.toml`, parsed with smol-toml)
-- Per-project config via `.ddev/config.trafic.yaml`
-- Project removal, now or scheduled (`trafic-agent destroy`, `--delay`), swept every `idle_check_interval`
+- TOML configuration (`/etc/ppreview/config.toml`, parsed with smol-toml)
+- Per-project config via `.ddev/config.ppreview.yaml`
+- Project removal, now or scheduled (`ppreview agent destroy`, `--delay`), swept every `idle_check_interval`
 - Backups before removal (`[backup]`), old backups removed hourly
 - `max_running_projects` limit
 - Access logs older than 30 days removed hourly
 
 Commands:
-- `trafic-agent start` — Start the agent server (`-c/--config`, `-p/--port`)
-- `trafic-agent setup` — Server provisioning (Docker, DDEV, hardening)
-- `trafic-agent upgrade` (alias `update`) — Install the latest agent, run pending migrations, upgrade DDEV, restart the running DDEV projects one at a time when the DDEV version changed, restart the service
-- `trafic-agent audit` — Security audit checks
-- `trafic-agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `trafic destroy` calls it over SSH. Options: `--backup`, `--timeout`, `--delay`, `--cancel`, `--list`
-- `trafic-agent version` / `help` — Print the version (also `-v`, `--version`) or the help (also `-h`, `--help`)
-- `trafic-agent skill` — Print `skills/trafic-agent/SKILL.md`, bundled at build time
+- `ppreview agent start` — Start the agent server (`-c/--config`, `-p/--port`)
+- `ppreview agent setup` — Server provisioning (Docker, DDEV, hardening)
+- `ppreview agent upgrade` (alias `update`) — Install the latest `ppreview`, run pending migrations, upgrade DDEV, restart the running DDEV projects one at a time when the DDEV version changed, restart the service
+- `ppreview agent audit` — Security audit checks
+- `ppreview agent destroy <name>` — Remove a project (DDEV project, directory, database rows); `ppreview destroy` calls it over SSH. Options: `--backup`, `--timeout`, `--delay`, `--cancel`, `--list`
+- `ppreview agent version` / `help` — Print the version (also `-v`, `--version`) or the help (also `-h`, `--help`)
+- `ppreview agent skill` — Print `skills/ppreview-agent/SKILL.md`, bundled at build time
 
 ### Agent skills (`skills/`)
 
-`skills/<name>/SKILL.md` follow the [Agent Skills spec](https://agentskills.io/specification). `npx skills add studiometa/trafic` and `gh skill install studiometa/trafic` install them from this directory, and `trafic skill` / `trafic-agent skill` print the copy bundled in the package (Vite `?raw` import).
+`skills/<name>/SKILL.md` follow the [Agent Skills spec](https://agentskills.io/specification). `npx skills add weareikko/ppreview` and `gh skill install weareikko/ppreview` install them from this directory, and `ppreview skill` / `ppreview agent skill` print the copy bundled in the package (Vite `?raw` import).
 
 - **Update the skills with each user-visible change** of the CLI or the agent: commands, options, defaults, config keys, error messages, CI patterns. Check the skill against the code, like the READMEs
 - Frontmatter: only spec keys (`name` = directory name, `description` of 1024 characters or less saying what and when, on one line that YAML reads in full: no `: ` or ` #` unless you quote it, `license`). No Claude Code-only keys
-- Body under 500 lines. `packages/trafic-cli/test/skills-spec.test.ts` checks these rules
+- Body under 500 lines. `packages/ppreview/test/skills-spec.test.ts` checks these rules
 
-### Agent migrations (`packages/trafic-agent/src/setup/migrations/`)
+### Agent migrations (`packages/ppreview/src/agent/setup/migrations/`)
 
 Migrations fix server state on **existing** servers when the correct behaviour changes between releases. They are forward-only and run exactly once per server.
 
@@ -116,24 +121,24 @@ Migrations fix server state on **existing** servers when the correct behaviour c
 - The change is purely in-process (config file format, database schema handled elsewhere, etc.)
 
 **How to add a migration:**
-1. Create `packages/trafic-agent/src/setup/migrations/NNNN__short_description.ts` (zero-padded 4-digit sequence)
+1. Create `packages/ppreview/src/agent/setup/migrations/NNNN__short_description.ts` (zero-padded 4-digit sequence)
 2. Export a `const migrationNNNN... : Migration` object with `id`, `description`, and `run()`
 3. `run()` **must be idempotent** — guard with an `existsSync` or equivalent condition check
-4. Register it at the end of `ALL_MIGRATIONS` in `migrations/index.ts`
+4. Register it at the end of `ALL_MIGRATIONS` in `migrations/index.ts` (`0024__rename_from_trafic` stays first: it moves a server set up before the rename to the paths the others use)
 5. `markAllMigrationsApplied()` is called by `setup()` — fresh servers automatically skip all migrations
 
 **Migration file naming:** `NNNN__short_description.ts` where `NNNN` is the next available 4-digit number (e.g. `0003__...` after `0002__...`).
 
 ## Testing
 
-- **Unit tests**: `npm test` (unit tests of both packages)
-- **Integration tests**: `npm run test:integration --workspace=@studiometa/trafic-cli` (Docker-based SSH tests)
+- **Unit tests**: `npm test` (unit tests of the CLI and the agent)
+- **Integration tests**: `npm run test:integration --workspace=ppreview` (Docker-based SSH tests)
 - **Coverage**: `npm run test:ci` (with Codecov upload in CI)
 
 ## Documentation
 
-- [CLI README](packages/trafic-cli/README.md) — Deploy and destroy commands
-- [Agent README](packages/trafic-agent/README.md) — Server setup and configuration
+- [CLI README](packages/ppreview/README.md) — Deploy and destroy commands
+- [Agent README](docs/agent.md) — Server setup and configuration
 - [Example config](examples/config.toml) — Full configuration reference
 - [Open-source plan](docs/open-source-plan.md) — Historical plan (Feb 2026), not the current architecture
 - [Deploy CLI plan](docs/deploy-cli-plan.md) — Historical plan (Feb 2026), not the current CLI

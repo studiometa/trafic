@@ -1,4 +1,4 @@
-# GitHub Actions — Deploy to DDEV server with trafic
+# GitHub Actions — Deploy to DDEV server with ppreview
 #
 # Required secrets:
 #   SSH_PRIVATE_KEY — SSH key with access to the server
@@ -45,7 +45,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       - run: >-
-          npx @studiometa/trafic-cli deploy
+          npx ppreview deploy
           --host ${{ vars.SSH_HOST }}
           --name ${{ github.event.repository.name }}
           --sync "dist/"
@@ -65,7 +65,7 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       - run: >-
-          npx @studiometa/trafic-cli deploy
+          npx ppreview deploy
           --host ${{ vars.SSH_HOST }}
           --name ${{ github.event.repository.name }}
           --preview ${{ github.event.pull_request.number }}
@@ -82,7 +82,7 @@ jobs:
       # Add --backup to keep the database and uploads, or --delay 48h to keep
       # the preview for 2 days
       - run: >-
-          npx @studiometa/trafic-cli destroy
+          npx ppreview destroy
           --host ${{ vars.SSH_HOST }}
           --name ${{ github.event.repository.name }}
           --preview ${{ github.event.pull_request.number }}

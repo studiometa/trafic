@@ -1,0 +1,397 @@
+#!/usr/bin/env node
+
+import { parseArgs } from "node:util";
+import { detectBranch, detectRepo } from "./ci.js";
+import { deploy } from "./commands/deploy.js";
+import { destroy } from "./commands/destroy.js";
+import { setup } from "./commands/setup.js";
+import { skill } from "./commands/skill.js";
+import { parseDuration } from "./ssh.js";
+import { error } from "./steps.js";
+import type { DeployOptions, DestroyOptions, SetupOptions } from "./types.js";
+
+declare const __VERSION__: string;
+
+const HELP = `
+  🚦 ppreview — DDEV preview environments on your own servers
+
+  Usage:
+    ppreview setup [options]     Setup a new DDEV server over SSH
+    ppreview deploy [options]    Deploy a project to a DDEV server
+    ppreview destroy [options]   Destroy a DDEV project
+    ppreview skill               Print the agent skill (SKILL.md) of this version
+    ppreview agent <command>     Run an agent command on the server: start, setup,
+                                 upgrade, audit, destroy… (ppreview agent help)
+
+  Common options:
+    --host <host>              SSH host (required)
+    --user <user>              SSH user (default: ddev, root for setup)
+    --port <port>              SSH port (default: 22)
+    --ssh-options <opts>       Extra SSH options (e.g. "-J jump@host")
+
+  Setup options:
+    --tld <domain>             TLD for DDEV projects (required)
+    --email <email>            Email for Let's Encrypt certificates
+    --dns-provider <name>      DNS-01 provider (lego name, e.g. cloudflare). Asks for one
+                               wildcard *.<tld> certificate instead of one per preview.
+                               Requires --email
+    --dns-env <KEY=VALUE>      Credential for that provider, repeatable
+    --agent-version <version>  Agent version to install (default: latest)
+    --ssh-users <users>        SSH users to allow, comma-separated (default: ddev)
+                               --user is always added, so hardening cannot lock you out
+    --trusted-proxy-hops <n>   Proxies in front of the agent (default: 1; 2 behind a CDN)
+    --no-hardening             Skip server hardening
+    --no-root-ssh              Disable root SSH login (recovery via rescue mode only)
+    --no-docker                Skip Docker installation
+    --no-ddev                  Skip DDEV installation
+    --dry-run                  Print the remote commands without running them
+
+  Deploy options:
+    --repo <url>               Git repo URL (default: $CI_REPOSITORY_URL or $GITHUB_SERVER_URL/$GITHUB_REPOSITORY)
+    --branch <branch>          Branch to deploy (default: $CI_COMMIT_REF_NAME,
+                               $GITHUB_HEAD_REF or $GITHUB_REF_NAME)
+    --name <name>              DDEV project name (required)
+    --preview <iid>            MR/PR number → creates preview-<iid>--<name>
+    --sync <paths>             Paths to rsync, comma-separated
+    --script <cmd>             Script to run inside the DDEV container
+    --env <KEY=VALUE|KEY>      Environment for --script, repeatable. Bare KEY takes
+                               the runner's value, so secrets stay out of the command
+    --before-script <cmd>      Script to run before deploy (on server)
+    --after-script <cmd>       Script to run after deploy (on server)
+    --create-script <cmd>      Script to run on the deploy that creates the project
+                               only (on server). For seeding a database once
+    --projects-dir <path>      Projects directory (default: ~/www)
+    --no-start                 Skip starting the DDEV container
+    --timeout <duration>       Timeout of each remote command and each --sync path
+                               (default: 10m)
+
+  Destroy options:
+    --name <name>              DDEV project name (required)
+    --preview <iid>            MR/PR number (computes the name)
+    --backup                   Back up the database and upload directories on the
+                               server first. If the backup fails, nothing is removed
+    --delay <duration>         Remove nothing now: the agent removes the project after
+                               this delay. Hours, minutes, seconds only: 48h, 1h30m.
+                               A new deploy cancels the removal
+    --timeout <duration>       Timeout of the remote command (default: 10m). With
+                               --backup, the time limit of the backup on the server,
+                               and the remote command gets 10 more minutes. Raise
+                               it to back up a large project
+
+  Other:
+    --version                  Show version
+    --help                     Show this help
+
+  Examples:
+    ppreview setup --host server.example.com --tld previews.example.com
+    ppreview setup --host server.example.com --tld previews.example.com --email admin@example.com
+    ppreview setup --host server.example.com --tld previews.example.com --trusted-proxy-hops 2
+    ppreview setup --host server.example.com --tld previews.example.com --email admin@example.com \
+      --dns-provider cloudflare --dns-env CF_DNS_API_TOKEN=xxx
+    ppreview deploy --host server.example.com --name my-app --branch main
+    ppreview deploy --host server.example.com --name my-app --preview 42 --sync "dist/"
+    ppreview deploy --host server.example.com --name my-app --env COMPOSER_AUTH --env CI=true
+    ppreview destroy --host server.example.com --name my-app --preview 42
+    ppreview destroy --host server.example.com --name my-app --preview 42 --backup
+    ppreview destroy --host server.example.com --name my-app --preview 42 --delay 48h
+`;
+
+/**
+ * Parse --env entries into a map.
+ *
+ * `KEY=VALUE` takes the value literally. A bare `KEY` reads the runner's
+ * environment, which is how a CI secret reaches the container without ever
+ * appearing in the command line.
+ */
+function parseEnv(entries?: string[]): Record<string, string> | undefined {
+  if (!entries || entries.length === 0) {
+    return undefined;
+  }
+
+  const env: Record<string, string> = {};
+
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+    const key = separator === -1 ? entry : entry.slice(0, separator);
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      error(`Invalid --env name: "${key}"`);
+      console.log("  Expected KEY=VALUE or KEY, where KEY is a shell identifier");
+      process.exit(1);
+    }
+
+    if (separator === -1) {
+      const value = process.env[key];
+
+      if (value === undefined) {
+        // Silently skipping would surface later as an unexplained build failure
+        error(`--env ${key} is not set in the environment`);
+        console.log(`  Pass a value with --env ${key}=<value>, or export it first`);
+        process.exit(1);
+      }
+
+      env[key] = value;
+    } else {
+      env[key] = entry.slice(separator + 1);
+    }
+  }
+
+  return env;
+}
+
+/**
+ * Report a parseArgs failure and exit.
+ *
+ * A value starting with a dash is the common case: parseArgs cannot tell
+ * `--trusted-proxy-hops -1` from a second flag, and suggests the `=` form.
+ */
+function exitOnParseError(err: unknown): never {
+  error((err as Error).message);
+  console.log(HELP);
+  process.exit(1);
+}
+
+function main(): void {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
+  if (!command || command === "--help" || command === "-h") {
+    console.log(HELP);
+    process.exit(0);
+  }
+
+  if (command === "--version" || command === "-v") {
+    console.log(__VERSION__);
+    process.exit(0);
+  }
+
+  if (command === "skill") {
+    skill();
+    return;
+  }
+
+  // The agent commands run on the server. Their module is imported only
+  // here, so a CI job never loads the agent code.
+  if (command === "agent") {
+    import("./agent/cli.js")
+      .then(({ runAgent }) => runAgent(args.slice(1)))
+      .catch((err: unknown) => {
+        console.error("Fatal error:", err);
+        process.exit(1);
+      });
+    return;
+  }
+
+  // Parse arguments (skip the command name).
+  // parseArgs throws on malformed input — a dash-leading value such as
+  // `--trusted-proxy-hops -1` reads as another flag — so report the message
+  // instead of letting a raw TypeError and stack trace reach the user.
+  let parsed;
+
+  try {
+    parsed = parseArgs({
+      args: args.slice(1),
+      options: {
+        host: { type: "string" },
+        user: { type: "string" },
+        port: { type: "string", default: "22" },
+        "ssh-options": { type: "string", default: "" },
+        tld: { type: "string" },
+        email: { type: "string" },
+        "dns-provider": { type: "string" },
+        "dns-env": { type: "string", multiple: true },
+        "agent-version": { type: "string", default: "latest" },
+        "ssh-users": { type: "string" },
+        "trusted-proxy-hops": { type: "string" },
+        "no-hardening": { type: "boolean", default: false },
+        "no-root-ssh": { type: "boolean", default: false },
+        "no-docker": { type: "boolean", default: false },
+        "no-ddev": { type: "boolean", default: false },
+        "dry-run": { type: "boolean", default: false },
+        repo: { type: "string" },
+        branch: { type: "string" },
+        name: { type: "string" },
+        preview: { type: "string" },
+        sync: { type: "string" },
+        script: { type: "string" },
+        env: { type: "string", multiple: true },
+        "before-script": { type: "string" },
+        "after-script": { type: "string" },
+        "create-script": { type: "string" },
+        "projects-dir": { type: "string", default: "~/www" },
+        "no-start": { type: "boolean", default: false },
+        backup: { type: "boolean", default: false },
+        delay: { type: "string" },
+        timeout: { type: "string", default: "10m" },
+        help: { type: "boolean", short: "h" },
+        version: { type: "boolean", short: "v" },
+      },
+      strict: true,
+    });
+  } catch (err) {
+    exitOnParseError(err);
+  }
+
+  const { values } = parsed;
+
+  if (values.help) {
+    console.log(HELP);
+    process.exit(0);
+  }
+
+  if (values.version) {
+    console.log(__VERSION__);
+    process.exit(0);
+  }
+
+  // Validate common required options
+  if (!values.host) {
+    error("Missing required option: --host");
+    process.exit(1);
+  }
+
+  const sshBase = {
+    host: values.host,
+    // Setup runs privileged commands, deploy and destroy run as the DDEV user
+    user: values.user ?? (command === "setup" ? "root" : "ddev"),
+    port: Number.parseInt(values.port!, 10),
+    sshOptions: values["ssh-options"]!,
+  };
+
+  if (command !== "setup" && !values.name) {
+    error("Missing required option: --name");
+    process.exit(1);
+  }
+
+  // Reject a bad duration rather than quietly using the default: the flag
+  // exists to raise the limit for a slow step, so ignoring it would time out
+  // exactly where the value was meant to help
+  if (values.timeout && parseDuration(values.timeout) === undefined) {
+    error(
+      `Invalid --timeout: "${values.timeout}". Expected a duration such as "10m", "90s" or "1h"`,
+    );
+    process.exit(1);
+  }
+
+  switch (command) {
+    case "setup": {
+      if (!values.tld) {
+        error("Missing required option: --tld");
+        process.exit(1);
+      }
+
+      if (values["no-root-ssh"] && sshBase.user === "root") {
+        error(
+          "--no-root-ssh cannot be used while connecting as root — it would lock you out",
+        );
+        console.log("  Connect as another user with sudo: --user <name>");
+        process.exit(1);
+      }
+
+      const hops = values["trusted-proxy-hops"];
+      if (hops !== undefined && !/^[1-9]\d*$/.test(hops)) {
+        error(
+          `--trusted-proxy-hops must be a whole number of 1 or more, got "${hops}"`,
+        );
+        console.log(
+          "  1 = ddev-router/Traefik alone, 2 = a CDN in front of it",
+        );
+        process.exit(1);
+      }
+
+      if (values["dns-provider"] && !values.email) {
+        error("--dns-provider requires --email");
+        console.log("  Let's Encrypt refuses an ACME account without one");
+        process.exit(1);
+      }
+
+      const setupOptions: SetupOptions = {
+        ...sshBase,
+        tld: values.tld,
+        email: values.email,
+        dnsProvider: values["dns-provider"],
+        dnsEnv: values["dns-env"],
+        agentVersion: values["agent-version"]!,
+        noHardening: values["no-hardening"]!,
+        noRootSsh: values["no-root-ssh"]!,
+        noDocker: values["no-docker"]!,
+        noDdev: values["no-ddev"]!,
+        sshUsers: values["ssh-users"],
+        trustedProxyHops: values["trusted-proxy-hops"],
+        dryRun: values["dry-run"]!,
+      };
+
+      setup(setupOptions).catch((err: Error) => {
+        error(`Setup failed: ${err.message}`);
+        process.exit(1);
+      });
+      break;
+    }
+
+    case "deploy": {
+      const repo = values.repo ?? detectRepo();
+      const branch = values.branch ?? detectBranch();
+
+      if (!repo) {
+        error(
+          "Missing --repo and could not detect from CI environment ($CI_REPOSITORY_URL or $GITHUB_SERVER_URL/$GITHUB_REPOSITORY)",
+        );
+        process.exit(1);
+      }
+
+      if (!branch) {
+        error(
+          "Missing --branch and could not detect from CI environment ($CI_COMMIT_REF_NAME, $GITHUB_HEAD_REF or $GITHUB_REF_NAME)",
+        );
+        process.exit(1);
+      }
+
+      const deployOptions: DeployOptions = {
+        ...sshBase,
+        repo,
+        branch,
+        name: values.name!,
+        preview: values.preview,
+        sync: values.sync,
+        script: values.script,
+        env: parseEnv(values.env),
+        beforeScript: values["before-script"],
+        afterScript: values["after-script"],
+        createScript: values["create-script"],
+        projectsDir: values["projects-dir"]!,
+        noStart: values["no-start"]!,
+        timeout: values.timeout!,
+      };
+
+      deploy(deployOptions).catch((err: Error) => {
+        error(`Deploy failed: ${err.message}`);
+        process.exit(1);
+      });
+      break;
+    }
+
+    case "destroy": {
+      const destroyOptions: DestroyOptions = {
+        ...sshBase,
+        name: values.name!,
+        preview: values.preview,
+        backup: values.backup!,
+        delay: values.delay,
+        timeout: values.timeout!,
+      };
+
+      destroy(destroyOptions).catch((err: Error) => {
+        error(`Destroy failed: ${err.message}`);
+        process.exit(1);
+      });
+      break;
+    }
+
+    default:
+      error(`Unknown command: ${command}`);
+      console.log(HELP);
+      process.exit(1);
+  }
+}
+
+main();

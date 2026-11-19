@@ -1,0 +1,178 @@
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import type { Migration, MigrationState, MigrationListEntry } from "../types.js";
+import { migration0001DdevAptRepo } from "./0001__ddev_apt_repo.js";
+import { migration0002MkcertDdevUser } from "./0002__mkcert_ddev_user.js";
+import { migration0003DdevRouterBindAllInterfaces } from "./0003__ddev_router_bind_all_interfaces.js";
+import { migration0004DdevHostnameSudoers } from "./0004__ddev_hostname_sudoers.js";
+import { migration0005TraefikGatewayIp } from "./0005__traefik_gateway_ip.js";
+import { migration0006TraefikGatewayIpFix } from "./0006__traefik_gateway_ip_fix.js";
+import { migration0007UfwDockerPpreviewPort } from "./0007__ufw_docker_trafic_port.js";
+import { migration0008TraefikEntrypointMiddleware } from "./0008__traefik_entrypoint_middleware.js";
+import { migration0009ScaleToZeroFixes } from "./0009__scale_to_zero_fixes.js";
+import { migration0010CatchallEntrypoints } from "./0010__catchall_entrypoints.js";
+import { migration0011PurgeAcmeWhenDisabled } from "./0011__purge_acme_when_disabled.js";
+import { migration0012DockerUserToolPorts } from "./0012__docker_user_tool_ports.js";
+import { migration0013SshKexDefaults } from "./0013__ssh_kex_defaults.js";
+import { migration0014UnattendedUpgradesDockerOrigin } from "./0014__unattended_upgrades_docker_origin.js";
+import { migration0015CatchallPriority } from "./0015__catchall_priority.js";
+import { migration0016WildcardDnsChallenge } from "./0016__wildcard_dns_challenge.js";
+import { migration0017DdevAptCloudsmith } from "./0017__ddev_apt_cloudsmith.js";
+import { migration0018DockerAddressPools } from "./0018__docker_address_pools.js";
+import { migration0019RecoverOrphanContainers } from "./0019__recover_orphan_containers.js";
+import { migration0020BackupDir } from "./0020__backup_dir.js";
+import { migration0021FixUnattendedUpgradesOrigins } from "./0021__fix_unattended_upgrades_origins.js";
+import { migration0022DockerUserDefaultDeny } from "./0022__docker_user_default_deny.js";
+import { migration0023RouterRestartPolicy } from "./0023__router_restart_policy.js";
+import {
+  LEGACY_MIGRATIONS_STATE_FILE,
+  migration0024RenameFromTrafic,
+} from "./0024__rename_from_trafic.js";
+
+/** Path to the persisted migration state file */
+export const MIGRATIONS_STATE_FILE = "/etc/ppreview/.migrations.json";
+
+/**
+ * Ordered registry of all known migrations.
+ *
+ * 0024 runs first: it moves a server set up before the rename to the paths
+ * that every other migration uses.
+ */
+export const ALL_MIGRATIONS: Migration[] = [
+  migration0024RenameFromTrafic,
+  migration0001DdevAptRepo,
+  migration0002MkcertDdevUser,
+  migration0003DdevRouterBindAllInterfaces,
+  migration0004DdevHostnameSudoers,
+  migration0005TraefikGatewayIp,
+  migration0006TraefikGatewayIpFix,
+  migration0007UfwDockerPpreviewPort,
+  migration0008TraefikEntrypointMiddleware,
+  migration0009ScaleToZeroFixes,
+  migration0010CatchallEntrypoints,
+  migration0011PurgeAcmeWhenDisabled,
+  migration0012DockerUserToolPorts,
+  migration0013SshKexDefaults,
+  migration0014UnattendedUpgradesDockerOrigin,
+  migration0015CatchallPriority,
+  migration0016WildcardDnsChallenge,
+  migration0018DockerAddressPools,
+  migration0017DdevAptCloudsmith,
+  migration0019RecoverOrphanContainers,
+  migration0020BackupDir,
+  migration0021FixUnattendedUpgradesOrigins,
+  migration0022DockerUserDefaultDeny,
+  migration0023RouterRestartPolicy,
+];
+
+// ---------------------------------------------------------------------------
+// State helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Load the current migration state from disk.
+ * Returns an empty state if the file does not exist yet.
+ *
+ * A server set up before the rename keeps its state at the old path until
+ * migration 0024 moves it: read it there, so that the migrations it already
+ * applied do not run again.
+ */
+export function loadMigrationState(
+  file = existsSync(MIGRATIONS_STATE_FILE) ? MIGRATIONS_STATE_FILE : LEGACY_MIGRATIONS_STATE_FILE,
+): MigrationState {
+  if (!existsSync(file)) {
+    return { applied: [] };
+  }
+
+  try {
+    const raw = readFileSync(file, "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "applied" in parsed &&
+      Array.isArray((parsed as { applied: unknown }).applied)
+    ) {
+      return parsed as MigrationState;
+    }
+  } catch {
+    // Corrupted file — start fresh
+  }
+
+  return { applied: [] };
+}
+
+/**
+ * Persist the migration state to disk.
+ * Creates /etc/ppreview/ if it does not exist.
+ */
+export function saveMigrationState(state: MigrationState): void {
+  mkdirSync("/etc/ppreview", { recursive: true });
+  writeFileSync(MIGRATIONS_STATE_FILE, JSON.stringify(state, null, 2) + "\n", "utf-8");
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Return all migrations with their current status.
+ */
+export function listMigrations(): MigrationListEntry[] {
+  const state = loadMigrationState();
+  return ALL_MIGRATIONS.map((migration) => ({
+    migration,
+    status: state.applied.includes(migration.id) ? "applied" : "pending",
+  }));
+}
+
+/**
+ * Run all pending migrations and persist state after each one.
+ *
+ * When `dryRun` is true the runner prints what it would do without
+ * executing anything or touching the state file.
+ */
+export function runPendingMigrations(dryRun = false): void {
+  const state = loadMigrationState();
+  const pending = ALL_MIGRATIONS.filter((m) => !state.applied.includes(m.id));
+
+  if (pending.length === 0) {
+    console.log("  No pending migrations.");
+    return;
+  }
+
+  for (const migration of pending) {
+    console.log(`\n  → \x1b[1m${migration.id}\x1b[0m  ${migration.description}`);
+
+    if (dryRun) {
+      console.log(`    \x1b[90m(dry-run: skipped)\x1b[0m`);
+      continue;
+    }
+
+    migration.run();
+
+    // Persist state immediately so a partial failure leaves a consistent state
+    state.applied.push(migration.id);
+    saveMigrationState(state);
+
+    console.log(`    \x1b[32m✓ Applied\x1b[0m`);
+  }
+}
+
+/**
+ * Mark all known migrations as applied without running them.
+ *
+ * Called at the end of a fresh `setup()` run: a brand-new server has
+ * already been configured correctly, so migrations that fix older
+ * installations are not needed.
+ */
+export function markAllMigrationsApplied(): void {
+  const state = loadMigrationState();
+
+  for (const migration of ALL_MIGRATIONS) {
+    if (!state.applied.includes(migration.id)) {
+      state.applied.push(migration.id);
+    }
+  }
+
+  saveMigrationState(state);
+}

@@ -1,4 +1,4 @@
-# Plan : CLI de déploiement `trafic deploy` (côté CI)
+# Plan : CLI de déploiement `ppreview deploy` (côté CI)
 
 > Historical plan (February 2026). It does not describe the current code. See the package READMEs.
 
@@ -29,23 +29,23 @@ Tout le build lourd (npm, webpack/vite, composer) se fait sur le **runner CI**. 
 ### Problèmes
 
 1. **~160 lignes de bash inline dans du YAML** : Le `.ddev.yml` génère des scripts bash à la volée, les pipe dans SSH. Impossible à tester, débugger, ou maintenir.
-2. **Pas de visibilité** : L'agent Trafic ne sait pas qu'un déploiement est en cours → peut `stop-idle` un projet pendant un deploy.
+2. **Pas de visibilité** : L'agent ppreview ne sait pas qu'un déploiement est en cours → peut `stop-idle` un projet pendant un deploy.
 3. **Pas de rollback** : Si un deploy échoue à mi-chemin, l'état est incohérent.
 4. **Duplication** : preprod, preview, et stop dupliquent la logique SSH.
 5. **Trop de variables** : 15+ variables CI (`DDEV_SSH_HOST`, `DDEV_PROJECT_NAME`, `DDEV_DEPLOY_SCRIPT`, `DDEV_HOOK_BEFORE`, `DDEV_HOOK_AFTER_CREATE`, ...).
 
-## Proposition : `trafic deploy` côté CI
+## Proposition : `ppreview deploy` côté CI
 
 ### Architecture
 
-Le CLI `trafic deploy` tourne sur le **runner CI** (pas sur le serveur). Il orchestre le déploiement via SSH/rsync. C'est un remplacement du bash inline de `.ddev.yml` par un outil TypeScript testable.
+Le CLI `ppreview deploy` tourne sur le **runner CI** (pas sur le serveur). Il orchestre le déploiement via SSH/rsync. C'est un remplacement du bash inline de `.ddev.yml` par un outil TypeScript testable.
 
 ```
 CI runner                                    Serveur DDEV
 ────────                                     ────────────
 npm install + build (stages précédents)
 
-trafic deploy (stage deploy)
+ppreview deploy (stage deploy)
   ├── SSH: git clone/pull                →   ~/www/<project>
   ├── SSH: ddev start (si nécessaire)    →   conteneur Docker up
   ├── rsync: dist/, vendor/              →   ~/www/<project>/...
@@ -55,12 +55,12 @@ trafic deploy (stage deploy)
 
 ### Pourquoi un CLI plutôt que du bash
 
-| Aspect        | Bash inline (actuel)           | CLI trafic                             |
+| Aspect        | Bash inline (actuel)           | CLI ppreview                             |
 | ------------- | ------------------------------ | -------------------------------------- |
 | Tests         | ❌ Impossible                  | ✅ Vitest                              |
 | Debug         | ❌ Logs CI opaques             | ✅ Étapes numérotées, logs structurés  |
 | Maintenance   | ❌ 160 lignes YAML/bash        | ✅ TypeScript modulaire                |
-| Réutilisation | ❌ Copier/coller entre projets | ✅ `npx @studiometa/trafic-cli deploy` |
+| Réutilisation | ❌ Copier/coller entre projets | ✅ `npx ppreview deploy` |
 | Rollback      | ❌ Aucun                       | ✅ Possible (git checkout + redeploy)  |
 | Validation    | ❌ Fail à l'exécution          | ✅ Validation des args au démarrage    |
 | État agent    | ❌ Agent ignorant du deploy    | ✅ Peut notifier l'agent via HTTP      |
@@ -72,7 +72,7 @@ Le CLI est publié sur npm public (comme `@studiometa/productive-cli`) :
 ```yaml
 deploy_preprod:
   script:
-    - npx @studiometa/trafic-cli deploy ...
+    - npx ppreview deploy ...
 ```
 
 Simple, versionné, cacheable via `npm ci`.
@@ -80,7 +80,7 @@ Simple, versionné, cacheable via `npm ci`.
 ### Interface CLI
 
 ```bash
-trafic deploy [options]
+ppreview deploy [options]
 
 Options:
   --host <host>           Serveur SSH (requis)
@@ -102,7 +102,7 @@ Options:
   --no-start              Ne pas démarrer le conteneur DDEV
   --timeout <duration>    Timeout (défaut: 10m)
 
-trafic destroy [options]
+ppreview destroy [options]
 
 Options:
   --host, --user, --port, --ssh-options  (même que deploy)
@@ -114,14 +114,14 @@ Options:
 
 ```bash
 # Déploiement preprod classique (WordPress)
-trafic deploy \
+ppreview deploy \
   --host preprod.example.com \
   --name wordpress-project \
   --sync "web/wp-content/themes/studiometa/dist/" \
   --script "composer i --no-interaction --no-progress --prefer-dist"
 
 # Déploiement preview depuis une MR
-trafic deploy \
+ppreview deploy \
   --host preprod.example.com \
   --name wordpress-project \
   --preview 42 \
@@ -130,19 +130,19 @@ trafic deploy \
 # → Crée l'environnement preview-42--wordpress-project
 
 # Suppression d'un environnement preview
-trafic destroy \
+ppreview destroy \
   --host preprod.example.com \
   --name wordpress-project \
   --preview 42
 
 # Déploiement Laravel (sans rsync, tout dans le conteneur)
-trafic deploy \
+ppreview deploy \
   --host preprod.example.com \
   --name mon-app-laravel \
   --script "composer i --no-dev && php artisan migrate --force"
 
 # Déploiement avec jump host (client)
-trafic deploy \
+ppreview deploy \
   --host 10.0.0.47 \
   --ssh-options "-J deploy@bastion.example.com" \
   --name client-a \
@@ -150,7 +150,7 @@ trafic deploy \
   --script "composer i --no-dev"
 ```
 
-### Étapes internes de `trafic deploy`
+### Étapes internes de `ppreview deploy`
 
 ```typescript
 async function deploy(options: DeployOptions): Promise<void> {
@@ -223,7 +223,7 @@ async function deploy(options: DeployOptions): Promise<void> {
 }
 ```
 
-### Intégration avec l'agent Trafic (optionnel, phase 2)
+### Intégration avec l'agent ppreview (optionnel, phase 2)
 
 Le CLI pourrait notifier l'agent HTTP qu'un déploiement est en cours :
 
@@ -247,24 +247,24 @@ Mais **ce n'est pas bloquant pour la v1** du CLI. Le deploy actuel fonctionne sa
 
 ### Où mettre le CLI deploy
 
-Le CLI `trafic` existe déjà dans `agent/cli/` mais il est couplé à l'agent Nitro (setup, status, logs sont des commandes serveur). Le CLI de déploiement est un outil **CI** distinct.
+Le CLI `ppreview` existe déjà dans `agent/cli/` mais il est couplé à l'agent Nitro (setup, status, logs sont des commandes serveur). Le CLI de déploiement est un outil **CI** distinct.
 
-**Option retenue** : un nouveau workspace `packages/trafic-cli/` dans le monorepo (convention `productive-tools`).
+**Option retenue** : un nouveau workspace `packages/cli/` dans le monorepo (convention `productive-tools`).
 
 ```
-trafic/
+ppreview/
 ├── packages/
-│   ├── trafic-agent/           # @studiometa/trafic-agent (serveur) — existant
+│   ├── ppreview-agent/           # ppreview (serveur) — existant
 │   │   ├── cli/                # CLI serveur (setup, status, logs)
 │   │   ├── routes/
 │   │   └── ...
-│   └── trafic-cli/             # @studiometa/trafic-cli (CI) — nouveau
+│   └── ppreview-cli/             # ppreview (CI) — nouveau
 │       ├── src/
 │       │   ├── cli.ts          # Entry point CLI
 │       │   ├── index.ts        # Library entry point
 │       │   ├── commands/
-│       │   │   ├── deploy.ts   # trafic deploy
-│       │   │   └── destroy.ts  # trafic destroy
+│       │   │   ├── deploy.ts   # ppreview deploy
+│       │   │   └── destroy.ts  # ppreview destroy
 │       │   ├── ssh.ts          # Wrapper SSH (exec, test, rsync)
 │       │   ├── steps.ts        # Logger avec étapes numérotées
 │       │   └── types.ts        # Types partagés
@@ -285,7 +285,7 @@ trafic/
 
 ```json
 {
-  "name": "@studiometa/trafic-cli",
+  "name": "ppreview",
   "version": "1.0.0",
   "description": "CLI to deploy projects to DDEV servers - preview environments from CI",
   "keywords": ["ci", "cli", "ddev", "deploy", "preview"],
@@ -293,11 +293,11 @@ trafic/
   "author": "Studio Meta",
   "repository": {
     "type": "git",
-    "url": "https://github.com/studiometa/trafic",
-    "directory": "packages/trafic-cli"
+    "url": "https://github.com/weareikko/ppreview",
+    "directory": "packages/cli"
   },
   "bin": {
-    "trafic": "./dist/cli.js"
+    "ppreview": "./dist/cli.js"
   },
   "files": ["dist"],
   "type": "module",
@@ -345,7 +345,7 @@ Pas de SDK SSH JavaScript, pas de citty, pas de consola — on utilise directeme
 
 ## Config `studiometa/gitlab-ci`
 
-### Nouveau fichier : `config/deploy/trafic/preprod.yml`
+### Nouveau fichier : `config/deploy/ppreview/preprod.yml`
 
 ```yaml
 include:
@@ -353,14 +353,14 @@ include:
   - local: config/global/.default-rules.yml
 
 variables:
-  TRAFIC_SSH_HOST: preprod.example.com
-  TRAFIC_SSH_USER: ddev
-  TRAFIC_SSH_OPTIONS: ''
-  TRAFIC_PROJECT_NAME: $CI_PROJECT_PATH_SLUG
-  TRAFIC_DEPLOY_SCRIPT: ''
-  TRAFIC_DEPLOY_SYNC: ''
-  TRAFIC_DEPLOY_BEFORE_SCRIPT: ''
-  TRAFIC_DEPLOY_AFTER_SCRIPT: ''
+  PPREVIEW_SSH_HOST: preprod.example.com
+  PPREVIEW_SSH_USER: ddev
+  PPREVIEW_SSH_OPTIONS: ''
+  PPREVIEW_PROJECT_NAME: $CI_PROJECT_PATH_SLUG
+  PPREVIEW_DEPLOY_SCRIPT: ''
+  PPREVIEW_DEPLOY_SYNC: ''
+  PPREVIEW_DEPLOY_BEFORE_SCRIPT: ''
+  PPREVIEW_DEPLOY_AFTER_SCRIPT: ''
 
 deploy_preprod:
   stage: deploy
@@ -370,28 +370,28 @@ deploy_preprod:
     - ssh-add "$SSH_PRIVATE_KEY"
   script:
     - >-
-      npx @studiometa/trafic-cli deploy
-      --host $TRAFIC_SSH_HOST
-      --user $TRAFIC_SSH_USER
-      ${TRAFIC_SSH_OPTIONS:+--ssh-options "$TRAFIC_SSH_OPTIONS"}
+      npx ppreview deploy
+      --host $PPREVIEW_SSH_HOST
+      --user $PPREVIEW_SSH_USER
+      ${PPREVIEW_SSH_OPTIONS:+--ssh-options "$PPREVIEW_SSH_OPTIONS"}
       --repo $CI_REPOSITORY_URL
       --branch $CI_COMMIT_REF_NAME
-      --name $TRAFIC_PROJECT_NAME
-      ${TRAFIC_DEPLOY_SYNC:+--sync "$TRAFIC_DEPLOY_SYNC"}
-      ${TRAFIC_DEPLOY_SCRIPT:+--script "$TRAFIC_DEPLOY_SCRIPT"}
-      ${TRAFIC_DEPLOY_BEFORE_SCRIPT:+--before-script "$TRAFIC_DEPLOY_BEFORE_SCRIPT"}
-      ${TRAFIC_DEPLOY_AFTER_SCRIPT:+--after-script "$TRAFIC_DEPLOY_AFTER_SCRIPT"}
+      --name $PPREVIEW_PROJECT_NAME
+      ${PPREVIEW_DEPLOY_SYNC:+--sync "$PPREVIEW_DEPLOY_SYNC"}
+      ${PPREVIEW_DEPLOY_SCRIPT:+--script "$PPREVIEW_DEPLOY_SCRIPT"}
+      ${PPREVIEW_DEPLOY_BEFORE_SCRIPT:+--before-script "$PPREVIEW_DEPLOY_BEFORE_SCRIPT"}
+      ${PPREVIEW_DEPLOY_AFTER_SCRIPT:+--after-script "$PPREVIEW_DEPLOY_AFTER_SCRIPT"}
   after_script:
     - ssh-agent -k 2>/dev/null || true
   rules:
     - !reference [.default_rules, branch_rules_develop]
 ```
 
-### Nouveau fichier : `config/deploy/trafic/preview.yml`
+### Nouveau fichier : `config/deploy/ppreview/preview.yml`
 
 ```yaml
 include:
-  - local: config/deploy/trafic/preprod.yml
+  - local: config/deploy/ppreview/preprod.yml
 
 deploy_preview:
   extends: deploy_preprod
@@ -400,16 +400,16 @@ deploy_preview:
     on_stop: deploy_preview_stop
   script:
     - >-
-      npx @studiometa/trafic-cli deploy
-      --host $TRAFIC_SSH_HOST
-      --user $TRAFIC_SSH_USER
-      ${TRAFIC_SSH_OPTIONS:+--ssh-options "$TRAFIC_SSH_OPTIONS"}
+      npx ppreview deploy
+      --host $PPREVIEW_SSH_HOST
+      --user $PPREVIEW_SSH_USER
+      ${PPREVIEW_SSH_OPTIONS:+--ssh-options "$PPREVIEW_SSH_OPTIONS"}
       --repo $CI_REPOSITORY_URL
       --branch $CI_COMMIT_REF_NAME
-      --name $TRAFIC_PROJECT_NAME
+      --name $PPREVIEW_PROJECT_NAME
       --preview $CI_MERGE_REQUEST_IID
-      ${TRAFIC_DEPLOY_SYNC:+--sync "$TRAFIC_DEPLOY_SYNC"}
-      ${TRAFIC_DEPLOY_SCRIPT:+--script "$TRAFIC_DEPLOY_SCRIPT"}
+      ${PPREVIEW_DEPLOY_SYNC:+--sync "$PPREVIEW_DEPLOY_SYNC"}
+      ${PPREVIEW_DEPLOY_SCRIPT:+--script "$PPREVIEW_DEPLOY_SCRIPT"}
   rules:
     - !reference [.default_rules, wip_rules]
     - !reference [.default_rules, deploy_preview_rules]
@@ -425,11 +425,11 @@ deploy_preview_stop:
     - ssh-add "$SSH_PRIVATE_KEY"
   script:
     - >-
-      npx @studiometa/trafic-cli destroy
-      --host $TRAFIC_SSH_HOST
-      --user $TRAFIC_SSH_USER
-      ${TRAFIC_SSH_OPTIONS:+--ssh-options "$TRAFIC_SSH_OPTIONS"}
-      --name $TRAFIC_PROJECT_NAME
+      npx ppreview destroy
+      --host $PPREVIEW_SSH_HOST
+      --user $PPREVIEW_SSH_USER
+      ${PPREVIEW_SSH_OPTIONS:+--ssh-options "$PPREVIEW_SSH_OPTIONS"}
+      --name $PPREVIEW_PROJECT_NAME
       --preview $CI_MERGE_REQUEST_IID
   after_script:
     - ssh-agent -k 2>/dev/null || true
@@ -462,42 +462,42 @@ include:
 
 ```yaml
 variables:
-  TRAFIC_PROJECT_NAME: wordpress-project
-  TRAFIC_DEPLOY_SCRIPT: 'composer i --no-interaction --no-progress --prefer-dist'
-  TRAFIC_DEPLOY_SYNC: 'web/wp-content/themes/studiometa/dist/'
+  PPREVIEW_PROJECT_NAME: wordpress-project
+  PPREVIEW_DEPLOY_SCRIPT: 'composer i --no-interaction --no-progress --prefer-dist'
+  PPREVIEW_DEPLOY_SYNC: 'web/wp-content/themes/studiometa/dist/'
 
 include:
-  - config/deploy/trafic/preprod.yml
-  - config/deploy/trafic/preview.yml
+  - config/deploy/ppreview/preprod.yml
+  - config/deploy/ppreview/preview.yml
 ```
 
 ### Laravel :
 
 ```yaml
 variables:
-  TRAFIC_PROJECT_NAME: mon-app
-  TRAFIC_DEPLOY_SCRIPT: 'composer i --no-dev && php artisan migrate --force'
+  PPREVIEW_PROJECT_NAME: mon-app
+  PPREVIEW_DEPLOY_SCRIPT: 'composer i --no-dev && php artisan migrate --force'
 
 include:
-  - config/deploy/trafic/preprod.yml
+  - config/deploy/ppreview/preprod.yml
 ```
 
 ### Avec jump host (client) :
 
 ```yaml
 variables:
-  TRAFIC_SSH_HOST: 10.0.0.47
-  TRAFIC_SSH_OPTIONS: '-J deploy@bastion.example.com'
-  TRAFIC_PROJECT_NAME: client-a
-  TRAFIC_DEPLOY_SYNC: 'dist/'
-  TRAFIC_DEPLOY_SCRIPT: 'composer i --no-dev'
+  PPREVIEW_SSH_HOST: 10.0.0.47
+  PPREVIEW_SSH_OPTIONS: '-J deploy@bastion.example.com'
+  PPREVIEW_PROJECT_NAME: client-a
+  PPREVIEW_DEPLOY_SYNC: 'dist/'
+  PPREVIEW_DEPLOY_SCRIPT: 'composer i --no-dev'
 ```
 
 ## Plan d'implémentation
 
-### Phase 1 : CLI minimal (`packages/trafic-cli/`)
+### Phase 1 : CLI minimal (`packages/cli/`)
 
-1. Créer le workspace `packages/trafic-cli/` (convention `productive-tools`)
+1. Créer le workspace `packages/cli/` (convention `productive-tools`)
 2. Implémenter `ssh.ts` : wrapper autour de `ssh` et `rsync` (exec, test, rsync) — zéro deps runtime, Node natif
 3. Implémenter `deploy.ts` : les 7 étapes (clone → start → sync → exec → verify)
 4. Implémenter `destroy.ts` : `ddev delete` + `rm -rf`
@@ -506,8 +506,8 @@ variables:
 
 ### Phase 2 : Publication et intégration CI
 
-1. Publier `@studiometa/trafic-cli` sur npm public (GitHub Actions publish workflow)
-2. Créer `config/deploy/trafic/` dans `studiometa/gitlab-ci`
+1. Publier `ppreview` sur npm public (GitHub Actions publish workflow)
+2. Créer `config/deploy/ppreview/` dans `studiometa/gitlab-ci`
 3. Documenter dans le README + exemples GitLab CI / GitHub Actions
 
 ### Phase 3 : Migration des projets
@@ -524,8 +524,8 @@ variables:
 
 ## Questions ouvertes
 
-1. **Publication npm** : Registry GitLab privé (`@studiometa/trafic`) ou juste `npx` avec l'URL git ?
-2. **Nommage** : `trafic deploy` ou `trafic-deploy` (package séparé) ?
-3. **Config locale** : Supporter un fichier `.trafic.yml` dans chaque projet pour éviter les variables CI ?
+1. **Publication npm** : Registry GitLab privé (`ppreview`) ou juste `npx` avec l'URL git ?
+2. **Nommage** : `ppreview deploy` ou `ppreview-deploy` (package séparé) ?
+3. **Config locale** : Supporter un fichier `.ppreview.yml` dans chaque projet pour éviter les variables CI ?
 4. **node_modules cleanup** : Le système actuel supprime `node_modules` après deploy (économie disque). Garder ce comportement ?
 5. **DDEV config.local.yaml** : Quels champs écrire au premier deploy ? (name, ports mailhog, mutagen disabled, override_config)

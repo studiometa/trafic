@@ -1,11 +1,8 @@
 # Default owners for everything in the repo
 * @titouanmathis
 
-# CLI package
-/packages/trafic-cli/ @titouanmathis
-
-# Agent package
-/packages/trafic-agent/ @titouanmathis
+# Package: CLI and agent
+/packages/ppreview/ @titouanmathis
 
 # CI and workflows
 /.github/ @titouanmathis

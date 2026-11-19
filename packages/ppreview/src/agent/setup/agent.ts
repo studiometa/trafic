@@ -1,0 +1,303 @@
+import { nodeIo, type SetupIo } from "./io.js";
+import { step, success, info } from "./steps.js";
+
+declare const __VERSION__: string;
+
+/** Node.js major version required by the agent */
+const NODE_MAJOR = 24;
+
+/** Proxies in front of the agent when --trusted-proxy-hops is not given */
+export const DEFAULT_TRUSTED_PROXY_HOPS = 1;
+
+/** NodeSource keyring path */
+const NODESOURCE_KEYRING = "/etc/apt/keyrings/nodesource.gpg";
+
+/**
+ * Add the NodeSource apt repository and GPG key.
+ * Idempotent: safe to call even if the repository is already configured.
+ *
+ * nodejs.org points at NodeSource for apt installs. The Ubuntu 24.04
+ * `nodejs` package is 18.x, far below what the agent needs.
+ */
+export function addNodeSourceAptRepo(io: SetupIo = nodeIo): void {
+  io.exec("install -m 0755 -d /etc/apt/keyrings", { silent: true });
+  // Download and dearmor as separate commands: piping curl into gpg into tee
+  // would report only tee's exit code and hide a failed key download, which
+  // then surfaces as a confusing GPG error on the next apt-get update
+  io.exec(
+    "curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /tmp/ppreview-nodesource.key",
+    { silent: true },
+  );
+  io.exec(
+    "gpg --batch --yes --dearmor -o /tmp/ppreview-nodesource.gpg /tmp/ppreview-nodesource.key",
+    { silent: true },
+  );
+  io.exec(`install -m 0644 /tmp/ppreview-nodesource.gpg ${NODESOURCE_KEYRING}`, {
+    silent: true,
+  });
+  io.exec("rm -f /tmp/ppreview-nodesource.key /tmp/ppreview-nodesource.gpg", {
+    silent: true,
+  });
+  io.exec(
+    `echo "deb [signed-by=${NODESOURCE_KEYRING}] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list > /dev/null`,
+    { silent: true },
+  );
+}
+
+/**
+ * Install Node.js from the NodeSource apt repository.
+ *
+ * apt keeps node and npm in /usr/bin — on root's PATH, so `which
+ * ppreview` resolves for the systemd unit. With hardening on,
+ * unattended-upgrades applies the minor and patch releases of the pinned
+ * major (its config lists the NodeSource site), which a version manager
+ * install never gets.
+ */
+export function installNode(io: SetupIo = nodeIo): void {
+  step("Install Node.js");
+
+  // Check if Node is already installed
+  if (io.commandExists("node")) {
+    const version = io.exec("node --version", { silent: true });
+    info(`Node.js already installed: ${version?.trim()}`);
+    return;
+  }
+
+  info("Adding NodeSource apt repository...");
+  addNodeSourceAptRepo(io);
+
+  info("Installing Node.js...");
+  io.exec("apt-get update -qq", { silent: true });
+  io.exec(
+    "DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y nodejs",
+    { silent: true },
+  );
+
+  success(`Node.js ${NODE_MAJOR} installed from apt`);
+}
+
+/**
+ * Install the ppreview agent globally, at the version that runs this setup.
+ *
+ * `ppreview setup --agent-version` installs that version, then runs this
+ * setup: an install with no version would replace it by the latest one.
+ */
+export function installAgent(io: SetupIo = nodeIo): void {
+  step("Install ppreview agent");
+
+  io.exec(`npm install -g ppreview@${__VERSION__}`);
+
+  success(`ppreview agent ${__VERSION__} installed`);
+}
+
+/**
+ * Create the agent configuration
+ */
+export function createAgentConfig(
+  options: {
+    tld: string;
+    trustedProxyHops?: number;
+    dnsProvider?: string;
+    dnsEnv?: Record<string, string>;
+  },
+  io: SetupIo = nodeIo,
+): void {
+  const {
+    tld,
+    trustedProxyHops = DEFAULT_TRUSTED_PROXY_HOPS,
+    dnsProvider,
+    dnsEnv = {},
+  } = options;
+  step("Create agent configuration");
+
+  // Create directories. The unit lists the state directory in
+  // ReadWritePaths, and systemd refuses to start it when it is missing. The
+  // ddev user cannot create the backup directory in /var/backups itself.
+  io.exec("mkdir -p /etc/ppreview");
+  io.exec("mkdir -p /var/lib/ppreview");
+  io.exec("chown ddev:ddev /var/lib/ppreview");
+  createBackupDir(io);
+
+  const configPath = "/etc/ppreview/config.toml";
+
+  const tlsSection = buildTlsSection(dnsProvider, dnsEnv);
+
+  if (io.fileExists(configPath)) {
+    info("Configuration already exists at /etc/ppreview/config.toml — skipping");
+    info("Edit this file to configure authentication");
+
+    if (tlsSection) {
+      // Never rewrite an existing config — print what to add instead, or the
+      // DNS credentials would silently go nowhere. The values are masked:
+      // this output goes to a terminal and to the CI job log of whoever ran
+      // `ppreview setup`, and a provider token does not belong in either.
+      info("Add this to /etc/ppreview/config.toml, then run `ppreview agent upgrade`:");
+      for (const line of buildTlsSection(dnsProvider, dnsEnv, true).trim().split("\n")) {
+        info(`  ${line}`);
+      }
+      info("Replace each REPLACE_ME with the value you passed to --dns-env.");
+    }
+
+    return;
+  }
+
+  const config = `# ppreview agent configuration
+# Generated by ppreview setup
+
+# Required: TLD for DDEV projects
+tld = "${tld}"
+
+# Agent HTTP server port
+port = 9876
+
+# Database and paths
+db_path = "/var/lib/ppreview/db.sqlite"
+project_list_path = "/home/ddev/.ddev/project_list.yaml"
+projects_dir = "/home/ddev/www"
+
+# Scale-to-zero settings
+idle_timeout = "4h"
+idle_check_interval = "5m"
+
+# Authentication
+[auth]
+default_policy = "basic"
+allowed_ips = []
+tokens = []
+basic_auth = []
+rules = []
+
+# Proxies in front of the agent, counted so the client address can be read
+# from X-Forwarded-For. 1 is ddev-router/Traefik alone. Raise it by one for
+# every extra proxy — a CDN or load balancer ahead of Traefik makes it 2.
+# Too low and allowed_ips matches a proxy instead of the client; too high and
+# it can be spoofed by a client-supplied header.
+trusted_proxy_hops = ${trustedProxyHops}
+${tlsSection}`;
+
+  io.writeFile(configPath, config);
+  io.exec("chmod 640 /etc/ppreview/config.toml");
+  io.exec("chown root:ddev /etc/ppreview/config.toml");
+
+  success("Configuration created at /etc/ppreview/config.toml");
+  info("Edit this file to configure authentication");
+}
+
+/**
+ * Build the [tls] section of the generated config.
+ *
+ * Empty without a DNS provider: per-host certificates stay the default, and
+ * an empty section would only invite a half-filled one.
+ */
+function buildTlsSection(
+  dnsProvider: string | undefined,
+  dnsEnv: Record<string, string>,
+  redact = false,
+): string {
+  if (!dnsProvider) {
+    return "";
+  }
+
+  const env = Object.entries(dnsEnv)
+    .map(([key, value]) => `${key} = "${redact ? "REPLACE_ME" : escapeTomlString(value)}"`)
+    .join("\n");
+
+  return `
+# Wildcard certificate (DNS-01). One *.<tld> certificate replaces the
+# per-hostname ones, so previews stop consuming the Let's Encrypt quota.
+[tls]
+dns_provider = "${escapeTomlString(dnsProvider)}"
+# ca_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+# Credentials the lego provider reads. Passed to the ddev-router container.
+[tls.dns_env]
+${env}
+`;
+}
+
+/** Escape a value for a basic (double-quoted) TOML string. */
+function escapeTomlString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+}
+
+/** Default backup directory, `[backup] dir` in the agent config. */
+export const BACKUP_DIR = "/var/backups/ppreview";
+
+/**
+ * Create the backup directory, writable by the ddev user only: it holds
+ * database dumps.
+ */
+export function createBackupDir(io: SetupIo = nodeIo): void {
+  io.exec(`mkdir -p ${BACKUP_DIR}`);
+  io.exec(`chown ddev:ddev ${BACKUP_DIR}`);
+  io.exec(`chmod 700 ${BACKUP_DIR}`);
+}
+
+/** The systemd unit of the agent service. */
+export const AGENT_UNIT = "/etc/systemd/system/ppreview-agent.service";
+
+/**
+ * Create systemd service for the agent
+ */
+export function createSystemdService(io: SetupIo = nodeIo): void {
+  step("Create systemd service");
+
+  // Find the ppreview agent binary path
+  const binary = io.exec("which ppreview", { silent: true })?.trim() || "/usr/bin/ppreview";
+
+  const serviceContent = `[Unit]
+Description=ppreview Agent - DDEV preview environment manager
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=ddev
+Group=ddev
+ExecStart=${binary} agent start --config /etc/ppreview/config.toml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ppreview-agent
+
+# Environment
+Environment=NODE_ENV=production
+# Skip ddev-hostname /etc/hosts management — on a server, hostnames resolve
+# to the public IP (not localhost), which would trigger ddev-hostname on every
+# ddev start. DDEV_NONINTERACTIVE=true skips that entirely.
+Environment=DDEV_NONINTERACTIVE=true
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+# ddev start writes across its own home: the project directory
+# (.ddev/.webimageBuild), buildx state in .docker, mutagen data. Listing
+# individual paths is whack-a-mole across DDEV versions, so grant the home
+# and leave the rest of /home read-only. The backup sweep removes old
+# backups from ${BACKUP_DIR}; with "-", a missing backup directory does not
+# stop the service from starting.
+ReadWritePaths=/var/lib/ppreview /home/ddev -${BACKUP_DIR}
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+`;
+
+  io.writeFile(AGENT_UNIT, serviceContent);
+  io.exec(`chmod 644 ${AGENT_UNIT}`);
+
+  // Reload systemd and enable service
+  io.exec("systemctl daemon-reload");
+  io.exec("systemctl enable ppreview-agent");
+  io.exec("systemctl start ppreview-agent");
+
+  success("ppreview agent service started");
+  info("View logs: journalctl -u ppreview-agent -f");
+}

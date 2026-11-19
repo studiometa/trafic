@@ -1,0 +1,59 @@
+{
+  "name": "ppreview",
+  "version": "0.1.64",
+  "description": "DDEV preview environments on your own servers: deploy from CI, auth and scale-to-zero on the server",
+  "keywords": [
+    "ci",
+    "cli",
+    "ddev",
+    "deploy",
+    "preview",
+    "scale-to-zero",
+    "traefik"
+  ],
+  "license": "MIT",
+  "author": "ikko",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/weareikko/ppreview",
+    "directory": "packages/ppreview"
+  },
+  "bin": {
+    "ppreview": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build && tsc --emitDeclarationOnly",
+    "test": "vitest run --exclude 'test/integration/**'",
+    "test:watch": "vitest --exclude 'test/integration/**'",
+    "test:ci": "vitest run --coverage --exclude 'test/integration/**'",
+    "test:integration": "node test/integration/run.js",
+    "test:integration:ci": "node test/integration/run.js --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "smol-toml": "^1.8.0"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
