@@ -1,4 +1,4 @@
-# Plan : Rendre Trafic open-source
+# Plan : Rendre ppreview open-source
 
 > Historical plan (February 2026). It does not describe the current code. See the package READMEs.
 
@@ -41,41 +41,41 @@ Le cœur de l'agent est **déjà générique**. Il repose sur DDEV, Traefik et S
 
 **Conclusion** : Le code est déjà à 95% générique. Les 5% restants sont du hardcoding de TLD et des fichiers d'infra.
 
-## Vision : Trafic comme outil open-source
+## Vision : ppreview comme outil open-source
 
 ### Positionnement
 
-**Trafic** : Un outil CLI pour gérer des preview environments DDEV sur n'importe quel serveur Linux.
+**ppreview** : Un outil CLI pour gérer des preview environments DDEV sur n'importe quel serveur Linux.
 
 ```
-npx trafic setup     # Configure un serveur (Docker, DDEV, Traefik, agent)
-npx trafic deploy    # Déploie un projet depuis la CI
-npx trafic destroy   # Supprime un environnement preview
+npx ppreview setup     # Configure un serveur (Docker, DDEV, Traefik, agent)
+npx ppreview deploy    # Déploie un projet depuis la CI
+npx ppreview destroy   # Supprime un environnement preview
 ```
 
 ### Comparable à
 
-| Outil       | Cible                 | Infra         | Trafic se compare par...                                      |
+| Outil       | Cible                 | Infra         | ppreview se compare par...                                      |
 | ----------- | --------------------- | ------------- | ------------------------------------------------------------- |
 | **Coolify** | Apps Docker           | VPS self-host | Plus léger, spécialisé PHP/WordPress via DDEV                 |
 | **Kamal**   | Apps Docker           | VPS, cloud    | Même philosophie CLI, mais pour DDEV au lieu de Docker direct |
 | **uncloud** | Containers            | EU servers    | Similaire mais vendor-neutral, DDEV-native                    |
 | **Vercel**  | JS/Static             | Cloud         | Preview environments, mais pour PHP/WordPress                 |
 | **SST**     | Serverless AWS        | AWS           | Pas le même monde                                             |
-| **DDEV**    | Environnements de dev | Local         | Trafic = DDEV en production/staging sur un VPS                |
+| **DDEV**    | Environnements de dev | Local         | ppreview = DDEV en production/staging sur un VPS                |
 
 ### Pitch
 
 > **DDEV preview environments on any Linux server.**
 >
-> Trafic turns a VPS into a preview server for your web projects. It handles authentication, scale-to-zero, auto-start, and deployments from CI — all powered by DDEV and Traefik.
+> ppreview turns a VPS into a preview server for your web projects. It handles authentication, scale-to-zero, auto-start, and deployments from CI — all powered by DDEV and Traefik.
 >
 > ```bash
 > # Setup a server
-> npx trafic setup --tld=previews.example.com
+> npx ppreview setup --tld=previews.example.com
 >
 > # Deploy from CI
-> npx trafic deploy --host=server.example.com --name=my-app --branch=main
+> npx ppreview deploy --host=server.example.com --name=my-app --branch=main
 >
 > # Your app is live at https://my-app.previews.example.com
 > ```
@@ -144,9 +144,9 @@ renovate.json               # Dependency management
 ## Structure monorepo
 
 ```
-trafic/
+ppreview/
 ├── packages/
-│   ├── trafic-agent/                  # @studiometa/trafic-agent
+│   ├── ppreview-agent/                  # ppreview
 │   │   ├── routes/                    # Routes Nitro (auth, errors, status)
 │   │   ├── plugins/                   # Plugins Nitro (config, watcher, db)
 │   │   ├── tasks/                     # Tasks planifiées (stop-idle)
@@ -158,7 +158,7 @@ trafic/
 │   │   ├── vite.config.ts            # Pour le build du CLI setup
 │   │   ├── tsconfig.json
 │   │   └── package.json
-│   └── trafic-cli/                    # @studiometa/trafic-cli
+│   └── ppreview-cli/                    # ppreview
 │       ├── src/
 │       │   ├── cli.ts                 # Entry point CLI
 │       │   ├── index.ts               # Library entry point
@@ -196,18 +196,18 @@ trafic/
 
 | Package                    | Description                          | Utilisé par              |
 | -------------------------- | ------------------------------------ | ------------------------ |
-| `@studiometa/trafic-cli`   | CLI de déploiement (deploy, destroy) | Runner CI                |
-| `@studiometa/trafic-agent` | Agent serveur (auth, scale-to-zero)  | Serveur DDEV (via setup) |
+| `ppreview`   | CLI de déploiement (deploy, destroy) | Runner CI                |
+| `ppreview` | Agent serveur (auth, scale-to-zero)  | Serveur DDEV (via setup) |
 
-Le CLI `trafic-cli` est l'outil principal utilisé dans les pipelines CI. Il est installé via `npx @studiometa/trafic-cli deploy ...`.
+Le CLI `ppreview-cli` est l'outil principal utilisé dans les pipelines CI. Il est installé via `npx ppreview deploy ...`.
 
-L'agent `trafic-agent` est installé sur le serveur par `trafic setup`. Il tourne en tant que service systemd.
+L'agent `ppreview agent` est installé sur le serveur par `ppreview setup`. Il tourne en tant que service systemd.
 
 ### Root package.json
 
 ```json
 {
-  "name": "@studiometa/trafic",
+  "name": "ppreview",
   "version": "1.0.0",
   "private": true,
   "description": "DDEV preview environments on any Linux server",
@@ -216,7 +216,7 @@ L'agent `trafic-agent` est installé sur le serveur par `trafic setup`. Il tourn
   "author": "Studio Meta",
   "repository": {
     "type": "git",
-    "url": "https://github.com/studiometa/trafic"
+    "url": "https://github.com/weareikko/ppreview"
   },
   "workspaces": ["packages/*"],
   "type": "module",
@@ -257,11 +257,11 @@ L'agent `trafic-agent` est installé sur le serveur par `trafic setup`. Il tourn
 }
 ```
 
-### CLI package.json (`packages/trafic-cli/package.json`)
+### CLI package.json (`packages/cli/package.json`)
 
 ```json
 {
-  "name": "@studiometa/trafic-cli",
+  "name": "ppreview",
   "version": "1.0.0",
   "description": "CLI to deploy projects to DDEV servers - preview environments from CI",
   "keywords": ["ci", "cli", "ddev", "deploy", "preview"],
@@ -269,11 +269,11 @@ L'agent `trafic-agent` est installé sur le serveur par `trafic setup`. Il tourn
   "author": "Studio Meta",
   "repository": {
     "type": "git",
-    "url": "https://github.com/studiometa/trafic",
-    "directory": "packages/trafic-cli"
+    "url": "https://github.com/weareikko/ppreview",
+    "directory": "packages/cli"
   },
   "bin": {
-    "trafic": "./dist/cli.js"
+    "ppreview": "./dist/cli.js"
   },
   "files": ["dist"],
   "type": "module",
@@ -334,7 +334,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
-      - run: npm run build --workspace=@studiometa/trafic-agent
+      - run: npm run build --workspace=ppreview
       - run: npm run typecheck
 
   test:
@@ -347,13 +347,13 @@ jobs:
           node-version: '24'
           cache: 'npm'
       - run: npm ci
-      - run: npm run build --workspace=@studiometa/trafic-agent
+      - run: npm run build --workspace=ppreview
       - run: npm run test:ci
       - uses: codecov/codecov-action@v5
         if: always()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./packages/trafic-cli/coverage/lcov.info,./packages/trafic-agent/coverage/lcov.info
+          files: ./packages/cli/coverage/lcov.info,./packages/agent/coverage/lcov.info
           fail_ci_if_error: false
 ```
 
@@ -409,14 +409,14 @@ jobs:
           fi
           echo "NPM_TAG=$NPM_TAG" >> $GITHUB_ENV
           echo "IS_PRERELEASE=$IS_PRERELEASE" >> $GITHUB_ENV
-      - name: Publish @studiometa/trafic-cli
+      - name: Publish ppreview
         run: npm publish --provenance --access public --tag ${{ env.NPM_TAG }}
-        working-directory: packages/trafic-cli
+        working-directory: packages/cli
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Publish @studiometa/trafic-agent
+      - name: Publish ppreview
         run: npm publish --provenance --access public --tag ${{ env.NPM_TAG }}
-        working-directory: packages/trafic-agent
+        working-directory: packages/agent
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: ncipollo/release-action@v1
@@ -448,14 +448,14 @@ tld = "previews.example.com"
 
 ### 2. Restructurer en monorepo npm
 
-Déplacer `agent/` vers `packages/trafic-agent/`, créer `packages/trafic-cli/`.
+Déplacer `agent/` vers `packages/agent/`, créer `packages/cli/`.
 
 ### 3. Migrer le build vers Vite
 
 L'agent utilise actuellement Nitro build (`nitro build`). Le CLI deploy sera buildé avec Vite (lib mode) comme dans `productive-tools` :
 
 ```typescript
-// packages/trafic-cli/vite.config.ts
+// packages/cli/vite.config.ts
 import { readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { defineConfig } from 'vite';
@@ -513,16 +513,16 @@ Fournir des exemples pour :
 
 ## Nom et branding
 
-### Garder "Trafic" ?
+### Garder "ppreview" ?
 
 ✅ **Oui** :
 
 - Court, mémorable
-- Fait référence au trafic web / routing
-- Pas de conflit npm évident (`trafic` est libre)
+- Fait référence au ppreview web / routing
+- Pas de conflit npm évident (`ppreview` est libre)
 - Référence au film de Jacques Tati 🚗 (français, c'est bien)
 
-**Verdict** : Garder `trafic`. Scope `@studiometa/` pour les packages npm.
+**Verdict** : Garder `ppreview`. Scope `@studiometa/` pour les packages npm.
 
 ## Plan de transition
 
@@ -540,26 +540,26 @@ Utiliser Vite lib mode pour le build, pas de deps runtime (juste `node:child_pro
 
 ### Phase 3 : Restructurer en monorepo
 
-1. `packages/trafic-agent/` — agent Nitro
-2. `packages/trafic-cli/` — CLI CI (deploy, destroy)
+1. `packages/agent/` — agent Nitro
+2. `packages/cli/` — CLI CI (deploy, destroy)
 3. Root workspace avec scripts version sync
 4. GitHub Actions CI/CD
 
 ### Phase 4 : Publication open-source
 
-1. Créer le repo GitHub `github.com/studiometa/trafic`
-2. Publier `@studiometa/trafic-cli` et `@studiometa/trafic-agent` sur npm
+1. Créer le repo GitHub `github.com/weareikko/ppreview`
+2. Publier `ppreview` et `ppreview` sur npm
 3. Documentation : README + CLAUDE.md + CONTRIBUTING.md + examples/
 4. `LICENSE` MIT
 5. Renovate bot, Codecov, CODEOWNERS
 
 ### Phase 5 : Studio Meta utilise la version publique
 
-1. Les serveurs SM installent `@studiometa/trafic-agent` depuis npm
-2. `studiometa/gitlab-ci` utilise `npx @studiometa/trafic-cli deploy` dans ses configs
-3. Le repo privé `tools/trafic` devient un wrapper avec les configs SM (`.gitlab-ci.yml`, hosts, etc.)
+1. Les serveurs SM installent `ppreview` depuis npm
+2. `studiometa/gitlab-ci` utilise `npx ppreview deploy` dans ses configs
+3. Le repo privé `tools/ppreview` devient un wrapper avec les configs SM (`.gitlab-ci.yml`, hosts, etc.)
 
-## Ce qui rend Trafic unique
+## Ce qui rend ppreview unique
 
 Aucun outil n'offre cette combinaison :
 

@@ -1,0 +1,580 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  hardenSsh,
+  removeSshKexAlgorithms,
+  resolveAllowedUsers,
+  configureFirewall,
+  configureFail2ban,
+  configureUnattendedUpgrades,
+  addDockerOriginToUnattendedUpgrades,
+  rewriteUnattendedUpgradesConfig,
+  buildUnattendedUpgradesConfig,
+  DOCKER_ORIGIN_LINE,
+  NODESOURCE_ORIGIN_LINE,
+  UNATTENDED_UPGRADES_CONFIG,
+  UNATTENDED_UPGRADES_HEADER,
+  configureSystemLimits,
+  configureFilePermissions,
+  hardenServer,
+} from "../../src/agent/setup/hardening.js";
+import { createFakeIo } from "./helpers/fake-io.js";
+
+// The setup steps log their progress
+beforeEach(() => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+});
+
+const SSHD_CONFIG = "/etc/ssh/sshd_config.d/ppreview.conf";
+
+describe("resolveAllowedUsers", () => {
+  it("adds the sudo user so hardening cannot lock them out", () => {
+    expect(resolveAllowedUsers(["ddev"], "ubuntu")).toEqual(["ddev", "ubuntu"]);
+  });
+
+  it("does not duplicate a sudo user already listed", () => {
+    expect(resolveAllowedUsers(["ddev", "ubuntu"], "ubuntu")).toEqual([
+      "ddev",
+      "ubuntu",
+    ]);
+  });
+
+  it("ignores root, which is always allowed", () => {
+    expect(resolveAllowedUsers(["ddev"], "root")).toEqual(["ddev"]);
+  });
+
+  it("handles a direct root login with no sudo user", () => {
+    expect(resolveAllowedUsers(["ddev"], undefined)).toEqual(["ddev"]);
+  });
+
+  it("trims and drops empty entries", () => {
+    expect(resolveAllowedUsers([" ddev ", "", " ci "], "ubuntu")).toEqual([
+      "ddev",
+      "ci",
+      "ubuntu",
+    ]);
+  });
+});
+
+describe("hardenSsh", () => {
+  it("writes AllowUsers with root and the given users", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev");
+  });
+
+  it("includes the sudo user in AllowUsers", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    // Without this the invoking user is refused on their next connection,
+    // and reloading sshd keeps the current session alive so it looks fine
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev ubuntu");
+  });
+
+  it("does not list root twice when invoked through sudo as root", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "root" } });
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev\n");
+  });
+
+  it("disables password authentication and keeps root on keys only", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).toContain("PasswordAuthentication no");
+    expect(config).toContain("PermitRootLogin prohibit-password");
+    expect(config).toContain("PubkeyAuthentication yes");
+  });
+
+  it("leaves key exchange on the OpenSSH defaults", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    // A KexAlgorithms line with no +/-/^ prefix replaces OpenSSH's default
+    // list, dropping the post-quantum hybrids a current client expects
+    expect(config).not.toMatch(/^KexAlgorithms/m);
+    expect(config).toContain("Ciphers chacha20-poly1305@openssh.com");
+    expect(config).toContain("MACs hmac-sha2-512-etm@openssh.com");
+  });
+
+  it("reverts the drop-in when sshd rejects the config", () => {
+    const io = createFakeIo({ output: { "sshd -t": "error" } });
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    expect(io.ran(`rm ${SSHD_CONFIG}`)).toBe(true);
+    expect(io.ran("systemctl reload")).toBe(false);
+  });
+
+  it("reloads sshd once the config passes validation", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    expect(io.ran("systemctl reload ssh")).toBe(true);
+  });
+});
+
+describe("removeSshKexAlgorithms", () => {
+  const withKex = `# ppreview SSH hardening
+AllowUsers root ddev
+
+# Use strong algorithms only
+KexAlgorithms curve25519-sha256@libssh.org,diffie-hellman-group-exchange-sha256
+Ciphers chacha20-poly1305@openssh.com
+MACs hmac-sha2-512-etm@openssh.com
+`;
+
+  it("drops the line and reloads sshd", () => {
+    const io = createFakeIo({ files: { [SSHD_CONFIG]: withKex } });
+
+    expect(removeSshKexAlgorithms(io)).toBe(true);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).not.toMatch(/^KexAlgorithms/m);
+    // Only that line goes — the rest of the drop-in is untouched
+    expect(config).toContain("AllowUsers root ddev");
+    expect(config).toContain("Ciphers chacha20-poly1305@openssh.com");
+    expect(config).toContain("MACs hmac-sha2-512-etm@openssh.com");
+    expect(io.ran("systemctl reload ssh")).toBe(true);
+  });
+
+  it("does nothing when the line is already gone", () => {
+    const io = createFakeIo({
+      files: {
+        [SSHD_CONFIG]: "AllowUsers root ddev\nCiphers aes256-gcm@openssh.com\n",
+      },
+    });
+
+    expect(removeSshKexAlgorithms(io)).toBe(false);
+
+    expect(io.written(SSHD_CONFIG)).toBe("");
+    expect(io.ran("systemctl reload")).toBe(false);
+  });
+
+  it("does nothing when the drop-in is missing", () => {
+    const io = createFakeIo();
+
+    expect(removeSshKexAlgorithms(io)).toBe(false);
+
+    expect(io.ran("systemctl reload")).toBe(false);
+  });
+
+  it("restores the file when sshd rejects the result", () => {
+    const io = createFakeIo({
+      files: { [SSHD_CONFIG]: withKex },
+      output: { "sshd -t": "error" },
+    });
+
+    expect(removeSshKexAlgorithms(io)).toBe(false);
+
+    expect(io.written(SSHD_CONFIG)).toBe(withKex);
+    expect(io.ran("systemctl reload")).toBe(false);
+  });
+});
+
+describe("configureFirewall", () => {
+  it("denies incoming traffic by default", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    expect(io.ran("ufw default deny incoming")).toBe(true);
+    expect(io.ran("ufw default allow outgoing")).toBe(true);
+  });
+
+  it("allows only SSH, HTTP and HTTPS from anywhere", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    const allows = io.commands.filter((c) => c.startsWith("ufw allow"));
+    expect(allows).toHaveLength(4);
+    expect(io.ran("ufw allow 22/tcp")).toBe(true);
+    expect(io.ran("ufw allow 80/tcp")).toBe(true);
+    expect(io.ran("ufw allow 443/tcp")).toBe(true);
+  });
+
+  it("exposes the agent port to Docker subnets only", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    // ddev-router reaches forward auth from a Docker bridge; the port must
+    // not be reachable from the internet
+    const agentRule = io.commands.find((c) => c.includes("9876"))!;
+    expect(agentRule).toContain("from 172.16.0.0/12");
+  });
+
+  it("installs ufw when it is missing", () => {
+    const io = createFakeIo();
+
+    configureFirewall(io);
+
+    expect(io.ran("apt-get install -y ufw")).toBe(true);
+  });
+
+  it("enables the firewall last", () => {
+    const io = createFakeIo({ present: ["ufw"] });
+
+    configureFirewall(io);
+
+    expect(io.commands.at(-1)).toContain("ufw --force enable");
+  });
+});
+
+describe("configureFail2ban", () => {
+  it("enables the sshd jail", () => {
+    const io = createFakeIo({ present: ["fail2ban-client"] });
+
+    configureFail2ban(io);
+
+    const jail = io.written("/etc/fail2ban/jail.local");
+    expect(jail).toContain("[sshd]");
+    expect(jail).toContain("enabled = true");
+  });
+
+  it("bans an SSH brute force for longer than the default", () => {
+    const io = createFakeIo({ present: ["fail2ban-client"] });
+
+    configureFail2ban(io);
+
+    const jail = io.written("/etc/fail2ban/jail.local");
+    expect(jail).toContain("maxretry = 3");
+    expect(jail).toContain("bantime = 7200");
+  });
+
+  it("installs fail2ban when it is missing, then restarts it", () => {
+    const io = createFakeIo();
+
+    configureFail2ban(io);
+
+    expect(io.ran("apt-get install -y fail2ban")).toBe(true);
+    expect(io.ran("systemctl restart fail2ban")).toBe(true);
+  });
+});
+
+/** The entries of an apt.conf list block, without their quotes. */
+function listEntries(config: string, key: string): string[] {
+  const block = new RegExp(`^${key} \\{\\n([\\s\\S]*?)^\\};`, "m").exec(config);
+
+  if (!block) {
+    return [];
+  }
+
+  return [...block[1].matchAll(/^\s*"([^"]*)";/gm)].map((match) => match[1]);
+}
+
+/**
+ * Whether unattended-upgrades can read an Allowed-Origins entry.
+ *
+ * The same rule as its get_allowed_origins_legacy(): split on an unescaped
+ * ":" when there is one, else on white space, into exactly two parts. Any
+ * other entry raises a ValueError, and the whole run stops.
+ */
+function isLegacyOrigin(entry: string): boolean {
+  const parts = /(?<!\\):/.test(entry)
+    ? entry.split(/(?<!\\):/)
+    : entry.trim().split(/\s+/);
+
+  return parts.length === 2;
+}
+
+describe("buildUnattendedUpgradesConfig", () => {
+  const config = buildUnattendedUpgradesConfig();
+  const allowed = listEntries(config, "Unattended-Upgrade::Allowed-Origins");
+  const patterns = listEntries(config, "Unattended-Upgrade::Origins-Pattern");
+
+  it("starts with the ppreview header", () => {
+    expect(config.startsWith(UNATTENDED_UPGRADES_HEADER)).toBe(true);
+  });
+
+  it("puts only origin:archive pairs in Allowed-Origins", () => {
+    // A key=value entry here stops every run with "Unable to parse"
+    expect(allowed.length).toBeGreaterThan(0);
+
+    for (const entry of allowed) {
+      expect(isLegacyOrigin(entry), entry).toBe(true);
+    }
+  });
+
+  it("allows Ubuntu's release, security and updates pockets", () => {
+    expect(allowed).toContain("${distro_id}:${distro_codename}");
+    expect(allowed).toContain("${distro_id}:${distro_codename}-security");
+    expect(allowed).toContain("${distro_id}:${distro_codename}-updates");
+  });
+
+  it("matches Docker Engine and NodeSource with Origins-Pattern", () => {
+    expect(patterns).toEqual([
+      DOCKER_ORIGIN_LINE.slice(1, -1),
+      NODESOURCE_ORIGIN_LINE.slice(1, -1),
+    ]);
+    expect(patterns).toContain("origin=Docker,codename=${distro_codename}");
+    expect(patterns).toContain("site=deb.nodesource.com");
+  });
+
+  it("leaves DDEV out, so a major cannot land on running previews", () => {
+    // DDEV is updated by `ppreview agent upgrade` instead
+    expect(config).not.toMatch(/ddev\.com|origin=ddev|cloudsmith/i);
+  });
+});
+
+describe("isLegacyOrigin", () => {
+  it("rejects the Docker pattern that stopped every run", () => {
+    expect(isLegacyOrigin("origin=Docker,codename=${distro_codename}")).toBe(false);
+  });
+
+  it("accepts an origin:archive pair and a space-separated pair", () => {
+    expect(isLegacyOrigin("${distro_id}:${distro_codename}-security")).toBe(true);
+    expect(isLegacyOrigin("Ubuntu noble")).toBe(true);
+  });
+
+  it("rejects an entry with two colons", () => {
+    expect(isLegacyOrigin("a:b:c")).toBe(false);
+  });
+});
+
+describe("configureUnattendedUpgrades", () => {
+  it("writes the built config", () => {
+    const io = createFakeIo();
+
+    configureUnattendedUpgrades(io);
+
+    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
+    expect(config).toBe(buildUnattendedUpgradesConfig());
+    expect(config).toContain('Unattended-Upgrade::Automatic-Reboot "false"');
+  });
+
+  it("turns on the periodic upgrade timer", () => {
+    const io = createFakeIo();
+
+    configureUnattendedUpgrades(io);
+
+    const periodic = io.written("/etc/apt/apt.conf.d/20auto-upgrades");
+    expect(periodic).toContain('APT::Periodic::Unattended-Upgrade "1"');
+    expect(io.ran("systemctl enable unattended-upgrades")).toBe(true);
+  });
+});
+
+describe("addDockerOriginToUnattendedUpgrades", () => {
+  const withoutDocker = `// ppreview: Automatic security updates
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}";
+    "\${distro_id}:\${distro_codename}-security";
+};
+`;
+
+  it("rewrites a config that predates the Docker origin", () => {
+    const io = createFakeIo({
+      files: { [UNATTENDED_UPGRADES_CONFIG]: withoutDocker },
+    });
+
+    expect(addDockerOriginToUnattendedUpgrades(io)).toBe(true);
+
+    const config = io.written(UNATTENDED_UPGRADES_CONFIG);
+    expect(config).toContain(DOCKER_ORIGIN_LINE);
+    expect(config).toContain("${distro_id}:${distro_codename}-security");
+  });
+
+  it("does nothing when the Docker origin is already there", () => {
+    const io = createFakeIo({
+      files: {
+        [UNATTENDED_UPGRADES_CONFIG]: `Unattended-Upgrade::Allowed-Origins {\n    ${DOCKER_ORIGIN_LINE};\n};\n`,
+      },
+    });
+
+    expect(addDockerOriginToUnattendedUpgrades(io)).toBe(false);
+
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).toBe("");
+  });
+
+  it("does nothing when the config is missing", () => {
+    // A server set up without hardening owns no such file
+    const io = createFakeIo();
+
+    expect(addDockerOriginToUnattendedUpgrades(io)).toBe(false);
+
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).toBe("");
+  });
+});
+
+describe("configureSystemLimits", () => {
+  it("raises the file descriptor limit for the ddev user", () => {
+    const io = createFakeIo();
+
+    configureSystemLimits(io);
+
+    const limits = io.written("/etc/security/limits.d/ppreview.conf");
+    expect(limits).toContain("ddev soft nofile 65536");
+    expect(limits).toContain("ddev hard nofile 65536");
+  });
+});
+
+describe("configureFilePermissions", () => {
+  it("keeps the state directory private to the ddev user", () => {
+    const io = createFakeIo();
+
+    configureFilePermissions(io);
+
+    expect(io.ran("chmod 700 /var/lib/ppreview")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/lib/ppreview")).toBe(true);
+  });
+
+  it("makes the config readable by the agent but not the world", () => {
+    const io = createFakeIo({ files: { "/etc/ppreview/config.toml": "" } });
+
+    configureFilePermissions(io);
+
+    // The config holds auth tokens and basic auth credentials
+    expect(io.ran("chmod 640 /etc/ppreview/config.toml")).toBe(true);
+    expect(io.ran("chown root:ddev /etc/ppreview/config.toml")).toBe(true);
+  });
+
+  it("skips the config permissions when no config exists yet", () => {
+    const io = createFakeIo();
+
+    configureFilePermissions(io);
+
+    expect(io.ran("chmod 640 /etc/ppreview/config.toml")).toBe(false);
+  });
+});
+
+describe("hardenServer", () => {
+  it("runs every hardening step with the injected io", () => {
+    const io = createFakeIo({ present: ["ufw", "fail2ban-client"] });
+
+    hardenServer({ sshUsers: ["ddev"] }, io);
+
+    expect(io.written(SSHD_CONFIG)).not.toBe("");
+    expect(io.written("/etc/fail2ban/jail.local")).not.toBe("");
+    expect(io.written("/etc/security/limits.d/ppreview.conf")).not.toBe("");
+    expect(io.ran("ufw --force enable")).toBe(true);
+    expect(io.ran("systemctl enable unattended-upgrades")).toBe(true);
+  });
+
+  it("passes the SSH users through to the sshd config", () => {
+    const io = createFakeIo({ present: ["ufw", "fail2ban-client"] });
+
+    hardenServer({ sshUsers: ["ddev", "deploy"] }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("AllowUsers root ddev deploy");
+  });
+});
+
+describe("hardenSsh --no-root-ssh", () => {
+  it("disables root login and drops it from AllowUsers", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"], noRootSsh: true }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).toContain("PermitRootLogin no");
+    expect(config).toContain("AllowUsers ddev ubuntu");
+    expect(config).not.toContain("PermitRootLogin prohibit-password");
+  });
+
+  it("keeps root by default", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"] }, io);
+
+    const config = io.written(SSHD_CONFIG);
+    expect(config).toContain("PermitRootLogin prohibit-password");
+    expect(config).toContain("AllowUsers root ddev ubuntu");
+  });
+
+  it("still keeps the sudo user, so hardening cannot lock them out", () => {
+    const io = createFakeIo({ env: { SUDO_USER: "ubuntu" } });
+
+    hardenSsh({ allowedUsers: ["ddev"], noRootSsh: true }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("ubuntu");
+  });
+
+  it("warns when there is no sudo user to fall back on", () => {
+    const io = createFakeIo();
+
+    hardenSsh({ allowedUsers: ["ddev"], noRootSsh: true }, io);
+
+    // Running straight as root leaves only ddev, which may have no key
+    const warnings = vi.mocked(console.log).mock.calls.map((c) => String(c[0]));
+    expect(warnings.some((w) => w.includes("rescue mode"))).toBe(true);
+  });
+
+  it("refuses to leave nobody able to log in", () => {
+    const io = createFakeIo();
+
+    expect(() =>
+      hardenSsh({ allowedUsers: [], noRootSsh: true }, io),
+    ).toThrow(/nobody could log in/);
+  });
+
+  it("passes the option through hardenServer", () => {
+    const io = createFakeIo({
+      present: ["ufw", "fail2ban-client"],
+      env: { SUDO_USER: "ubuntu" },
+    });
+
+    hardenServer({ sshUsers: ["ddev"], noRootSsh: true }, io);
+
+    expect(io.written(SSHD_CONFIG)).toContain("PermitRootLogin no");
+  });
+});
+
+describe("rewriteUnattendedUpgradesConfig", () => {
+  // What setup and migration 0014 wrote from 0.1.43 to 0.1.52
+  const broken = `${UNATTENDED_UPGRADES_HEADER}
+Unattended-Upgrade::Allowed-Origins {
+    "\${distro_id}:\${distro_codename}";
+    "\${distro_id}:\${distro_codename}-security";
+    ${DOCKER_ORIGIN_LINE};
+};
+`;
+
+  it("rewrites the config that puts Docker in Allowed-Origins", () => {
+    const io = createFakeIo({ files: { [UNATTENDED_UPGRADES_CONFIG]: broken } });
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(true);
+
+    expect(io.written(UNATTENDED_UPGRADES_CONFIG)).toBe(buildUnattendedUpgradesConfig());
+  });
+
+  it("does nothing when the config is up to date", () => {
+    const io = createFakeIo({
+      files: { [UNATTENDED_UPGRADES_CONFIG]: buildUnattendedUpgradesConfig() },
+    });
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(false);
+
+    expect(io.writes.has(UNATTENDED_UPGRADES_CONFIG)).toBe(false);
+  });
+
+  it("leaves a config that ppreview did not write alone", () => {
+    // The file the unattended-upgrades package ships, or one edited by hand
+    const io = createFakeIo({
+      files: { [UNATTENDED_UPGRADES_CONFIG]: "// Automatically upgrade packages from these origins\n" },
+    });
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(false);
+
+    expect(io.writes.has(UNATTENDED_UPGRADES_CONFIG)).toBe(false);
+  });
+
+  it("does nothing when the config is missing", () => {
+    // A server set up without hardening owns no such file
+    const io = createFakeIo();
+
+    expect(rewriteUnattendedUpgradesConfig(io)).toBe(false);
+
+    expect(io.writes.has(UNATTENDED_UPGRADES_CONFIG)).toBe(false);
+  });
+});

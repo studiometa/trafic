@@ -1,4 +1,4 @@
-# GitLab CI — Deploy to DDEV server with trafic
+# GitLab CI — Deploy to DDEV server with ppreview
 #
 # Required CI/CD variables:
 #   SSH_PRIVATE_KEY (file) — SSH key with access to the server
@@ -41,7 +41,7 @@ deploy_preprod:
     - chmod 600 "$SSH_PRIVATE_KEY"
   script:
     - >-
-      npx @studiometa/trafic-cli deploy
+      npx ppreview deploy
       --host $SSH_HOST
       --name $CI_PROJECT_PATH_SLUG
       --ssh-options="-i $SSH_PRIVATE_KEY -o IdentitiesOnly=yes"
@@ -61,7 +61,7 @@ deploy_preview:
     - chmod 600 "$SSH_PRIVATE_KEY"
   script:
     - >-
-      npx @studiometa/trafic-cli deploy
+      npx ppreview deploy
       --host $SSH_HOST
       --name $CI_PROJECT_PATH_SLUG
       --preview $CI_MERGE_REQUEST_IID
@@ -84,7 +84,7 @@ destroy_preview:
   # the preview for 2 days
   script:
     - >-
-      npx @studiometa/trafic-cli destroy
+      npx ppreview destroy
       --host $SSH_HOST
       --name $CI_PROJECT_PATH_SLUG
       --preview $CI_MERGE_REQUEST_IID

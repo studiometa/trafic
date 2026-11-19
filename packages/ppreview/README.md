@@ -1,0 +1,237 @@
+# ppreview
+
+DDEV preview environments on your own servers. One package holds the CLI that deploys from CI (`ppreview setup|deploy|destroy`) and the server agent (`ppreview agent <command>`, see [docs/agent.md](https://github.com/weareikko/ppreview/blob/main/docs/agent.md)).
+
+Part of [ppreview](https://github.com/weareikko/ppreview). ppreview is pronounced "preview": the first p is silent.
+
+## Installation
+
+```bash
+npm install -g ppreview
+# or use directly with npx
+npx ppreview deploy ...
+```
+
+## Commands
+
+### `ppreview setup`
+
+Setup a new server over SSH. Run it from any machine that can reach the server with SSH — the command bootstraps Node.js, installs `ppreview` on the server, then runs `ppreview agent setup` there.
+
+```bash
+ppreview setup \
+  --host server.example.com \
+  --tld previews.example.com \
+  --email admin@example.com
+```
+
+With a DNS provider token, one wildcard certificate replaces the per-hostname ones:
+
+```bash
+ppreview setup \
+  --host server.example.com \
+  --tld previews.example.com \
+  --email admin@example.com \
+  --dns-provider cloudflare \
+  --dns-env CF_DNS_API_TOKEN=...
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | SSH host (required) | - |
+| `--tld` | TLD for DDEV projects (required) | - |
+| `--email` | Email for Let's Encrypt certificates | - |
+| `--dns-provider` | DNS-01 provider name from the Traefik/lego list, e.g. `cloudflare`. Asks for one wildcard `*.<tld>` certificate instead of one per preview hostname, which is what avoids the Let's Encrypt per-domain quota. Requires `--email`. See [TLS](../../docs/agent.md#tls) | - |
+| `--dns-env` | Credential for that provider as `KEY=VALUE`, repeatable — e.g. `--dns-env CF_DNS_API_TOKEN=...`. Written to the agent config and passed to the router container | - |
+| `--user` | SSH user | `root` |
+| `--port` | SSH port | `22` |
+| `--agent-version` | Agent version to install. `ppreview agent setup` keeps this version | `latest` |
+| `--ssh-users` | SSH users to allow after hardening, comma-separated. The `--user` value is always added | `ddev` |
+| `--trusted-proxy-hops` | Proxies in front of the agent — `2` behind a CDN. Fresh installs only | `1` |
+| `--no-hardening` | Skip server hardening | `false` |
+| `--no-root-ssh` | Disable root SSH login. Refused when connecting as `root` | `false` |
+| `--no-docker` | Skip Docker installation | `false` |
+| `--no-ddev` | Skip DDEV installation | `false` |
+| `--dry-run` | Print the remote commands without running them | `false` |
+| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"`. A quoted value with spaces, such as `-o ProxyCommand="ssh -i key -W %h:%p bastion"` for a jump host that needs its own `-i`, reaches ssh as one argument with the quotes stripped | - |
+
+**Requirements:**
+
+- Ubuntu 24.04 LTS on the target server (26.04 also verified)
+- SSH access as `root`, or as a user with **passwordless** sudo — SSH runs in batch mode, so a password prompt cannot be answered
+- With `--no-root-ssh`, connect as a sudo user: root is dropped from `AllowUsers` and `PermitRootLogin` becomes `no`, leaving the provider's rescue mode as the only recovery path
+- Wildcard DNS (`*.previews.example.com` → server IP)
+
+**Recommended:** a firewall in front of the server, as an extra layer. `setup` closes every port Docker publishes that has no forward auth (add-on ports such as Elasticsearch) itself with `DOCKER-USER` rules; 80, 443 and DDEV's tool ports (Mailpit, xhgui) stay open, behind forward auth — UFW cannot, because Docker's rules run before its chains — but a network-level firewall drops the packets before they reach the host at all. On OVH dedicated servers that is the Network Firewall in the control panel; it is stateless, so `permit tcp established` is required or outbound return traffic breaks, and it is IPv4-only. Note it does **not** filter traffic originating inside the same provider: measured on OVH, a host inside OVH still reached a denied port. `setup` does not configure it, since it can neither create nor verify it. See [Network exposure](../../docs/agent.md#network-exposure).
+
+The command is safe to run again: each step is skipped when the server is already in the target state.
+
+### `ppreview deploy`
+
+Deploy a project to a DDEV server. The first step cancels a removal of the project scheduled with `ppreview destroy --delay`, so the deploy fails when `ppreview` is not on the `PATH` of the SSH user.
+
+Upgrade the agent on the server before this CLI version, and connect as the `ddev` user (the default `--user`): the agent reads `/etc/ppreview/config.toml` and writes to `/var/lib/ppreview`. An older agent does not know `ppreview agent destroy --cancel`, and `ppreview agent destroy` refuses to run as root.
+
+```bash
+ppreview deploy \
+  --host server.example.com \
+  --name my-project \
+  --sync "dist/" \
+  --script "composer install --no-dev"
+```
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | SSH host (required) | - |
+| `--name` | Project name (required) | - |
+| `--user` | SSH user | `ddev` |
+| `--port` | SSH port | `22` |
+| `--sync` | Comma-separated local paths to sync. Directories and files both work (nothing is synced without it) | - |
+| `--script` | Post-sync script to run in DDEV | - |
+| `--env` | Environment for `--script`, repeatable. `KEY=VALUE`, or bare `KEY` to take the runner's value | - |
+| `--before-script` | Script to run before deploy (on server, outside the container) | - |
+| `--after-script` | Script to run after deploy (on server, outside the container) | - |
+| `--create-script` | Script to run only on the deploy that creates the project (on server) | - |
+| `--timeout` | Timeout of each remote command and of the rsync of each `--sync` path, e.g. `10m`, `90s`, `1h` | `10m` |
+| `--projects-dir` | Projects directory on the server. Must match `projects_dir` in the agent config | `~/www` |
+| `--no-start` | Skip `ddev start` | `false` |
+| `--branch` | Git branch name | `$CI_COMMIT_REF_NAME`, `$GITHUB_HEAD_REF` or `$GITHUB_REF_NAME` |
+| `--preview` | Preview environment ID (MR/PR number) | - |
+| `--repo` | Repository URL | auto-detected from CI |
+| `--ssh-options` | Extra SSH options. Use the `=` form when the value starts with a dash: `--ssh-options="-i key -o IdentitiesOnly=yes"`. A quoted value with spaces, such as `-o ProxyCommand="ssh -i key -W %h:%p bastion"` for a jump host that needs its own `-i`, reaches ssh as one argument with the quotes stripped | - |
+
+### `ppreview destroy`
+
+Remove a DDEV project from the server.
+
+```bash
+ppreview destroy \
+  --host server.example.com \
+  --name my-project \
+  --preview 123 \
+  --backup
+```
+
+The CLI runs [`ppreview agent destroy`](../../docs/agent.md#ppreview-agent-destroy) on the server, which deletes the DDEV project, the project directory and the project's records in the agent database. The agent finds the project directory from its own config (`projects_dir` in `/etc/ppreview/config.toml`), so `destroy` has no `--projects-dir` option. Set `projects_dir` to the directory that `ppreview deploy --projects-dir` uses (default `~/www`, which is `/home/ddev/www` for the `ddev` user). If you deploy to another directory, set `projects_dir` before you upgrade: the agent refuses to remove a directory outside of it. Connect as the `ddev` user (the default `--user`): the agent reads `/etc/ppreview/config.toml` and writes to `/var/lib/ppreview`, which only the `ddev` user can do. The command fails when `ppreview` is not on the `PATH` of the SSH user.
+
+With `--backup`, the agent first dumps the database and archives the upload directories to its backup directory (`[backup] dir`, default `/var/backups/ppreview`). If the backup fails, nothing is removed and the command fails. The CLI passes `--timeout` to the agent, which uses it as the time limit of the backup (the database dump and the files archive together). The remote command gets that limit plus 10 minutes, for the start and the stop of a stopped project and for `ddev delete`. Raise `--timeout` to back up a large project. See [Backups](../../docs/agent.md#backups).
+
+With `--delay`, nothing is removed now. The agent records the removal date (now plus the delay, for example `48h` or `1h30m`; hours, minutes and seconds only, no days) and removes the project when it is due, with the backup when `--backup` is set, within the same `--timeout`. Use it after a merge to keep the preview for a short time. A new `ppreview deploy` of the project cancels the removal, or fails when the agent has already started to remove the project. See [Scheduled removals](../../docs/agent.md#scheduled-removals).
+
+**Options:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--host` | SSH host (required) | - |
+| `--name` | Project name (required) | - |
+| `--preview` | Preview environment ID (MR/PR number) | - |
+| `--backup` | Back up the database and upload directories on the server first | - |
+| `--delay` | Remove nothing now: the agent removes the project after this delay. Hours, minutes and seconds only, such as `48h` or `1h30m` (no days). The agent checks the value | - |
+| `--timeout` | Timeout of the remote command. With `--backup`, the time limit of the backup on the server (`ppreview agent destroy --timeout`), and the remote command gets 10 more minutes. Raise it to back up a large project | `10m` |
+| `--user` | SSH user | `ddev` |
+| `--port` | SSH port | `22` |
+| `--ssh-options` | Extra SSH options | - |
+
+### `ppreview skill`
+
+Print the [`ppreview-cli` agent skill](../../skills/ppreview-cli/SKILL.md) of this version to stdout. A coding agent reads it to write or fix the CI jobs. To install the skill from the repository instead, run `npx skills add weareikko/ppreview` or `gh skill install weareikko/ppreview`.
+
+```bash
+npx ppreview@<version> skill
+```
+
+## CI Examples
+
+### GitLab CI
+
+`SSH_PRIVATE_KEY` is a file-type CI variable, so ssh can read the key directly:
+
+```yaml
+deploy_preview:
+  stage: deploy
+  image: node:24
+  before_script:
+    - chmod 600 "$SSH_PRIVATE_KEY"
+  script:
+    - npx ppreview deploy
+        --host $SSH_HOST
+        --name $CI_PROJECT_PATH_SLUG
+        --preview $CI_MERGE_REQUEST_IID
+        --ssh-options="-i $SSH_PRIVATE_KEY -o IdentitiesOnly=yes"
+        --sync "dist/"
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+```
+
+Two things worth copying exactly:
+
+**No `ssh-agent`.** GitLab runs `after_script` in a separate shell from `before_script`, so `SSH_AGENT_PID` is not set there and `ssh-agent -k` kills nothing. The surviving agent holds the job's output file descriptors, and the runner waits on them — jobs sat `running` for up to an hour after their script had finished. Pointing ssh at the key avoids the daemon entirely. `IdentitiesOnly=yes` stops any other key on the runner from being offered first.
+
+**`--ssh-options=` with an equals sign.** The value starts with a dash, and `--ssh-options "-i …"` makes the parser read it as another option: `Option '--ssh-options' argument is ambiguous`.
+
+### GitHub Actions
+
+```yaml
+deploy_preview:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    - run: npx ppreview deploy
+        --host ${{ vars.SSH_HOST }}
+        --name ${{ github.event.repository.name }}
+        --preview ${{ github.event.pull_request.number }}
+        --sync "dist/"
+```
+
+## How it works
+
+The setup command executes 5 steps over SSH:
+
+1. **Check the server** — Read the OS, resolve root or sudo privileges
+2. **Install Node.js** — Install Node.js 24 from the NodeSource apt repository (skipped when already present)
+3. **Install the agent** — `npm install -g ppreview@<version>` (`--agent-version`, default `latest`)
+4. **Setup the server** — Run `ppreview agent setup` (Docker, DDEV, Traefik, systemd, hardening)
+5. **Verify** — Check that the `ppreview-agent` service is active
+
+The deploy command executes 9 steps over SSH:
+
+1. **Cancel a scheduled removal** — Run `ppreview agent destroy <name> --cancel`, so the agent cannot remove a project scheduled with `ppreview destroy --delay` while it is deployed. The deploy fails when `ppreview` is not on the `PATH` of the SSH user, or when the agent has already started to remove the project
+2. **Update source code** — Clone the repository, or fetch and check out the branch when it is already there. A clone also writes `.ddev/config.local.yaml` with the project name and the server's router ports, read from `ddev config global`
+3. **Start DDEV** — Run `ddev start` unless the project is already running
+4. **Before-script** — Optional, on the server, outside the container
+5. **Rsync files** — Sync local paths to the server. A directory is mirrored with `--delete`, so a file the build stops producing is removed from the server too; a single file is copied as itself. A path that does not exist stops the deploy
+6. **Create-script** — Optional, on the server, and **only on the deploy that created the project**. For one-time seeding such as `ddev pull`, which overwrites the database and so must not repeat
+7. **Run script** — Optional, inside the container, with `--env` values available to it
+8. **After-script** — Optional, on the server, outside the container
+9. **Verify** — Run `ddev describe` and print its output. A failure is logged but does not fail the deploy
+
+### Seeding a database once
+
+A preview environment starts with an empty database. `--create-script` runs on the deploy that created the project and never again, which is what a `ddev pull` provider needs — it overwrites the database it imports into, so repeating it on every deploy would discard the environment's content:
+
+```bash
+ppreview deploy \
+  --host server.example.com \
+  --name my-app \
+  --preview 42 \
+  --sync "vendor,dist" \
+  --create-script "ddev pull prod-db -y" \
+  --timeout 30m
+```
+
+Raise `--timeout` when the pull is slow: it applies per remote command, and a timeout partway through an import leaves the environment half-built.
+
+## Dependencies
+
+The CLI uses native Node.js APIs (`node:child_process`) for SSH and rsync operations. The only runtime dependency is `smol-toml`, which the agent uses to read its config. `ppreview deploy` does not load the agent code: `ppreview agent` imports it on demand.
+
+## License
+
+MIT — see [LICENSE](https://github.com/weareikko/ppreview/blob/main/LICENSE)

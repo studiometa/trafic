@@ -1,0 +1,210 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import {
+  installAgent,
+  createAgentConfig,
+  createSystemdService,
+} from "../../src/agent/setup/agent.js";
+import { createFakeIo } from "./helpers/fake-io.js";
+
+beforeEach(() => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+});
+
+const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf-8")) as { version: string };
+
+const CONFIG_PATH = "/etc/ppreview/config.toml";
+const UNIT_PATH = "/etc/systemd/system/ppreview-agent.service";
+
+describe("installAgent", () => {
+  it("installs the published package globally, at its own version", () => {
+    // ppreview setup --agent-version installed this version: an install of the
+    // latest one would replace it
+    const io = createFakeIo();
+
+    installAgent(io);
+
+    expect(io.ran(`npm install -g ppreview@${pkg.version}`)).toBe(true);
+  });
+});
+
+describe("createAgentConfig", () => {
+  it("writes the TLD it was given", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    expect(io.written(CONFIG_PATH)).toContain('tld = "previews.example.com"');
+  });
+
+  it("defaults to requiring basic auth", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    // A default of anything open would expose every preview
+    expect(io.written(CONFIG_PATH)).toContain('default_policy = "basic"');
+  });
+
+  it("restricts the config to root and the agent group", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    // The file holds auth tokens and basic auth credentials
+    expect(io.ran(`chmod 640 ${CONFIG_PATH}`)).toBe(true);
+    expect(io.ran(`chown root:ddev ${CONFIG_PATH}`)).toBe(true);
+  });
+
+  it("never overwrites an existing config", () => {
+    const io = createFakeIo({
+      files: { [CONFIG_PATH]: 'tld = "existing.example.com"\n' },
+    });
+
+    createAgentConfig({ tld: "new.example.com" }, io);
+
+    // Overwriting would wipe the operator's auth rules on a re-run
+    expect(io.writes.has(CONFIG_PATH)).toBe(false);
+  });
+
+  it("defaults to a single trusted proxy", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    expect(io.written(CONFIG_PATH)).toContain("trusted_proxy_hops = 1");
+  });
+
+  it("writes the trusted proxy hop count it was given", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com", trustedProxyHops: 2 }, io);
+
+    // 2 is a CDN or load balancer in front of ddev-router/Traefik
+    expect(io.written(CONFIG_PATH)).toContain("trusted_proxy_hops = 2");
+  });
+
+  it("creates the state directory owned by the agent user", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    expect(io.ran("mkdir -p /var/lib/ppreview")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/lib/ppreview")).toBe(true);
+  });
+
+  it("creates the backup directory for the agent user only", () => {
+    const io = createFakeIo();
+
+    createAgentConfig({ tld: "previews.example.com" }, io);
+
+    // Hardening creates it too, but a --no-hardening server needs it: the
+    // unit lists it in ReadWritePaths, and systemd refuses a missing path
+    expect(io.ran("mkdir -p /var/backups/ppreview")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/backups/ppreview")).toBe(true);
+    expect(io.ran("chmod 700 /var/backups/ppreview")).toBe(true);
+  });
+});
+
+describe("createSystemdService", () => {
+  it("uses the resolved binary path in ExecStart", () => {
+    const io = createFakeIo({
+      output: { "which ppreview": "/usr/bin/ppreview\n" },
+    });
+
+    createSystemdService(io);
+
+    expect(io.written(UNIT_PATH)).toContain(
+      "ExecStart=/usr/bin/ppreview agent start --config /etc/ppreview/config.toml",
+    );
+  });
+
+  it("falls back to a sensible path when the binary is not on PATH", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    expect(io.written(UNIT_PATH)).toContain("ExecStart=/usr/bin/ppreview");
+  });
+
+  it("runs the agent as the unprivileged ddev user", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    const unit = io.written(UNIT_PATH);
+    expect(unit).toContain("User=ddev");
+    expect(unit).toContain("NoNewPrivileges=true");
+    expect(unit).toContain("ProtectSystem=strict");
+  });
+
+  it("grants the agent write access to its own home", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    // ddev start writes to the project directory and to buildx state in
+    // .docker; the narrower /home/ddev/.ddev made auto-start fail outright
+    expect(io.written(UNIT_PATH)).toContain(
+      "ReadWritePaths=/var/lib/ppreview /home/ddev",
+    );
+  });
+
+  it("grants the agent write access to the backup directory", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    // The backup sweep removes old backups from it. With "-", a missing
+    // directory does not stop the unit from starting (226/NAMESPACE)
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/ppreview$/m);
+  });
+
+  it("still protects the rest of the filesystem", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    const unit = io.written(UNIT_PATH);
+    expect(unit).toContain("ProtectSystem=strict");
+    expect(unit).toContain("ProtectHome=read-only");
+    expect(unit).toContain("NoNewPrivileges=true");
+  });
+
+  it("sets DDEV_NONINTERACTIVE so ddev-hostname never blocks a start", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    expect(io.written(UNIT_PATH)).toContain("Environment=DDEV_NONINTERACTIVE=true");
+  });
+
+  it("waits for Docker before starting", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    const unit = io.written(UNIT_PATH);
+    expect(unit).toContain("After=network.target docker.service");
+    expect(unit).toContain("Requires=docker.service");
+  });
+
+  it("restarts the agent if it exits", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    expect(io.written(UNIT_PATH)).toContain("Restart=always");
+  });
+
+  it("reloads systemd before enabling the unit", () => {
+    const io = createFakeIo();
+
+    createSystemdService(io);
+
+    const reload = io.commands.indexOf("systemctl daemon-reload");
+    const enable = io.commands.indexOf("systemctl enable ppreview-agent");
+    expect(reload).toBeGreaterThanOrEqual(0);
+    expect(enable).toBeGreaterThan(reload);
+  });
+});

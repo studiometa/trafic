@@ -1,8 +1,8 @@
 {
-  "name": "@studiometa/trafic",
+  "name": "ppreview-monorepo",
   "version": "0.1.64",
   "private": true,
-  "description": "DDEV preview environments on any Linux server",
+  "description": "DDEV preview environments on your own servers",
   "keywords": [
     "ddev",
     "deploy",
@@ -15,7 +15,7 @@
   "author": "Studio Meta",
   "repository": {
     "type": "git",
-    "url": "https://github.com/studiometa/trafic"
+    "url": "https://github.com/weareikko/ppreview"
   },
   "workspaces": [
     "packages/*"

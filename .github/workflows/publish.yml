@@ -83,25 +83,18 @@ jobs:
           node-version: "24"
           cache: "npm"
 
-      # The publish steps run `npm publish --ignore-scripts`: build `dist/`
+      # The publish step runs `npm publish --ignore-scripts`: build `dist/`
       # first. The test job ran the checks.
       - name: Install and build
         run: |
           npm ci
           npm run build
 
-      # The packages do not depend on each other. A prerelease goes to `next`.
-      - name: Publish @studiometa/trafic-cli
+      # One package holds the CLI and the agent. A prerelease goes to `next`.
+      - name: Publish ppreview
         uses: JS-DevTools/npm-publish@0fd2f4369c5d6bcfcde6091a7c527d810b9b5c3f # v4.1.5
         with:
-          package: packages/trafic-cli
-          access: public
-          provenance: true
-          tag: ${{ needs.release.outputs.dist-tag }}
-      - name: Publish @studiometa/trafic-agent
-        uses: JS-DevTools/npm-publish@0fd2f4369c5d6bcfcde6091a7c527d810b9b5c3f # v4.1.5
-        with:
-          package: packages/trafic-agent
+          package: packages/ppreview
           access: public
           provenance: true
           tag: ${{ needs.release.outputs.dist-tag }}

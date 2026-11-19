@@ -1,0 +1,405 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  addDdevAptRepo,
+  installDdev,
+  configureDdev,
+  installDnsmasq,
+  getDockerGatewayIp,
+  configureTraefik,
+  findRunningProject,
+  findRunningProjects,
+  DDEV_KEYRING,
+  DDEV_SOURCES,
+} from "../../src/agent/setup/ddev.js";
+import { createFakeIo } from "./helpers/fake-io.js";
+
+beforeEach(() => {
+  vi.spyOn(console, "log").mockImplementation(() => {});
+});
+
+const TRAEFIK_DIR = "/home/ddev/.ddev/traefik";
+const DDEV_NETWORK = "docker network inspect ddev_default";
+const BRIDGE_NETWORK = "docker network inspect bridge";
+
+describe("addDdevAptRepo", () => {
+  it("writes the keyring and a deb822 source signed by it", () => {
+    const io = createFakeIo();
+
+    addDdevAptRepo(io);
+
+    expect(io.ran("install -m 0755 -d /etc/apt/keyrings")).toBe(true);
+    expect(
+      io.ran("curl -fsSL https://packages.ddev.com/public/gpg.key -o /etc/apt/keyrings/ddev.asc"),
+    ).toBe(true);
+    expect(io.ran("chmod a+r /etc/apt/keyrings/ddev.asc")).toBe(true);
+
+    const source = io.commands.find((c) => c.includes(DDEV_SOURCES))!;
+    expect(source).toContain("Types: deb");
+    expect(source).toContain("URIs: https://packages.ddev.com/public/deb/ubuntu");
+    expect(source).toContain("Suites: stable");
+    expect(source).toContain("Components: main");
+    expect(source).toContain(`Signed-By: ${DDEV_KEYRING}`);
+  });
+
+  it("uses the Cloudsmith repository, not the former Gemfury one", () => {
+    const io = createFakeIo();
+
+    addDdevAptRepo(io);
+
+    expect(io.ran("pkg.ddev.com")).toBe(false);
+  });
+});
+
+describe("installDdev", () => {
+  it("skips the install when DDEV is already present", () => {
+    const io = createFakeIo({
+      present: ["ddev"],
+      output: { "ddev --version": "ddev version v1.24.0\n" },
+    });
+
+    installDdev(io);
+
+    expect(io.ran("apt-get install -y ddev")).toBe(false);
+  });
+
+  it("adds the apt repository, then installs DDEV", () => {
+    const io = createFakeIo();
+
+    installDdev(io);
+
+    expect(io.ran(DDEV_SOURCES)).toBe(true);
+    expect(io.ran("apt-get install -y ddev")).toBe(true);
+  });
+
+  it("installs the mkcert CA into the ddev user's trust store", () => {
+    const io = createFakeIo();
+
+    installDdev(io);
+
+    // setup runs as root, so HOME has to point at the ddev user or DDEV
+    // will not trust the certificates it generates
+    expect(io.ran("HOME=/home/ddev mkcert -install")).toBe(true);
+    expect(io.ran("chown -R ddev:ddev /home/ddev/.local/share/mkcert")).toBe(
+      true,
+    );
+  });
+});
+
+describe("getDockerGatewayIp", () => {
+  it("prefers the ddev_default network, where ddev-router runs", () => {
+    const io = createFakeIo({
+      output: { [DDEV_NETWORK]: "172.20.0.1\n", [BRIDGE_NETWORK]: "172.17.0.1\n" },
+    });
+
+    expect(getDockerGatewayIp(io)).toBe("172.20.0.1");
+  });
+
+  it("falls back to the default bridge network", () => {
+    const io = createFakeIo({ output: { [BRIDGE_NETWORK]: "172.18.0.1\n" } });
+
+    expect(getDockerGatewayIp(io)).toBe("172.18.0.1");
+  });
+
+  it("falls back to the conventional address when both fail", () => {
+    const io = createFakeIo();
+
+    expect(getDockerGatewayIp(io)).toBe("172.17.0.1");
+  });
+
+  it("falls back when the networks do not exist yet", () => {
+    // On a fresh server ddev_default appears only once a project starts, and
+    // `docker network inspect` exits non-zero for a missing network — the
+    // documented fallback chain has to survive that
+    const io = createFakeIo({ fails: ["docker network inspect"] });
+
+    expect(() => getDockerGatewayIp(io)).not.toThrow();
+    expect(getDockerGatewayIp(io)).toBe("172.17.0.1");
+  });
+
+  it("uses the bridge gateway when only ddev_default is missing", () => {
+    const io = createFakeIo({
+      fails: [DDEV_NETWORK],
+      output: { [BRIDGE_NETWORK]: "172.19.0.1\n" },
+    });
+
+    expect(getDockerGatewayIp(io)).toBe("172.19.0.1");
+  });
+});
+
+describe("configureTraefik", () => {
+  const io = () =>
+    createFakeIo({ output: { [DDEV_NETWORK]: "172.20.0.1\n" } });
+
+  it("points forward auth at the gateway IP, not host.docker.internal", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    expect(config).toContain("http://172.20.0.1:9876/__auth__");
+    // host.docker.internal does not resolve on Linux without extra setup,
+    // which silently bypassed auth
+    expect(config).not.toContain("host.docker.internal");
+  });
+
+  it("attaches the middlewares to both entry points", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const staticConfig = fake.written(
+      `${TRAEFIK_DIR}/static_config.ppreview.yaml`,
+    );
+    // Entry point level, so every request passes auth regardless of which
+    // project router handles it
+    expect(staticConfig).toContain("http-80");
+    expect(staticConfig).toContain("http-443");
+    expect(staticConfig).toContain("ppreview-auth@file");
+    expect(staticConfig).toContain("ppreview-errors@file");
+  });
+
+  it("writes the dynamic config only where Traefik reads it", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    // DDEV 1.25 copies custom-global-config into the ddev-global-cache
+    // volume. A second copy at the traefik root is never read, and having
+    // two made a stale one easy to mistake for the live config.
+    expect(
+      fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`),
+    ).not.toBe("");
+    expect(fake.writes.has(`${TRAEFIK_DIR}/ppreview.yaml`)).toBe(false);
+  });
+
+  it("serves the waiting page on 502 and 503", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    expect(config).toContain('"502"');
+    expect(config).toContain('"503"');
+    expect(config).toContain("service: ppreview-service");
+  });
+
+  it("leaves the config owned by ddev", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    expect(
+      fake.ran(`chown ddev:ddev ${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`),
+    ).toBe(true);
+  });
+});
+
+describe("configureDdev", () => {
+  it("sets the project TLD", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    expect(io.ran("--project-tld=previews.example.com")).toBe(true);
+  });
+
+  it("binds the router to all interfaces on the standard ports", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    const config = io.commands.find((c) => c.includes("ddev config global"))!;
+    // Without bind-all-interfaces, external traffic gets a 521
+    expect(config).toContain("--router-bind-all-interfaces=true");
+    expect(config).toContain("--router-http-port=80");
+    expect(config).toContain("--router-https-port=443");
+  });
+
+  it("enables Let's Encrypt only when given an email", () => {
+    const withEmail = createFakeIo();
+    configureDdev("previews.example.com", "admin@example.com", withEmail);
+    expect(withEmail.ran("--use-letsencrypt=true")).toBe(true);
+    expect(withEmail.ran("--letsencrypt-email=admin@example.com")).toBe(true);
+
+    const withoutEmail = createFakeIo();
+    configureDdev("previews.example.com", undefined, withoutEmail);
+    expect(withoutEmail.ran("--use-letsencrypt=false")).toBe(true);
+    expect(withoutEmail.ran("--letsencrypt-email")).toBe(false);
+  });
+
+  it("opts out of instrumentation", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    expect(io.ran("--instrumentation-opt-in=false")).toBe(true);
+  });
+
+  it("runs the configuration as the ddev user", () => {
+    const io = createFakeIo();
+
+    configureDdev("previews.example.com", undefined, io);
+
+    // Global config lands in the invoking user's home directory
+    expect(io.commands.find((c) => c.includes("ddev config global"))).toContain(
+      "su - ddev -c",
+    );
+  });
+});
+
+describe("installDnsmasq", () => {
+  it("resolves the wildcard TLD to the detected server IP", () => {
+    const io = createFakeIo({ output: { "ifconfig.me": "203.0.113.10\n" } });
+
+    installDnsmasq("previews.example.com", io);
+
+    expect(io.written("/etc/dnsmasq.d/ppreview.conf")).toContain(
+      "address=/previews.example.com/203.0.113.10",
+    );
+  });
+
+  it("falls back to localhost when the IP cannot be detected", () => {
+    const io = createFakeIo();
+
+    installDnsmasq("previews.example.com", io);
+
+    expect(io.written("/etc/dnsmasq.d/ppreview.conf")).toContain(
+      "address=/previews.example.com/127.0.0.1",
+    );
+  });
+
+  it("listens on localhost only", () => {
+    const io = createFakeIo();
+
+    installDnsmasq("previews.example.com", io);
+
+    // An open resolver on a public server would be abused for amplification
+    const config = io.written("/etc/dnsmasq.d/ppreview.conf");
+    expect(config).toContain("listen-address=127.0.0.1");
+    expect(config).toContain("bind-interfaces");
+  });
+
+  it("enables dnsmasq so it survives a reboot", () => {
+    const io = createFakeIo();
+
+    installDnsmasq("previews.example.com", io);
+
+    expect(io.ran("systemctl enable dnsmasq")).toBe(true);
+  });
+});
+
+describe("configureTraefik catch-all router", () => {
+  const io = () => createFakeIo({ output: { [DDEV_NETWORK]: "172.20.0.1\n" } });
+
+  it("defines a catch-all router so stopped projects reach the agent", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    // ddev stop removes the project's router, so without this Traefik answers
+    // 404 and the waiting page never appears
+    expect(config).toContain("ppreview-catchall");
+    expect(config).toContain("service: ppreview-service");
+  });
+
+  it("keeps it above DDEV's fallback routers but below project routers", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    // DDEV 1.25.4 ships its own catch-all at priority 1 with the same rule,
+    // and Traefik picked that one on a tie — stopped projects got DDEV's 404
+    // instead of the waiting page, so scale-to-zero never restarted them
+    expect(config).toContain("priority: 2");
+    expect(config).not.toContain("priority: 1");
+  });
+
+  it("defines both a plain and a TLS catch-all", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    // A router carrying tls only matches HTTPS entry points, so one alone
+    // leaves plain HTTP answering 404 — verified on a real server
+    expect(config).toContain("ppreview-catchall:");
+    expect(config).toContain("ppreview-catchall-tls:");
+  });
+
+  it("puts tls on exactly one of them", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    const routers = config.slice(config.indexOf("routers:"), config.indexOf("services:"));
+    expect(routers.match(/tls: \{\}/g) ?? []).toHaveLength(1);
+  });
+
+  it("does not attach auth to the catch-all itself", () => {
+    const fake = io();
+
+    configureTraefik({ tls: { dnsEnv: {} } }, fake);
+
+    const config = fake.written(`${TRAEFIK_DIR}/custom-global-config/ppreview.yaml`);
+    const router = config.slice(config.indexOf("ppreview-catchall"));
+    // Auth lives on the entry point. Attaching it here was the arrangement
+    // that let project routers bypass it, which #27 fixed.
+    expect(router).not.toContain("middlewares");
+  });
+});
+
+describe("findRunningProjects", () => {
+  it("returns every running project", () => {
+    const fake = createFakeIo({
+      output: {
+        "ddev list -j": JSON.stringify({
+          raw: [
+            { name: "a", status: "running" },
+            { name: "b", status: "stopped" },
+            { name: "c", status: "running" },
+          ],
+        }),
+      },
+    });
+
+    expect(findRunningProjects(fake)).toEqual(["a", "c"]);
+  });
+
+  it("returns nothing when DDEV answers nothing or answers garbage", () => {
+    expect(findRunningProjects(createFakeIo())).toEqual([]);
+    expect(
+      findRunningProjects(createFakeIo({ output: { "ddev list -j": "not json" } })),
+    ).toEqual([]);
+  });
+});
+
+describe("findRunningProject", () => {
+  const listed = (raw: unknown) =>
+    createFakeIo({ output: { "ddev list -j": JSON.stringify({ raw }) } });
+
+  it("returns the first running project", () => {
+    const fake = listed([
+      { name: "stopped-one", status: "stopped" },
+      { name: "live-one", status: "running" },
+      { name: "live-two", status: "running" },
+    ]);
+
+    expect(findRunningProject(fake)).toBe("live-one");
+  });
+
+  it("returns null when nothing runs", () => {
+    expect(findRunningProject(listed([{ name: "a", status: "stopped" }]))).toBeNull();
+  });
+
+  it("returns null when DDEV answers nothing or answers garbage", () => {
+    // project_list.yaml has no live status, so this is the only source —
+    // but a failing probe must not abort the caller
+    expect(findRunningProject(createFakeIo())).toBeNull();
+    expect(
+      findRunningProject(createFakeIo({ output: { "ddev list -j": "not json" } })),
+    ).toBeNull();
+  });
+});

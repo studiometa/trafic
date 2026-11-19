@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Trafic, please report it by emailing **security@studiometa.fr**.
+If you discover a security vulnerability in ppreview, please report it by emailing **security@studiometa.fr**.
 
 Please include:
 - A description of the vulnerability
@@ -40,13 +40,13 @@ We will:
 
 ## Security Best Practices
 
-When deploying Trafic:
+When deploying ppreview:
 
 1. **Use SSH keys** — Never use password authentication
 2. **Restrict SSH access** — Use `AllowUsers` in sshd_config
 3. **Enable Let's Encrypt** — Always use HTTPS in production
 4. **Configure authentication** — Don't use `allow` policy for public-facing previews
-5. **Keep updated** — Run `sudo trafic-agent upgrade` on the server, and pin or update `@studiometa/trafic-cli` in CI
-6. **Firewall** — Only expose ports 22, 80, and 443. `setup` also closes every other port that Docker publishes (add-on ports such as Elasticsearch) with `DOCKER-USER` rules, which UFW cannot do. DDEV's tool ports (Mailpit, xhgui) stay open, behind forward auth — see [Network exposure](packages/trafic-agent/README.md#network-exposure)
+5. **Keep updated** — Run `sudo ppreview agent upgrade` on the server, and pin or update `ppreview` in CI
+6. **Firewall** — Only expose ports 22, 80, and 443. `setup` also closes every other port that Docker publishes (add-on ports such as Elasticsearch) with `DOCKER-USER` rules, which UFW cannot do. DDEV's tool ports (Mailpit, xhgui) stay open, behind forward auth — see [Network exposure](docs/agent.md#network-exposure)
 
-See the [setup command](packages/trafic-agent/README.md#trafic-agent-setup) for automated server hardening.
+See the [setup command](docs/agent.md#ppreview-agent-setup) for automated server hardening.

@@ -1,6 +1,6 @@
-# Contributing to Trafic
+# Contributing to ppreview
 
-Thank you for your interest in contributing to Trafic! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to ppreview! This document provides guidelines and instructions for contributing.
 
 ## Development Setup
 
@@ -14,8 +14,8 @@ Thank you for your interest in contributing to Trafic! This document provides gu
 
 ```bash
 # Clone the repository
-git clone https://github.com/studiometa/trafic.git
-cd trafic
+git clone https://github.com/weareikko/ppreview.git
+cd ppreview
 
 # Install dependencies
 npm install
@@ -30,10 +30,10 @@ npm run build
 ### Project Structure
 
 ```
-trafic/
+ppreview/
 ├── packages/
-│   ├── trafic-cli/      # CLI (setup, deploy, destroy)
-│   └── trafic-agent/    # Server agent (auth, scale-to-zero, setup, destroy, backups)
+│   └── ppreview/        # The npm package: CLI (src/) and server agent (src/agent/)
+├── skills/              # Agent skills (ppreview-cli, ppreview-agent)
 ├── examples/            # CI configuration examples
 ├── docs/                # Documentation and plans
 └── .github/             # GitHub Actions workflows
@@ -50,12 +50,12 @@ npm test
 # Run tests with coverage
 npm run test:ci
 
-# Run tests in watch mode (in a specific package)
-cd packages/trafic-cli
+# Run tests in watch mode
+cd packages/ppreview
 npm run test:watch
 
 # Run the integration tests (Docker-based SSH tests)
-npm run test:integration --workspace=@studiometa/trafic-cli
+npm run test:integration --workspace=ppreview
 ```
 
 ### Linting
@@ -128,7 +128,7 @@ Do not write the pull request number: the release adds it. A pull request that c
 
 ## Releases
 
-All packages share one version. Each merge into `main` releases what its fragments describe: the `Release` workflow (`.github/workflows/publish.yml`) runs the tests, then the [`weareikko/changelog`](https://github.com/weareikko/changelog#release-1) action computes the next version, folds the fragments into `CHANGELOG.md`, bumps the version of all packages, commits `Release X.Y.Z`, tags `X.Y.Z` (no `v` prefix), pushes and creates the GitHub release. The workflow then publishes the packages to npm. Merged Renovate pull requests become `Dependencies` entries. Without a fragment or a Renovate pull request since the last release, nothing is released.
+One package, `ppreview`, holds the CLI and the agent. Each merge into `main` releases what its fragments describe: the `Release` workflow (`.github/workflows/publish.yml`) runs the tests, then the [`weareikko/changelog`](https://github.com/weareikko/changelog#release-1) action computes the next version, folds the fragments into `CHANGELOG.md`, bumps the version, commits `Release X.Y.Z`, tags `X.Y.Z` (no `v` prefix), pushes and creates the GitHub release. The workflow then publishes the package to npm. Merged Renovate pull requests become `Dependencies` entries. Without a fragment or a Renovate pull request since the last release, nothing is released.
 
 The version comes from the entries. On 0.x, a breaking entry (`- **CLI**: Breaking: …`) gives a minor version and any other entry a patch version. To force a bump, run the workflow from the Actions tab or with:
 
@@ -140,11 +140,11 @@ gh workflow run publish.yml -f version=minor   # or patch / major
 
 A pull request that adds `.changelog/prerelease` with one identifier (`alpha`, `beta` or `rc`) starts prereleases: each next merge with entries releases a prerelease (`0.1.49-beta.0`, then `0.1.49-beta.1`, …). A pull request that deletes the file releases the stable version on its merge. See [Prereleases](https://github.com/weareikko/changelog#prereleases).
 
-A prerelease is published on the `next` npm dist-tag and as a GitHub prerelease. Any other version is published on `latest`. Install a prerelease with `npm install @studiometa/trafic-cli@next`.
+A prerelease is published on the `next` npm dist-tag and as a GitHub prerelease. Any other version is published on `latest`. Install a prerelease with `npm install ppreview@next`.
 
 ### Publishing
 
-npm trusted publishing (OIDC) publishes the packages from `publish.yml`: there is no npm token. Keep the publish job in that file. Each package has its own publish step, and a step skips a version that npm already has. When a publish fails (for example on a network error), use "Re-run failed jobs" on the run: it publishes the packages that are still missing.
+npm trusted publishing (OIDC) publishes the package from `publish.yml`: there is no npm token. Keep the publish job in that file. The publish step skips a version that npm already has. When a publish fails (for example on a network error), use "Re-run failed jobs" on the run.
 
 ## Getting Help
 

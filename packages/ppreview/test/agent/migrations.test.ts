@@ -1,0 +1,655 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  listMigrations,
+  ALL_MIGRATIONS,
+  MIGRATIONS_STATE_FILE,
+} from "../../src/agent/setup/migrations/index.js";
+import { migration0001DdevAptRepo } from "../../src/agent/setup/migrations/0001__ddev_apt_repo.js";
+import { runDockerUserToolPortsMigration } from "../../src/agent/setup/migrations/0012__docker_user_tool_ports.js";
+import {
+  migration0017DdevAptCloudsmith,
+  runDdevAptCloudsmithMigration,
+} from "../../src/agent/setup/migrations/0017__ddev_apt_cloudsmith.js";
+import {
+  buildStaticConfig,
+  DDEV_KEYRING,
+  DDEV_SOURCES,
+  ROUTER_COMPOSE_OVERRIDE,
+  STATIC_CONFIG,
+} from "../../src/agent/setup/ddev.js";
+import {
+  migration0020BackupDir,
+  runBackupDirMigration,
+} from "../../src/agent/setup/migrations/0020__backup_dir.js";
+import { migration0021FixUnattendedUpgradesOrigins } from "../../src/agent/setup/migrations/0021__fix_unattended_upgrades_origins.js";
+import {
+  migration0022DockerUserDefaultDeny,
+  runDockerUserDefaultDenyMigration,
+} from "../../src/agent/setup/migrations/0022__docker_user_default_deny.js";
+import {
+  migration0023RouterRestartPolicy,
+  runRouterRestartPolicyMigration,
+} from "../../src/agent/setup/migrations/0023__router_restart_policy.js";
+import { DOCKER_FIREWALL_SCRIPT, DOCKER_FIREWALL_UNIT } from "../../src/agent/setup/docker-firewall.js";
+import { createFakeIo } from "./helpers/fake-io.js";
+
+// ---------------------------------------------------------------------------
+// Temp-dir helper
+// ---------------------------------------------------------------------------
+
+function useTempDir(): { dir: string } {
+  const ref = { dir: "" };
+
+  beforeEach(() => {
+    ref.dir = join(
+      tmpdir(),
+      `ppreview-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    mkdirSync(ref.dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(ref.dir, { recursive: true, force: true });
+  });
+
+  return ref;
+}
+
+// ---------------------------------------------------------------------------
+// State file constant
+// ---------------------------------------------------------------------------
+
+describe("MIGRATIONS_STATE_FILE", () => {
+  it("points to the expected path", () => {
+    expect(MIGRATIONS_STATE_FILE).toBe("/etc/ppreview/.migrations.json");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// State round-trip (without writing to /etc/ppreview)
+// ---------------------------------------------------------------------------
+
+describe("migration state JSON format", () => {
+  const tmp = useTempDir();
+
+  it("can be serialised and deserialised correctly", () => {
+    const stateFile = join(tmp.dir, ".migrations.json");
+    const state = { applied: ["0001__ddev_apt_repo"] };
+
+    writeFileSync(stateFile, JSON.stringify(state, null, 2) + "\n", "utf-8");
+
+    const raw = readFileSync(stateFile, "utf-8");
+    const parsed = JSON.parse(raw) as { applied: string[] };
+
+    expect(parsed.applied).toEqual(["0001__ddev_apt_repo"]);
+  });
+
+  it("handles an empty applied list", () => {
+    const stateFile = join(tmp.dir, ".migrations.json");
+    const state = { applied: [] };
+
+    writeFileSync(stateFile, JSON.stringify(state, null, 2) + "\n", "utf-8");
+
+    const raw = readFileSync(stateFile, "utf-8");
+    const parsed = JSON.parse(raw) as { applied: string[] };
+
+    expect(parsed.applied).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ALL_MIGRATIONS registry
+// ---------------------------------------------------------------------------
+
+describe("ALL_MIGRATIONS", () => {
+  it("is a non-empty ordered array", () => {
+    expect(Array.isArray(ALL_MIGRATIONS)).toBe(true);
+    expect(ALL_MIGRATIONS.length).toBeGreaterThan(0);
+  });
+
+  it("each migration has id, description and run()", () => {
+    for (const m of ALL_MIGRATIONS) {
+      expect(typeof m.id).toBe("string");
+      expect(m.id.length).toBeGreaterThan(0);
+      expect(typeof m.description).toBe("string");
+      expect(m.description.length).toBeGreaterThan(0);
+      expect(typeof m.run).toBe("function");
+    }
+  });
+
+  it("migration IDs are unique", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("runs the rename from Trafic first, then 0001__ddev_apt_repo", () => {
+    expect(ALL_MIGRATIONS[0].id).toBe("0024__rename_from_trafic");
+    expect(ALL_MIGRATIONS[1].id).toBe("0001__ddev_apt_repo");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pending-detection logic (pure, no I/O)
+// ---------------------------------------------------------------------------
+
+describe("pending migration detection", () => {
+  it("detects pending migrations when none have been applied", () => {
+    const migrations = [
+      { id: "test__alpha", description: "Alpha", run: () => {} },
+      { id: "test__beta", description: "Beta", run: () => {} },
+    ];
+    const state = { applied: [] as string[] };
+    const pending = migrations.filter((m) => !state.applied.includes(m.id));
+
+    expect(pending.map((m) => m.id)).toEqual(["test__alpha", "test__beta"]);
+  });
+
+  it("excludes already-applied migrations from the pending list", () => {
+    const migrations = [
+      { id: "test__alpha", description: "Alpha", run: () => {} },
+      { id: "test__beta", description: "Beta", run: () => {} },
+    ];
+    const state = { applied: ["test__alpha"] };
+    const pending = migrations.filter((m) => !state.applied.includes(m.id));
+
+    expect(pending.map((m) => m.id)).toEqual(["test__beta"]);
+  });
+
+  it("returns no pending migrations when all are applied", () => {
+    const migrations = [
+      { id: "test__alpha", description: "Alpha", run: () => {} },
+    ];
+    const state = { applied: ["test__alpha"] };
+    const pending = migrations.filter((m) => !state.applied.includes(m.id));
+
+    expect(pending).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runner logic (pure, no I/O)
+// ---------------------------------------------------------------------------
+
+describe("migration runner logic", () => {
+  it("calls run() for each pending migration", () => {
+    const ranIds: string[] = [];
+
+    const migrations = [
+      { id: "test__alpha", description: "Alpha", run: () => { ranIds.push("test__alpha"); } },
+      { id: "test__beta", description: "Beta", run: () => { ranIds.push("test__beta"); } },
+    ];
+
+    const state = { applied: ["test__alpha"] };
+    const pending = migrations.filter((m) => !state.applied.includes(m.id));
+
+    for (const m of pending) {
+      m.run();
+      state.applied.push(m.id);
+    }
+
+    expect(ranIds).toEqual(["test__beta"]);
+    expect(state.applied).toEqual(["test__alpha", "test__beta"]);
+  });
+
+  it("dry-run skips run() and does not update state", () => {
+    const ranIds: string[] = [];
+    const dryRun = true;
+
+    const migrations = [
+      { id: "test__alpha", description: "Alpha", run: () => { ranIds.push("test__alpha"); } },
+    ];
+
+    const state = { applied: [] as string[] };
+    const pending = migrations.filter((m) => !state.applied.includes(m.id));
+
+    for (const m of pending) {
+      if (!dryRun) {
+        m.run();
+        state.applied.push(m.id);
+      }
+    }
+
+    expect(ranIds).toEqual([]);
+    expect(state.applied).toEqual([]);
+  });
+
+  it("persists state after each migration (partial-failure safety)", () => {
+    const persisted: string[][] = [];
+
+    const migrations = [
+      { id: "test__alpha", description: "Alpha", run: () => {} },
+      { id: "test__beta", description: "Beta", run: () => {} },
+    ];
+
+    const state = { applied: [] as string[] };
+
+    for (const m of migrations) {
+      m.run();
+      state.applied.push(m.id);
+      // Capture a snapshot as if we had written the state to disk
+      persisted.push([...state.applied]);
+    }
+
+    // After first migration: only alpha written
+    expect(persisted[0]).toEqual(["test__alpha"]);
+    // After second migration: both written
+    expect(persisted[1]).toEqual(["test__alpha", "test__beta"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// markAllMigrationsApplied logic
+// ---------------------------------------------------------------------------
+
+describe("markAllMigrationsApplied logic", () => {
+  it("adds all migration IDs to applied without duplicates", () => {
+    const allIds = ALL_MIGRATIONS.map((m) => m.id);
+    const state = { applied: [] as string[] };
+
+    for (const migration of ALL_MIGRATIONS) {
+      if (!state.applied.includes(migration.id)) {
+        state.applied.push(migration.id);
+      }
+    }
+
+    expect(state.applied).toEqual(allIds);
+    expect(new Set(state.applied).size).toBe(state.applied.length);
+  });
+
+  it("does not duplicate already-applied migrations (idempotent)", () => {
+    const allIds = ALL_MIGRATIONS.map((m) => m.id);
+    const state = { applied: [...allIds] };
+
+    // Apply again
+    for (const migration of ALL_MIGRATIONS) {
+      if (!state.applied.includes(migration.id)) {
+        state.applied.push(migration.id);
+      }
+    }
+
+    expect(state.applied.length).toBe(allIds.length);
+  });
+
+  it("works with a partially-applied state", () => {
+    const allIds = ALL_MIGRATIONS.map((m) => m.id);
+    // Start with the first migration already applied
+    const state = { applied: [allIds[0]] };
+
+    for (const migration of ALL_MIGRATIONS) {
+      if (!state.applied.includes(migration.id)) {
+        state.applied.push(migration.id);
+      }
+    }
+
+    expect(state.applied).toEqual(allIds);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// listMigrations
+// ---------------------------------------------------------------------------
+
+describe("listMigrations", () => {
+  it("returns an entry for every migration in ALL_MIGRATIONS", () => {
+    const entries = listMigrations();
+    expect(entries.length).toBe(ALL_MIGRATIONS.length);
+  });
+
+  it("each entry has migration and status fields", () => {
+    const entries = listMigrations();
+    for (const entry of entries) {
+      expect(entry.migration).toBeDefined();
+      expect(["applied", "pending"]).toContain(entry.status);
+    }
+  });
+
+  it("migration IDs in entries match ALL_MIGRATIONS order", () => {
+    const entries = listMigrations();
+    const entryIds = entries.map((e) => e.migration.id);
+    const allIds = ALL_MIGRATIONS.map((m) => m.id);
+    expect(entryIds).toEqual(allIds);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0001__ddev_apt_repo migration definition
+// ---------------------------------------------------------------------------
+
+describe("0001__ddev_apt_repo migration", () => {
+  it("has the correct id", () => {
+    expect(migration0001DdevAptRepo.id).toBe("0001__ddev_apt_repo");
+  });
+
+  it("has a non-empty description", () => {
+    expect(migration0001DdevAptRepo.description.length).toBeGreaterThan(0);
+  });
+
+  it("exposes a run() function", () => {
+    expect(typeof migration0001DdevAptRepo.run).toBe("function");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0017__ddev_apt_cloudsmith migration
+// ---------------------------------------------------------------------------
+
+const OLD_SOURCES = "/etc/apt/sources.list.d/ddev.list";
+const OLD_KEYRING = "/etc/apt/keyrings/ddev.gpg";
+
+describe("0017__ddev_apt_cloudsmith migration", () => {
+  it("is registered after 0018, which shipped first", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf("0017__ddev_apt_cloudsmith")).toBeGreaterThan(
+      ids.indexOf("0018__docker_address_pools"),
+    );
+    expect(migration0017DdevAptCloudsmith.id).toBe("0017__ddev_apt_cloudsmith");
+  });
+
+  it("does nothing once the Cloudsmith source is in place", () => {
+    const io = createFakeIo({ files: { [DDEV_SOURCES]: "Types: deb\n" } });
+
+    runDdevAptCloudsmithMigration(io);
+
+    expect(io.commands).toEqual([]);
+  });
+
+  it("removes the Gemfury source and its keyring", () => {
+    const io = createFakeIo({
+      files: { [OLD_SOURCES]: "deb ...", [OLD_KEYRING]: "key" },
+    });
+
+    runDdevAptCloudsmithMigration(io);
+
+    expect(io.ran(`rm -f ${OLD_SOURCES}`)).toBe(true);
+    expect(io.ran(`rm -f ${OLD_KEYRING}`)).toBe(true);
+  });
+
+  it("writes the Cloudsmith source and refreshes the package lists", () => {
+    const io = createFakeIo({ files: { [OLD_SOURCES]: "deb ..." } });
+
+    runDdevAptCloudsmithMigration(io);
+
+    const source = io.commands.find((c) => c.includes(DDEV_SOURCES))!;
+    expect(source).toContain("URIs: https://packages.ddev.com/public/deb/ubuntu");
+    expect(source).toContain(`Signed-By: ${DDEV_KEYRING}`);
+    expect(io.ran("apt-get update -qq")).toBe(true);
+  });
+
+  it("removes nothing on a server that has neither old file", () => {
+    const io = createFakeIo();
+
+    runDdevAptCloudsmithMigration(io);
+
+    expect(io.ran("rm -f")).toBe(false);
+    expect(io.ran(DDEV_SOURCES)).toBe(true);
+  });
+});
+
+describe("0020__backup_dir migration", () => {
+  const UNIT_PATH = "/etc/systemd/system/ppreview-agent.service";
+
+  it("is registered after 0019", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0020BackupDir.id)).toBe(
+      ids.indexOf("0019__recover_orphan_containers") + 1,
+    );
+  });
+
+  it("creates the backup directory for the ddev user", () => {
+    const io = createFakeIo();
+
+    runBackupDirMigration(io);
+
+    expect(io.ran("mkdir -p /var/backups/ppreview")).toBe(true);
+    expect(io.ran("chown ddev:ddev /var/backups/ppreview")).toBe(true);
+  });
+
+  it("rewrites a unit that does not let the agent write backups", () => {
+    const io = createFakeIo({
+      files: { [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/ppreview /home/ddev\n" },
+    });
+
+    runBackupDirMigration(io);
+
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/ppreview$/m);
+    expect(io.ran("systemctl daemon-reload")).toBe(true);
+  });
+
+  it("rewrites a unit that lists the backup directory without the - prefix", () => {
+    const io = createFakeIo({
+      files: {
+        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/ppreview /home/ddev /var/backups/ppreview\n",
+      },
+    });
+
+    runBackupDirMigration(io);
+
+    // Without "-", a missing directory stops the unit from starting
+    expect(io.written(UNIT_PATH)).toMatch(/^ReadWritePaths=.* -\/var\/backups\/ppreview$/m);
+  });
+
+  it("leaves a unit that already lists the backup directory alone", () => {
+    const io = createFakeIo({
+      files: {
+        [UNIT_PATH]: "[Service]\nReadWritePaths=/var/lib/ppreview /home/ddev -/var/backups/ppreview\n",
+      },
+    });
+
+    runBackupDirMigration(io);
+
+    expect(io.writes.has(UNIT_PATH)).toBe(false);
+    expect(io.ran("systemctl")).toBe(false);
+  });
+});
+
+describe("0021__fix_unattended_upgrades_origins migration", () => {
+  it("is registered after 0020", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0021FixUnattendedUpgradesOrigins.id)).toBe(
+      ids.indexOf("0020__backup_dir") + 1,
+    );
+  });
+});
+
+describe("0012__docker_user_tool_ports migration", () => {
+  it("does nothing on an old --no-ddev server", () => {
+    const io = createFakeIo();
+
+    runDockerUserToolPortsMigration(io);
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("installs the firewall for a DDEV server", () => {
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: "entryPoints:\n" } });
+
+    runDockerUserToolPortsMigration(io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="80 443"');
+    expect(io.ran("systemctl restart ppreview-docker-firewall.service")).toBe(true);
+  });
+
+});
+
+describe("0022__docker_user_default_deny migration", () => {
+  /** The script 0012 installed, with a port added to PORTS by hand. */
+  const OLD_SCRIPT = '#!/bin/sh\nPORTS="8025 8026 8142 8143 9200 9201"\n';
+
+  it("is registered after 0021", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0022DockerUserDefaultDeny.id)).toBe(
+      ids.indexOf("0021__fix_unattended_upgrades_origins") + 1,
+    );
+  });
+
+  it("does nothing on a server without the firewall script", () => {
+    // Set up with --no-ddev: no router, nothing to close
+    const io = createFakeIo();
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("replaces the old script with one that allows only the router ports", () => {
+    const io = createFakeIo({ files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT } });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    const script = io.written(DOCKER_FIREWALL_SCRIPT);
+    expect(script).toContain('ALLOWED_PORTS="80 443"');
+    expect(script).not.toContain("9200");
+    expect(io.written(DOCKER_FIREWALL_UNIT)).toContain(`ExecStart=${DOCKER_FIREWALL_SCRIPT}`);
+  });
+
+  it("reads the router ports from DDEV's global config", () => {
+    const io = createFakeIo({
+      files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT },
+      output: { "ddev config global": "router-http-port=8080\nrouter-https-port=8443\n" },
+    });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="8080 8443"');
+  });
+
+  it("keeps the tool ports open that carry forward auth", () => {
+    // Mailpit and xhgui were dropped by the old script; they now answer
+    // from outside, behind forward auth
+    const io = createFakeIo({
+      files: {
+        [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT,
+        [STATIC_CONFIG]: buildStaticConfig(["2052", "2053"], { http: "80", https: "443" }),
+      },
+    });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.written(DOCKER_FIREWALL_SCRIPT)).toContain('ALLOWED_PORTS="80 443 2052 2053"');
+  });
+
+  it("applies the new rules now, not at the next reboot", () => {
+    const io = createFakeIo({ files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT } });
+
+    runDockerUserDefaultDenyMigration(io);
+
+    expect(io.ran("systemctl daemon-reload")).toBe(true);
+    expect(io.ran("systemctl restart ppreview-docker-firewall.service")).toBe(true);
+  });
+
+  it("writes the same files on a second run", () => {
+    const first = createFakeIo({ files: { [DOCKER_FIREWALL_SCRIPT]: OLD_SCRIPT } });
+    runDockerUserDefaultDenyMigration(first);
+
+    const second = createFakeIo({
+      files: { [DOCKER_FIREWALL_SCRIPT]: first.written(DOCKER_FIREWALL_SCRIPT) },
+    });
+    runDockerUserDefaultDenyMigration(second);
+
+    expect(second.written(DOCKER_FIREWALL_SCRIPT)).toBe(first.written(DOCKER_FIREWALL_SCRIPT));
+    expect(second.written(DOCKER_FIREWALL_UNIT)).toBe(first.written(DOCKER_FIREWALL_UNIT));
+  });
+});
+
+describe("0023__router_restart_policy migration", () => {
+  const PS = "docker ps -aq --filter label=com.docker.compose.service=ddev-router";
+  const noTls = () => ({ dnsEnv: {} });
+
+  it("is registered last, after 0022", () => {
+    const ids = ALL_MIGRATIONS.map((m) => m.id);
+    expect(ids.indexOf(migration0023RouterRestartPolicy.id)).toBe(
+      ids.indexOf("0022__docker_user_default_deny") + 1,
+    );
+    expect(ids.at(-1)).toBe("0023__router_restart_policy");
+  });
+
+  it("does nothing on a server without the ppreview Traefik config", () => {
+    // Set up with --no-ddev: there is no router
+    const io = createFakeIo();
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.commands).toEqual([]);
+    expect(io.writes.size).toBe(0);
+  });
+
+  it("keeps an override that has the policy, and still updates the router", () => {
+    // An earlier migration of the same upgrade can write the override through
+    // configureTraefik, but the running router never read it
+    const io = createFakeIo({
+      files: {
+        [STATIC_CONFIG]: "entryPoints:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: "services:\n  ddev-router:\n    restart: unless-stopped\n",
+      },
+      output: { [PS]: "abc123\n" },
+    });
+
+    runRouterRestartPolicyMigration(io, () => {
+      throw new Error("the config is not read when the override is in place");
+    });
+
+    expect(io.writes.size).toBe(0);
+    expect(io.ran("docker update --restart unless-stopped abc123")).toBe(true);
+  });
+
+  it("writes the override, mode 600, on a server without a DNS provider", () => {
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: "entryPoints:\n" } });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    const override = io.written(ROUTER_COMPOSE_OVERRIDE);
+    expect(override).toContain("    restart: unless-stopped");
+    expect(override).not.toContain("environment:");
+    expect(
+      io.ran(`install -m 600 -o ddev -g ddev /dev/null ${ROUTER_COMPOSE_OVERRIDE}`),
+    ).toBe(true);
+  });
+
+  it("keeps the DNS provider credentials in the override", () => {
+    // 0016 wrote them: rewriting the file without them would take the
+    // wildcard certificate away at the next router recreation
+    const io = createFakeIo({
+      files: {
+        [STATIC_CONFIG]: "entryPoints:\n",
+        [ROUTER_COMPOSE_OVERRIDE]: 'services:\n  ddev-router:\n    environment:\n      - "CF_DNS_API_TOKEN=secret"\n',
+      },
+    });
+
+    runRouterRestartPolicyMigration(io, () => ({
+      dnsProvider: "cloudflare",
+      dnsEnv: { CF_DNS_API_TOKEN: "secret" },
+    }));
+
+    const override = io.written(ROUTER_COMPOSE_OVERRIDE);
+    expect(override).toContain("    restart: unless-stopped");
+    expect(override).toContain('      - "CF_DNS_API_TOKEN=secret"');
+  });
+
+  it("gives the running router the policy without restarting it", () => {
+    // DDEV reads the override only when it recreates the router
+    const io = createFakeIo({
+      files: { [STATIC_CONFIG]: "entryPoints:\n" },
+      output: { [PS]: "abc123\n" },
+    });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.ran("docker update --restart unless-stopped abc123")).toBe(true);
+    expect(io.ran("docker rm")).toBe(false);
+    expect(io.ran("ddev start")).toBe(false);
+  });
+
+  it("only writes the override when no router container exists", () => {
+    const io = createFakeIo({ files: { [STATIC_CONFIG]: "entryPoints:\n" } });
+
+    runRouterRestartPolicyMigration(io, noTls);
+
+    expect(io.ran("docker update")).toBe(false);
+  });
+});
