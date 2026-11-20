@@ -27,6 +27,7 @@ import {
   LEGACY_MIGRATIONS_STATE_FILE,
   migration0024RenameFromTrafic,
 } from "./0024__rename_from_trafic.js";
+import { migration0025PurgeTraficVolumeFiles } from "./0025__purge_trafic_volume_files.js";
 
 /** Path to the persisted migration state file */
 export const MIGRATIONS_STATE_FILE = "/etc/ppreview/.migrations.json";
@@ -62,6 +63,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   migration0021FixUnattendedUpgradesOrigins,
   migration0022DockerUserDefaultDeny,
   migration0023RouterRestartPolicy,
+  migration0025PurgeTraficVolumeFiles,
 ];
 
 // ---------------------------------------------------------------------------

@@ -561,12 +561,11 @@ describe("0023__router_restart_policy migration", () => {
   const PS = "docker ps -aq --filter label=com.docker.compose.service=ddev-router";
   const noTls = () => ({ dnsEnv: {} });
 
-  it("is registered last, after 0022", () => {
+  it("is registered after 0022", () => {
     const ids = ALL_MIGRATIONS.map((m) => m.id);
     expect(ids.indexOf(migration0023RouterRestartPolicy.id)).toBe(
       ids.indexOf("0022__docker_user_default_deny") + 1,
     );
-    expect(ids.at(-1)).toBe("0023__router_restart_policy");
   });
 
   it("does nothing on a server without the ppreview Traefik config", () => {
