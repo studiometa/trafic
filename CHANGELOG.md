@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file. Each pull r
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.1 - 2026-11-20
+
+### Fixed
+
+- **Agent**: The router no longer loads the old `trafic-*` middlewares and routers after the rename. DDEV copies `~/.ddev/traefik` into the `ddev-global-cache` volume but never removes a file there, so the Trafic files that migration `0024__rename_from_trafic` removed from `~/.ddev/traefik` stayed in the volume, and Traefik kept loading them next to the `ppreview-*` ones. Migration `0025__purge_trafic_volume_files` removes them from the volume and restarts `ddev-router` ([#117])
+
+[#117]: https://github.com/weareikko/ppreview/pull/117
+
 ## 0.2.0 - 2026-11-19
 
 ### Changed
