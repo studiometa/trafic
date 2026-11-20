@@ -49,8 +49,10 @@ export function purgeTraficVolumeFiles(io: SetupIo = nodeIo): boolean {
   }
 
   const traefik = `${mountpoint}/traefik`;
+  // find, not ls: ls exits non-zero when one of two globs matches nothing,
+  // and execSilent then drops the files the other one found
   const found = io
-    .execSilent(`ls -d ${traefik}/*trafic* ${traefik}/config/*trafic* 2>/dev/null`)
+    .execSilent(`find ${traefik} -maxdepth 2 -type f -name '*trafic*'`)
     .split("\n")
     .map((path) => path.trim())
     .filter(Boolean);
