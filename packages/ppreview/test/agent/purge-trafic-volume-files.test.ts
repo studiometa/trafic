@@ -8,7 +8,7 @@ import { createFakeIo } from "./helpers/fake-io.js";
 
 const INSPECT = "docker volume inspect ddev-global-cache --format '{{.Mountpoint}}'";
 const MOUNT = "/var/lib/docker/volumes/ddev-global-cache/_data";
-const LS = `ls -d ${MOUNT}/traefik/*trafic* ${MOUNT}/traefik/config/*trafic* 2>/dev/null`;
+const LS = `find ${MOUNT}/traefik -maxdepth 2 -type f -name '*trafic*'`;
 
 describe("migration 0025: purge the Trafic files from the volume", () => {
   it("is registered last, after 0023", () => {
